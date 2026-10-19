@@ -286,12 +286,14 @@ fn keeps_the_proxy_index_in_eviction_order() {
 
 #[test]
 fn upgrades_an_existing_v1_library_in_place() {
-    // A real library already ran v1. v2 has to arrive on top of it with the
-    // footage rows intact, not on a fresh database only.
+    // A real library already ran v1. Every later migration has to arrive on
+    // top of it with the footage rows intact, not on a fresh database only.
+    // The row is written as a v1 build wrote it: v1's columns only.
     let store = LibraryStore::in_memory_up_to("v1").unwrap();
     let session = Session { date: Some(DateTime::from_timestamp(1_787_443_200, 0).unwrap()),
                             ..Session::new("Letz Kwad", None) };
-    store.save_session(&session).unwrap();
+    store.db().execute("INSERT INTO session (id, name, date) VALUES (?1, ?2, ?3)",
+                       params![Id(session.id), session.name, session.date.map(Date)]).unwrap();
     let connection = store.connection.into_inner().unwrap();
 
     let store = LibraryStore::with_connection(connection, None).unwrap();
@@ -311,4 +313,20 @@ fn writes_ids_and_dates_as_grdb_does() {
     assert_eq!(id, fpv_core::uuid_string(session.id));
     assert_eq!(id, id.to_uppercase());
     assert_eq!(stored, "2026-10-18 21:06:32.099");
+}
+
+#[test]
+fn keeps_a_sessions_detection_profile_and_defaults_old_ones_to_standard() {
+    // A library at v2 — every session before profiles existed.
+    let store = LibraryStore::in_memory_up_to("v2").unwrap();
+    store.db().execute("INSERT INTO session (id, name) VALUES ('6F1C2A3B-4D5E-4F60-8A7B-9C0D1E2F3A4B', 'Old')", [])
+        .unwrap();
+    let connection = store.connection.into_inner().unwrap();
+    let store = LibraryStore::with_connection(connection, None).unwrap();
+    assert_eq!(store.sessions().unwrap()[0].detection_profile, DetectionProfile::Standard);
+
+    let alps = Session { detection_profile: DetectionProfile::Textured, ..Session::new("Alpes", None) };
+    store.save_session(&alps).unwrap();
+    let read = store.sessions().unwrap().into_iter().find(|s| s.id == alps.id).unwrap();
+    assert_eq!(read.detection_profile, DetectionProfile::Textured);
 }

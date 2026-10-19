@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
-use fpv_core::{Clip, ClipEntry, ClipExit, ClipKind, DetectionRun, FigureTag, Flight, FrameRate,
+use fpv_core::{Clip, ClipEntry, ClipExit, ClipKind, DetectionProfile, DetectionRun, FigureTag, Flight, FrameRate,
                MediaInfo, Session, SourceFile};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
@@ -78,11 +78,13 @@ impl LibraryStore {
 
     pub fn save_session(&self, session: &Session) -> Result<()> {
         self.db().execute(
-            r#"INSERT INTO session (id, name, date, location, notes) VALUES (?1, ?2, ?3, ?4, ?5)
+            r#"INSERT INTO session (id, name, date, location, notes, detectionProfile)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                ON CONFLICT(id) DO UPDATE SET name = excluded.name, date = excluded.date,
-                 location = excluded.location, notes = excluded.notes"#,
+                 location = excluded.location, notes = excluded.notes,
+                 detectionProfile = excluded.detectionProfile"#,
             params![Id(session.id), session.name, session.date.map(Date), session.location,
-                    session.notes])?;
+                    session.notes, session.detection_profile.as_str()])?;
         Ok(())
     }
 
@@ -219,13 +221,17 @@ impl LibraryStore {
     pub fn sessions(&self) -> Result<Vec<Session>> {
         let db = self.db();
         let mut statement = db.prepare(
-            "SELECT id, name, date, location, notes FROM session ORDER BY date DESC, name")?;
+            "SELECT id, name, date, location, notes, detectionProfile FROM session
+             ORDER BY date DESC, name")?;
         let rows = statement.query_map([], |row| Ok(Session {
             id: row.get::<_, Id>(0)?.0,
             name: row.get(1)?,
             date: row.get::<_, Option<Date>>(2)?.map(|d| d.0),
             location: row.get(3)?,
             notes: row.get(4)?,
+            // An unknown value (a future profile) degrades to the tuned default.
+            detection_profile: DetectionProfile::from_raw(&row.get::<_, String>(5)?)
+                .unwrap_or_default(),
         }))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }

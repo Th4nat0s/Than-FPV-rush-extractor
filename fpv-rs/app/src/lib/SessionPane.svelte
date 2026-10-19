@@ -66,6 +66,19 @@
     }
   }
 
+  async function changeProfile(event: Event) {
+    const profile = (event.currentTarget as HTMLSelectElement).value;
+    try {
+      await api.setDetectionProfile(session.id, profile);
+      status = session.flights.some((f) => !f.actionCam)
+        ? "Detection profile changed — Re-segment to apply it."
+        : "Detection profile changed — Segment to apply it.";
+    } catch (e) {
+      status = `Cannot change the detection profile: ${message(e)}`;
+    }
+    onchange();
+  }
+
   async function exportFlight(flight: FlightView) {
     const extension = flight.actionCam ? "mp4" : "avi";
     const destination = await save({
@@ -139,6 +152,12 @@
       <button class:active={likedOnly} title="Show only liked flights" disabled={tab !== "flights"}
               onclick={() => (likedOnly = !likedOnly)}>{likedOnly ? "♥" : "♡"} Liked</button>
       {#if session.segmentable}
+        <select value={session.detectionProfile} disabled={segmenting} onchange={changeProfile}
+                aria-label="Detection profile"
+                title="Standard: the tuned thresholds. Textured terrain: for footage whose clean picture reads as snow — rock faces, alpine slopes, softer cameras — and to absorb dropouts under 1 s.">
+          <option value="standard">Detection: Standard</option>
+          <option value="textured">Detection: Textured terrain</option>
+        </select>
         <button onclick={segment} disabled={segmenting || !ffmpegOk}
                 title="Find the flights in the DVR recordings. Action-cam takes are left as they are.">
           ✂ {session.flights.some((f) => !f.actionCam) ? "Re-segment" : "Segment"}

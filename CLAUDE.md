@@ -192,6 +192,20 @@ amount of staring at histograms can place. Only ground truth can, and it did: th
 undamaged frames, because footage drowned in noise still has structure. Pushing `corrv` past
 0.94 collapses time recall as real footage starts reading as snow; that cliff pins the far side.
 
+**A second camera chain does not sit where the first did (2026-10-19).** On the pilot's
+Alps footage (`PICT0003.AVI`, 24.961 fps, one 6:12 flight over rock and alpine slopes) a clean
+picture of a rock face reads `blkcv` ~0.58 / `corrv` 0.87–0.90 — snow by the tuned rule — while
+real snow on that chain sits at `corrv` 0.66–0.77. The standard profile cuts the flight into 9.
+Lowering the global `corrv` line was measured and hurts the reference set at every step
+(0.85 → F1 0.857, 0.80 → 0.816, 0.75 → 0.735), and `corrh − corrv` overlaps between the two sets,
+so neither is a single-detector fix. **Settled: a per-session detection profile**
+(`Session.detectionProfile`, schema `v3`, `DetectorSettings::for_profile`). `standard` is the
+tuned detector, untouched; `textured` sets `corrv` 0.78 and `min_gap_s` 1.0, and gives PICT0003
+one clip, 0–372.5 s, which is the pilot's ground truth (`spike/labels-alpes.csv`). The profile is
+recorded in every `DetectionRun`'s parameters through the thresholds it sets. An adaptive
+detector — placing the snow line per file from its own snow — is the intended replacement, and
+needs a few more labelled Alpes files before it can be measured rather than guessed.
+
 Dropouts shorter than `min_gap_s` are absorbed into the surrounding clip. That was 3 s on the
 intuition that flying behind a tree is not a new flight; the labelled set overruled it — the
 reviewer wants those splits, and **0.5 s scores better on every measure**.
@@ -889,6 +903,9 @@ app (§10, "Where things live").
    (only synthetic takes have been through the action-cam path).
 2. Windows: the code paths exist (config folder, drives D–Z, `.exe` tool names) but nothing
    has been built or run there.
-3. The detector's residual errors are unchanged and documented above: 4 false positives, 3 of
+3. An adaptive detector (§4.1, "A second camera chain"): the pilot labels a few more Alpes
+   files into `spike/labels-alpes.csv`, then a per-file snow line is scored against both
+   label sets at once — it must beat `textured` on the Alps without moving the reference F1.
+4. The detector's residual errors are unchanged and documented above: 4 false positives, 3 of
    them in PICT0040, and 2 misses. `cache` + `tune` + `spike/labels.csv` remain the regression
    harness for any change to it — quote the leave-one-out number, never the fitted one.

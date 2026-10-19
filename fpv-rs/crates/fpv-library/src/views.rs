@@ -21,6 +21,8 @@ pub struct SessionView {
     pub flights: Vec<FlightView>,
     /// Whether segmentation has anything to do here.
     pub segmentable: bool,
+    /// `standard` or `textured`: the detector thresholds for its DVR footage.
+    pub detection_profile: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,6 +153,7 @@ pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
         name: session.name.clone(),
         date: session.date.map(|d| d.to_rfc3339()),
         segmentable: files.iter().any(|f| f.media.needs_segmentation()),
+        detection_profile: session.detection_profile.as_str().into(),
         files: files.iter().map(file_view).collect(),
         flights: flights.iter().map(|(flight, clips)| flight_view(flight, clips, &by_id)).collect(),
     }

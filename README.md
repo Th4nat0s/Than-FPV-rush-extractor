@@ -144,6 +144,11 @@ Interference from another pilot's transmitter is rejected clip by clip.
   whose tail and head carry the same feed are stitched into **one flight**.
 - Where the Betaflight OSD is legible, the DISARMED template tags a flight
   **Take-off** or **Pickup**. No OSD just means no tag — never a lost clip.
+- **Detection profile**, per session, next to the Segment button. *Standard* is
+  the tuned default. *Textured terrain* is for footage whose clean picture the
+  standard thresholds read as snow — rock faces, alpine slopes, a softer camera
+  chain — which shows as one flight shattered into many short ones; it also
+  absorbs dropouts under 1 s. Change it, then Re-segment.
 - Re-segmenting is cheap and safe: each file's clips are replaced in one
   transaction, every run records its algorithm version and parameters, and
   action-cam takes are left alone.

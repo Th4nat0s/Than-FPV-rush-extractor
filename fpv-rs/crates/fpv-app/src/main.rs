@@ -196,6 +196,11 @@ async fn segment(handle: AppHandle, app: Shared<'_>, session: String) -> Reply<S
 }
 
 #[tauri::command]
+async fn set_detection_profile(app: Shared<'_>, session: String, profile: String) -> Reply<()> {
+    blocking(&app, move |app| app.library().set_detection_profile(&session, &profile)).await
+}
+
+#[tauri::command]
 async fn rename_session(app: Shared<'_>, id: String, name: String) -> Reply<()> {
     blocking(&app, move |app| app.library().rename_session(&id, &name)).await
 }
@@ -333,7 +338,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, segment, rename_session, delete_session,
+            info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
+            segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame,
             export_flight, export_flights, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])

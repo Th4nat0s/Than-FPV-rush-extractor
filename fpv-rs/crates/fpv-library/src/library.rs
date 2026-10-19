@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
-use fpv_core::{Clip, FigureTag, Flight, FlightTimeline, Session, uuid_string};
+use fpv_core::{Clip, DetectionProfile, FigureTag, Flight, FlightTimeline, Session, uuid_string};
 use fpv_detect::{DetectorSettings, DisarmedTemplate, FileDetector};
 use fpv_export::{ClipExporter, ExportError};
 use fpv_import::{FolderPattern, ImportEvent, LibraryImporter};
@@ -265,12 +265,13 @@ impl Library {
     pub fn segment(&self, session: &str, progress: impl FnMut(SegmentationEvent))
         -> Result<SegmentationReport> {
         let session = self.session(session)?;
-        let detector = FileDetector::new(DetectorSettings::default(),
-                                         FrameReader::new(self.tools.clone()),
+        // The session's own thresholds; the run records them, so a clip set
+        // stays explainable whichever profile produced it.
+        let settings = DetectorSettings::for_profile(session.detection_profile);
+        let detector = FileDetector::new(settings.clone(), FrameReader::new(self.tools.clone()),
                                          DisarmedTemplate::bundled().cloned());
         let ffmpeg = self.ffmpeg();
-        let report = SegmentationService::new(&detector, &ffmpeg, &self.store,
-                                              DetectorSettings::default())
+        let report = SegmentationService::new(&detector, &ffmpeg, &self.store, settings)
             .segment(session.id, &self.posters(), progress)?;
         self.sweep_orphaned_thumbnails()?;
         Ok(report)
@@ -305,6 +306,15 @@ impl Library {
             }
         }
         self.sweep_orphaned_thumbnails()
+    }
+
+    /// Which detector thresholds the session's DVR footage is segmented with.
+    /// Nothing is re-detected here: the next `segment` applies it.
+    pub fn set_detection_profile(&self, id: &str, profile: &str) -> Result<()> {
+        let profile = DetectionProfile::from_raw(profile)
+            .ok_or_else(|| LibraryError::Invalid(format!("no detection profile {profile}")))?;
+        let session = self.session(id)?;
+        Ok(self.store.save_session(&Session { detection_profile: profile, ..session })?)
     }
 
     /// Sets or clears a flight's title; empty falls back to "Flight N".

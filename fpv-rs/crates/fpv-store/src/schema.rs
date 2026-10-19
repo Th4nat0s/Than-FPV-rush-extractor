@@ -34,6 +34,11 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
         CREATE INDEX "figureTag_on_sourceFileId" ON "figureTag"("sourceFileId");
         CREATE TABLE "proxy" ("key" TEXT PRIMARY KEY NOT NULL, "bytes" INTEGER NOT NULL, "createdAt" DATETIME NOT NULL, "lastUsedAt" DATETIME NOT NULL);
     "#),
+    // The detector profile a session's DVR footage is segmented with
+    // (2026-10-19). Every existing session keeps the tuned thresholds.
+    ("v3", r#"
+        ALTER TABLE "session" ADD COLUMN "detectionProfile" TEXT NOT NULL DEFAULT 'standard';
+    "#),
 ];
 
 /// Applies every migration not yet in the ledger, up to and including

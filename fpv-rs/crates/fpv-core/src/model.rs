@@ -24,12 +24,33 @@ pub struct Session {
     pub date: Option<DateTime<Utc>>,
     pub location: Option<String>,
     pub notes: Option<String>,
+    /// Which detector thresholds segment this session's DVR footage.
+    pub detection_profile: DetectionProfile,
 }
 
 impl Session {
     pub fn new(name: impl Into<String>, date: Option<DateTime<Utc>>) -> Self {
-        Self { id: Uuid::new_v4(), name: name.into(), date, location: None, notes: None }
+        Self {
+            id: Uuid::new_v4(), name: name.into(), date, location: None, notes: None,
+            detection_profile: DetectionProfile::Standard,
+        }
     }
+}
+
+/// The detector's thresholds were tuned on one goggle/VTX chain (the Letz Kwad
+/// reference card, CLAUDE.md 10), and another chain can sit elsewhere: on the
+/// pilot's Alps footage a clean picture of a rock face has a vertical
+/// correlation around 0.87, under the standard snow threshold of 0.92, and the
+/// flight shatters into clips. A session picks the profile its footage needs;
+/// `Standard` is the tuned default and never changes behind its back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DetectionProfile {
+    #[default]
+    Standard,
+    /// Footage whose clean picture has a low vertical correlation — fine,
+    /// uniform terrain filling the frame, or a softer camera chain.
+    Textured,
 }
 
 /// One recording as it came off the card, copied verbatim and never modified.
@@ -136,6 +157,7 @@ macro_rules! raw_values {
     };
 }
 raw_values!(ClipKind { Flight => "flight", Unknown => "unknown", Discarded => "discarded" });
+raw_values!(DetectionProfile { Standard => "standard", Textured => "textured" });
 raw_values!(ClipEntry {
     Poweron => "poweron", Midflight => "midflight", FeedChange => "feedChange",
     Continuation => "continuation", Unknown => "unknown",

@@ -8,7 +8,7 @@ mod timeline;
 pub use frame_rate::FrameRate;
 pub use media_info::MediaInfo;
 pub use model::{
-    Clip, ClipEntry, ClipExit, ClipKind, DetectionRun, FigureTag, Flight, Session, SourceFile,
+    Clip, ClipEntry, ClipExit, ClipKind, DetectionProfile, DetectionRun, FigureTag, Flight, Session, SourceFile,
     uuid_string,
 };
 pub use timeline::{FlightTimeline, Part, Position, SourceRange};

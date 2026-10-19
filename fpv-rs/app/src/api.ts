@@ -50,6 +50,8 @@ export interface SessionView {
   files: FileView[];
   flights: FlightView[];
   segmentable: boolean;
+  /** The detector thresholds for its DVR footage. */
+  detectionProfile: "standard" | "textured";
 }
 
 export interface TagView {
@@ -117,6 +119,8 @@ export const api = {
   importCard: (folder: string, name: string, date: string | null, deleteOriginals: boolean) =>
     invoke<ImportSummary>("import_card", { folder, name, date, deleteOriginals }),
   segment: (session: string) => invoke<string>("segment", { session }),
+  setDetectionProfile: (session: string, profile: string) =>
+    invoke<void>("set_detection_profile", { session, profile }),
   renameSession: (id: string, name: string) => invoke<void>("rename_session", { id, name }),
   deleteSession: (id: string) => invoke<void>("delete_session", { id }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),

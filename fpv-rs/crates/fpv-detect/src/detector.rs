@@ -64,6 +64,25 @@ impl Default for DetectorSettings {
 }
 
 impl DetectorSettings {
+    /// The thresholds for a session's profile. `Standard` is `default()`,
+    /// untouched. `Textured` was measured on the pilot's PICT0003 (Alps, one
+    /// continuous six-minute flight by its OSD timer): its clean picture never
+    /// drops under a vertical correlation of ~0.80 while its real snow stays
+    /// under ~0.77, so the snow line moves to 0.78; and the reviewer wants its
+    /// sub-second dropouts absorbed, so the gap grows to 1 s. That gives one
+    /// clip, 0–372.5 s, where the standard profile gives nine. One file is
+    /// thin ground — `spike/labels-alpes.csv` is where more of it goes.
+    pub fn for_profile(profile: fpv_core::DetectionProfile) -> Self {
+        match profile {
+            fpv_core::DetectionProfile::Standard => Self::default(),
+            fpv_core::DetectionProfile::Textured => Self {
+                snow_vertical_correlation: 0.78,
+                minimum_gap: 1.0,
+                ..Self::default()
+            },
+        }
+    }
+
     /// What a `DetectionRun` records, keyed as the Swift pipeline keys them.
     pub fn parameters(&self) -> BTreeMap<String, f64> {
         [
@@ -343,6 +362,25 @@ mod tests {
     fn detect(runs: &[(FrameMetrics, f64)]) -> Vec<DetectedClip> {
         let (times, metrics) = sequence(runs, 1.0);
         ClipDetector::default().detect(&times, &metrics)
+    }
+
+    #[test]
+    fn keeps_the_standard_profile_exactly_the_tuned_default() {
+        assert_eq!(DetectorSettings::for_profile(fpv_core::DetectionProfile::Standard),
+                   DetectorSettings::default());
+    }
+
+    #[test]
+    fn reads_a_textured_rock_face_as_picture_under_the_textured_profile() {
+        // PICT0003 @36.5 s: a clean picture of a rock face, read as snow by the
+        // standard thresholds.
+        let rock = FrameMetrics::new(123.0, 900.0, 0.578, 0.871, 0.0);
+        assert_eq!(ClipDetector::default().classify(&rock), FrameState::NoSignal);
+        let textured = ClipDetector::new(DetectorSettings::for_profile(fpv_core::DetectionProfile::Textured));
+        assert_eq!(textured.classify(&rock), FrameState::Signal);
+        // Its real snow (@94.5 s) is still snow.
+        assert_eq!(textured.classify(&FrameMetrics::new(80.0, 1500.0, 0.282, 0.677, 0.0)),
+                   FrameState::NoSignal);
     }
 
     #[test]

@@ -338,8 +338,11 @@ fn segment(rest: &[String]) -> CliResult {
     let store = open_store(&rest[0])?;
     let session = session_named(&rest[1], &store)?;
     let ffmpeg = FfmpegRunner::default();
-    let detector = FileDetector::default();
-    let service = SegmentationService::new(&detector, &ffmpeg, &store, DetectorSettings::default());
+    // The session's own profile: the tuned thresholds unless it asks otherwise.
+    let settings = DetectorSettings::for_profile(session.detection_profile);
+    let detector = FileDetector::new(settings.clone(), Default::default(),
+                                     fpv_detect::DisarmedTemplate::bundled().cloned());
+    let service = SegmentationService::new(&detector, &ffmpeg, &store, settings);
     let report = service.segment(session.id, &library.join("thumbnails"), |event| match event {
         SegmentationEvent::Detecting(file) => println!("  {}...", source_name(&file)),
         SegmentationEvent::Detected(file, clips) =>

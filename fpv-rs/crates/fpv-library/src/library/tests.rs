@@ -420,3 +420,13 @@ fn keeps_an_action_cam_take_lossless_in_a_re_encoding_batch_and_carries_on_past_
     assert_eq!(names.len(), 2);
     assert!(names[0].ends_with(" - part1.mp4") && names[1].ends_with(" - part2.mp4"), "{names:?}");
 }
+
+#[test]
+fn keeps_a_sessions_detection_profile() {
+    let (fixture, session) = imported();
+    assert_eq!(session.detection_profile, "standard");
+    fixture.library.set_detection_profile(&session.id, "textured").unwrap();
+    assert_eq!(fixture.library.snapshot().unwrap()[0].detection_profile, "textured");
+    assert!(matches!(fixture.library.set_detection_profile(&session.id, "fuzzy"),
+                     Err(LibraryError::Invalid(_))));
+}
