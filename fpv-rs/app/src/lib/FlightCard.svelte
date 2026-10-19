@@ -122,6 +122,8 @@
            onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
            onblur={(e) => rename(e.currentTarget)} />
     <span class="mono muted">{clock(hover === null ? flight.duration : hover * flight.duration)}</span>
+    <button class="plain icon" title="Export the video…" aria-label="Export the video"
+            disabled={exporting || !ffmpegOk} onclick={onexport}><Icon name="export" size={15} /></button>
     <div class="menu">
       <button class="plain" title="More" onclick={() => (menuOpen = !menuOpen)}>⋯</button>
       {#if menuOpen}
@@ -159,6 +161,8 @@
   .heart { position: absolute; top: 4px; right: 4px; color: #fff; font-size: 20px; text-shadow: 0 0 3px #000; }
   .heart.liked { color: #ff3b47; }
   .title { font-weight: 600; flex: 1; min-width: 0; }
+  .icon { display: flex; align-items: center; color: var(--muted); }
+  .icon:hover:not(:disabled) { color: var(--accent); }
   .badges { display: flex; gap: 12px; flex-wrap: wrap; }
   .badges .row { gap: 4px; }
   .menu { position: relative; }
