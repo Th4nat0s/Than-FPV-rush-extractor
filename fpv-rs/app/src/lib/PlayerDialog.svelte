@@ -144,7 +144,7 @@
   .player { position: relative; flex: 1; min-width: 0; background: #000; border-radius: var(--radius); overflow: hidden; display: flex; }
   .overlay { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0; color: #f88; }
   video { width: 100%; height: 100%; object-fit: contain; }
-  .player .empty { color: #aaa; }
+  .player .empty { flex: 1; color: #aaa; }
   .player .empty h2 { color: #eee; }
   aside { width: 280px; display: flex; flex-direction: column; gap: 8px; }
   h3 { margin: 0; font-size: 14px; }
