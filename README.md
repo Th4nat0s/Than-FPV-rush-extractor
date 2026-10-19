@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 153 tests
+cd fpv-rs && cargo test --workspace     # 155 tests
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
 
@@ -181,9 +181,14 @@ as ground truth.
 
 ### 6. Export
 
-⋯ → **Export…** produces a lossless, frame-exact cut — MJPEG is all-intra, so no
-re-encode is needed — concatenated when the flight spans two recordings. Whole
-action-cam takes are stream-copied the same way.
+The export icon on a card (or ⋯ → **Export…**) produces a lossless, frame-exact
+cut — MJPEG is all-intra, so no re-encode is needed — concatenated when the flight
+spans two recordings. Whole action-cam takes are stream-copied the same way.
+
+**Several at once:** **Select** in the session header, tick the cards (or **Select
+all**), then **Export N…** and pick a folder. Each flight lands there as
+"Session — Title", nothing is ever overwritten, and a flight that fails is listed
+at the end while the others carry on.
 
 When a flight's two recordings were captured at rates too far apart to
 concatenate losslessly (it happens: 29.887 fps continuing at 24.486), the app

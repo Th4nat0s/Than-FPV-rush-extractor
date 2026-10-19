@@ -847,6 +847,16 @@ frame-exact boundary editor. Layout:
   extended at launch and on change to the cache, the import folder and every folder holding an
   earlier poster (`Library::image_directories`), since the static scope only covers the home
   folder.
+- **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
+  them all into one chosen folder through `Library::export_flights` — one after the other,
+  progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,
+  `.mp4` for action cams), never overwriting (`free_name` adds " (2)"…, and counts a
+  `- part1` file as taken). The one question a batch cannot ask per flight — two recordings
+  at different rates — is answered once in the dialog: lossless parts (default) or re-encode;
+  re-encoding is MJPEG-only, so an action-cam take always gets its lossless parts. A failing
+  flight is listed in the summary and the batch goes on. Verified in the app on the reference
+  pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
+  the GoPro take as `.mp4`.
 - **Session folders are named from a pattern** (2026-10-19, the pilot's example
   `2026-10-10 Alpes FATSHARK`): `folderPattern` in `config.json`, default
   `{date} {session} {source}`, edited with a live preview in Settings. `{date}` is the session's

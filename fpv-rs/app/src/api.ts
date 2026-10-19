@@ -96,6 +96,12 @@ export interface Progress {
 }
 
 export type ExportMode = "lossless" | "parts" | "reencode";
+
+export interface BulkExport {
+  written: string[];
+  /** [flight, reason] */
+  failed: [string, string][];
+}
 export type ExportOutcome =
   | { kind: "written"; files: string[] }
   | { kind: "mismatch"; reason: string };
@@ -123,6 +129,8 @@ export const api = {
   poster: (clip: string) => invoke<string>("poster", { clip }),
   exportFlight: (flight: string, destination: string, mode: ExportMode) =>
     invoke<ExportOutcome>("export_flight", { flight, destination, mode }),
+  exportFlights: (flights: string[], folder: string, onMismatch: "parts" | "reencode") =>
+    invoke<BulkExport>("export_flights", { flights, folder, onMismatch }),
   exportLabels: (session: string, destination: string) =>
     invoke<number>("export_labels", { session, destination }),
   proxy: (flight: string) => invoke<string>("proxy", { flight }),
@@ -133,7 +141,7 @@ export const api = {
   tagLabels: () => invoke<string[]>("tag_labels"),
 };
 
-export function onProgress(event: "import-progress" | "segment-progress",
+export function onProgress(event: "import-progress" | "segment-progress" | "export-progress",
                            handler: (progress: Progress) => void): Promise<UnlistenFn> {
   return listen<Progress>(event, (message) => handler(message.payload));
 }

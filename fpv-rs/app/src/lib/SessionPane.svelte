@@ -4,6 +4,8 @@
   import { api, clock, day, flightName, message, onProgress, type FlightView,
            type SessionView } from "../api";
   import FlightCard from "./FlightCard.svelte";
+  import BulkExportDialog from "./BulkExportDialog.svelte";
+  import Icon from "./Icon.svelte";
   import PlayerDialog from "./PlayerDialog.svelte";
   import EditorDialog from "./EditorDialog.svelte";
   import Modal from "./Modal.svelte";
@@ -16,6 +18,10 @@
 
   let tab = $state<"flights" | "files">("flights");
   let likedOnly = $state(false);
+  // Selection mode, for exporting several flights at once.
+  let selecting = $state(false);
+  let picked = $state<string[]>([]);
+  let bulk = $state<FlightView[] | null>(null);
   let segmenting = $state(false);
   let status = $state<string | null>(null);
   let segmentDone = $state(0);
@@ -27,6 +33,16 @@
   let conflict = $state<{ flight: FlightView; destination: string; reason: string } | null>(null);
 
   let visible = $derived(likedOnly ? session.flights.filter((f) => f.liked) : session.flights);
+  let pickedFlights = $derived(session.flights.filter((f) => picked.includes(f.id)));
+
+  function toggle(id: string) {
+    picked = picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
+  }
+
+  function stopSelecting() {
+    selecting = false;
+    picked = [];
+  }
 
   onMount(() => {
     const unlisten = onProgress("segment-progress", (progress) => {
@@ -107,15 +123,29 @@
       <button class:active={tab === "flights"} onclick={() => (tab = "flights")}>Flights</button>
       <button class:active={tab === "files"} onclick={() => (tab = "files")}>Files</button>
     </div>
-    <button class:active={likedOnly} title="Show only liked flights" disabled={tab !== "flights"}
-            onclick={() => (likedOnly = !likedOnly)}>{likedOnly ? "♥" : "♡"} Liked</button>
-    {#if session.segmentable}
-      <button onclick={segment} disabled={segmenting || !ffmpegOk}
-              title="Find the flights in the DVR recordings. Action-cam takes are left as they are.">
-        ✂ {session.flights.some((f) => !f.actionCam) ? "Re-segment" : "Segment"}
-      </button>
-      <button onclick={exportLabels} disabled={!session.flights.length}
-              title="Write the clip boundaries as ground truth for the detector's tuning harness">Export Labels…</button>
+    {#if tab === "flights" && session.flights.length}
+      {#if selecting}
+        <button onclick={() => (picked = visible.map((f) => f.id))}>Select all</button>
+        <button onclick={() => (picked = [])} disabled={!picked.length}>None</button>
+        <button class="primary" onclick={() => (bulk = pickedFlights)}
+                disabled={!picked.length || exporting || !ffmpegOk}>
+          <Icon name="export" /> Export {picked.length}…</button>
+        <button onclick={stopSelecting}>Cancel</button>
+      {:else}
+        <button onclick={() => (selecting = true)} title="Pick several flights to export together">Select</button>
+      {/if}
+    {/if}
+    {#if !selecting}
+      <button class:active={likedOnly} title="Show only liked flights" disabled={tab !== "flights"}
+              onclick={() => (likedOnly = !likedOnly)}>{likedOnly ? "♥" : "♡"} Liked</button>
+      {#if session.segmentable}
+        <button onclick={segment} disabled={segmenting || !ffmpegOk}
+                title="Find the flights in the DVR recordings. Action-cam takes are left as they are.">
+          ✂ {session.flights.some((f) => !f.actionCam) ? "Re-segment" : "Segment"}
+        </button>
+        <button onclick={exportLabels} disabled={!session.flights.length}
+                title="Write the clip boundaries as ground truth for the detector's tuning harness">Export Labels…</button>
+      {/if}
     {/if}
   </header>
 
@@ -151,7 +181,8 @@
     {:else}
       <div class="grid">
         {#each visible as flight (flight.id)}
-          <FlightCard {flight} {exporting} {ffmpegOk} onchange={onchange}
+          <FlightCard {flight} {exporting} {ffmpegOk} onchange={onchange} {selecting}
+                      selected={picked.includes(flight.id)} ontoggle={() => toggle(flight.id)}
                       onplay={() => (playing = flight)} onedit={() => (editing = flight)}
                       onexport={() => exportFlight(flight)} />
         {/each}
@@ -171,6 +202,9 @@
   {/if}
 </section>
 
+{#if bulk}
+  <BulkExportDialog flights={bulk} onclose={() => { bulk = null; stopSelecting(); }} />
+{/if}
 {#if playing}
   <PlayerDialog flight={playing} onclose={() => (playing = null)} />
 {/if}

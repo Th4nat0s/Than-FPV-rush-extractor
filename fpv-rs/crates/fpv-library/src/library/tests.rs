@@ -355,3 +355,68 @@ fn names_folders_from_the_configured_pattern_and_saves_a_new_one() {
     assert_eq!(Library::folder_preview("{date} {session} {source}", "Alpes").unwrap(),
                "2026-10-10 Alpes FATSHARK");
 }
+
+/// A take in two GoPro chapters recorded at different rates — the batch's
+/// mismatch case, which a lossless one-file export refuses.
+fn add_mismatched_take(card: &Path) {
+    for (name, rate, taken) in [("GH010050.MP4", 30, "2026-08-23T11:00:00Z"),
+                                ("GH020050.MP4", 25, "2026-08-23T11:00:00Z")] {
+        let status = Command::new("ffmpeg")
+            .args(["-v", "error", "-f", "lavfi", "-i",
+                   &format!("testsrc2=size=320x240:rate={rate}:duration=1"),
+                   "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   "-metadata", &format!("creation_time={taken}"), "-y"])
+            .arg(card.join("DCIM/100GOPRO").join(name))
+            .status().unwrap();
+        assert!(status.success());
+    }
+}
+
+#[test]
+fn exports_a_batch_of_flights_into_one_folder_without_overwriting() {
+    let fixture = gopro_card();
+    add_mismatched_take(&fixture.card);
+    fixture.library.import(&fixture.card, "Alpes", Some("2026-08-23"), false, |_| {}).unwrap();
+    let session = fixture.library.snapshot().unwrap().remove(0);
+    let ids: Vec<String> = session.flights.iter().map(|f| f.id.clone()).collect();
+    assert_eq!(ids.len(), 3);
+    fixture.library.set_flight_title(&ids[1], "Bando").unwrap();
+
+    let out = fixture.library.root.parent().unwrap().join("export");
+    let mut seen = vec![];
+    let batch = fixture.library.export_flights(&ids, &out, ExportMode::Parts,
+                                               |done, total, name| seen.push((done, total, name.to_owned())))
+        .unwrap();
+    assert!(batch.failed.is_empty(), "{:?}", batch.failed);
+    let names = |b: &BulkExport| b.written.iter()
+        .map(|p| file_name(&p.to_string_lossy())).collect::<Vec<_>>();
+    // Titled or not, and the mismatched take split into its lossless parts.
+    assert_eq!(names(&batch), ["Alpes — Flight 1.mp4", "Alpes — Bando.mp4",
+                               "Alpes — Flight 3 - part1.mp4", "Alpes — Flight 3 - part2.mp4"]);
+    assert_eq!(seen.first().map(|s| (s.0, s.1)), Some((0, 3)));
+    assert_eq!(seen.last().map(|s| (s.0, s.1)), Some((3, 3)));
+
+    // The same batch again: nothing is overwritten.
+    let again = fixture.library.export_flights(&ids[..1], &out, ExportMode::Parts, |_, _, _| {}).unwrap();
+    assert_eq!(names(&again), ["Alpes — Flight 1 (2).mp4"]);
+}
+
+#[test]
+fn keeps_an_action_cam_take_lossless_in_a_re_encoding_batch_and_carries_on_past_failures() {
+    let fixture = gopro_card();
+    add_mismatched_take(&fixture.card);
+    fixture.library.import(&fixture.card, "Alpes", None, false, |_| {}).unwrap();
+    let session = fixture.library.snapshot().unwrap().remove(0);
+    let mismatched = session.flights.iter()
+        .find(|f| f.clips.len() == 2 && f.clips[0].fps != f.clips[1].fps)
+        .unwrap().id.clone();
+    let out = fixture.library.root.parent().unwrap().join("export");
+    let batch = fixture.library.export_flights(
+        &["not-a-flight".to_owned(), mismatched], &out, ExportMode::Reencode, |_, _, _| {}).unwrap();
+    // The unknown flight is reported; the batch goes on.
+    assert_eq!(batch.failed, [("not-a-flight".to_owned(), "not in the library".to_owned())]);
+    // Re-encoding is for MJPEG: the GoPro take gets its two lossless parts.
+    let names: Vec<_> = batch.written.iter().map(|p| file_name(&p.to_string_lossy())).collect();
+    assert_eq!(names.len(), 2);
+    assert!(names[0].ends_with(" - part1.mp4") && names[1].ends_with(" - part2.mp4"), "{names:?}");
+}

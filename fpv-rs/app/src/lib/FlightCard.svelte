@@ -2,10 +2,15 @@
   import { api, clock, media, message, type FlightView } from "../api";
   import Icon, { type IconName } from "./Icon.svelte";
 
-  let { flight, exporting, ffmpegOk, onplay, onedit, onexport, onchange }: {
+  let { flight, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
+        onplay, onedit, onexport, onchange }: {
     flight: FlightView;
     exporting: boolean;
     ffmpegOk: boolean;
+    /** In selection mode a click ticks the card instead of playing it. */
+    selecting?: boolean;
+    selected?: boolean;
+    ontoggle?: () => void;
     onplay: () => void;
     onedit: () => void;
     onexport: () => void;
@@ -103,9 +108,9 @@
   }
 </script>
 
-<article>
-  <div class="poster" role="button" tabindex="0" onclick={onplay}
-       onkeydown={(e) => e.key === "Enter" && onplay()}
+<article class:selected>
+  <div class="poster" role="button" tabindex="0" onclick={() => (selecting ? ontoggle?.() : onplay())}
+       onkeydown={(e) => e.key === "Enter" && (selecting ? ontoggle?.() : onplay())}
        onmousemove={move} onmouseleave={() => (hover = null)}>
     {#if scrub ?? poster}
       <img src={scrub ?? poster} alt="" draggable="false" />
@@ -113,6 +118,9 @@
       <div class="placeholder"><Icon name="film" size={36} /></div>
     {/if}
     {#if hover !== null}<div class="playhead" style:left="{hover * 100}%"></div>{/if}
+    {#if selecting}
+      <span class="tick" class:on={selected} aria-hidden="true">{selected ? "✓" : ""}</span>
+    {/if}
     <button class="plain heart" class:liked={flight.liked} title={flight.liked ? "Unlike" : "Like"}
             onclick={(e) => { e.stopPropagation(); like(); }}>{flight.liked ? "♥" : "♡"}</button>
   </div>
@@ -158,6 +166,25 @@
   .poster img { width: 100%; height: 100%; object-fit: cover; display: block; user-select: none; }
   .placeholder { height: 100%; display: flex; align-items: center; justify-content: center; color: #888; }
   .playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 2px #000; pointer-events: none; }
+  .tick {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 3px #000;
+  }
+  .tick.on { background: var(--accent); border-color: var(--accent); }
+  article.selected .poster { outline: 3px solid var(--accent); outline-offset: 2px; }
   .heart { position: absolute; top: 4px; right: 4px; color: #fff; font-size: 20px; text-shadow: 0 0 3px #000; }
   .heart.liked { color: #ff3b47; }
   .title { font-weight: 600; flex: 1; min-width: 0; }

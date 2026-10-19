@@ -49,6 +49,15 @@ pub enum ExportMode {
     Reencode,
 }
 
+/// What a batch export wrote, and what it could not.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkExport {
+    pub written: Vec<PathBuf>,
+    /// (flight, reason)
+    pub failed: Vec<(String, String)>,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSummary {
@@ -418,6 +427,57 @@ impl Library {
         })
     }
 
+    /// Exports several flights into `folder`, one after the other, each under
+    /// "<session> — <title>" (`.avi` for DVR footage, `.mp4` for action cams),
+    /// never overwriting: a name already taken gets " (2)", " (3)"…
+    ///
+    /// A flight whose recordings disagree on their rate cannot be asked about
+    /// one by one in a batch, so `on_mismatch` (`Parts` or `Reencode`) answers
+    /// for all of them up front — `Reencode` for DVR footage only; an action
+    /// cam's take always gets its lossless parts. A flight that fails is reported and the batch
+    /// goes on; `progress` gets (flights done, total, the flight starting).
+    pub fn export_flights(&self, flights: &[String], folder: &Path, on_mismatch: ExportMode,
+                          mut progress: impl FnMut(usize, usize, &str)) -> Result<BulkExport> {
+        std::fs::create_dir_all(folder)?;
+        let sessions = self.store.sessions()?;
+        let mut outcome = BulkExport::default();
+        for (index, id) in flights.iter().enumerate() {
+            let label = match self.flight(id) {
+                Ok((flight, _, timeline)) => {
+                    let session = sessions.iter().find(|s| s.id == flight.session_id)
+                        .map(|s| s.name.as_str()).unwrap_or("Session");
+                    let title = flight.title.clone()
+                        .unwrap_or_else(|| format!("Flight {}", flight.order_in_session));
+                    let dvr = timeline.parts.iter().any(|(_, f)| f.media.needs_segmentation());
+                    let intra = timeline.parts.iter().all(|(_, f)| f.media.is_all_intra());
+                    Some((format!("{session} — {title}"), if dvr { "avi" } else { "mp4" }, intra))
+                }
+                Err(_) => None,
+            };
+            let Some((name, extension, intra)) = label else {
+                outcome.failed.push((id.clone(), "not in the library".into()));
+                continue;
+            };
+            progress(index, flights.len(), &name);
+            let destination = free_name(folder, &fpv_import::folder_name(&name), extension);
+            let written = match self.export(id, &destination, ExportMode::Lossless) {
+                // Re-encoding resamples MJPEG; an action cam's long-GOP take
+                // cannot go that way, so it gets its lossless parts instead.
+                Err(LibraryError::Export(ExportError::MismatchedFrameRates(..))) => {
+                    let mode = if intra { on_mismatch } else { ExportMode::Parts };
+                    self.export(id, &destination, mode)
+                }
+                other => other,
+            };
+            match written {
+                Ok(files) => outcome.written.extend(files),
+                Err(error) => outcome.failed.push((name, error.to_string())),
+            }
+        }
+        progress(flights.len(), flights.len(), "");
+        Ok(outcome)
+    }
+
     /// The session's clips as ground-truth rows for the detector's tuning
     /// harness — corrections feed back as labelled data (CLAUDE.md 4.6). Real
     /// seconds: `fpv_spike` reads plain numbers as seconds. DVR files only;
@@ -604,6 +664,20 @@ impl Library {
         self.store.update_clip(&Clip { thumbnail_path: Some(path.to_string_lossy().into_owned()), ..clip })?;
         Ok(path)
     }
+}
+
+/// `<folder>/<stem>.<extension>`, or with " (2)", " (3)"… until it names
+/// nothing on disk — a part file (" - part1") counts as taken too.
+fn free_name(folder: &Path, stem: &str, extension: &str) -> PathBuf {
+    let taken = |stem: &str| folder.join(format!("{stem}.{extension}")).exists()
+        || folder.join(format!("{stem} - part1.{extension}")).exists();
+    let mut candidate = stem.to_owned();
+    let mut n = 2;
+    while taken(&candidate) {
+        candidate = format!("{stem} ({n})");
+        n += 1;
+    }
+    folder.join(format!("{candidate}.{extension}"))
 }
 
 fn parse(id: &str) -> Result<Uuid> {

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use fpv_import::ImportEvent;
-use fpv_library::{Card, Config, ExportMode, ImportSummary, Library, LibraryError, SessionView,
+use fpv_library::{BulkExport, Card, Config, ExportMode, ImportSummary, Library, LibraryError, SessionView,
                   TagView, detect_cards, ffmpeg_available, tool_directory};
 use fpv_pipeline::SegmentationEvent;
 use serde::Serialize;
@@ -256,6 +256,18 @@ async fn export_flight(app: Shared<'_>, flight: String, destination: PathBuf, mo
     }).await
 }
 
+/// Several flights into one folder, one after the other; progress as events.
+#[tauri::command]
+async fn export_flights(handle: AppHandle, app: Shared<'_>, flights: Vec<String>, folder: PathBuf,
+                        on_mismatch: ExportMode) -> Reply<BulkExport> {
+    blocking(&app, move |app| {
+        app.library().export_flights(&flights, &folder, on_mismatch, |done, total, name| {
+            let line = if name.is_empty() { "Done".into() } else { format!("Exporting {name}…") };
+            let _ = handle.emit("export-progress", Progress { line, done, total });
+        })
+    }).await
+}
+
 #[tauri::command]
 async fn export_labels(app: Shared<'_>, session: String, destination: PathBuf) -> Reply<usize> {
     blocking(&app, move |app| app.library().export_labels(&session, &destination)).await
@@ -323,7 +335,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, segment, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame,
-            export_flight, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
+            export_flight, export_flights, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])
         .run(tauri::generate_context!())
         .expect("the FPV Rush window could not start");
