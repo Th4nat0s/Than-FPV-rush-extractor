@@ -1,0 +1,12 @@
+[package]
+name = "fpv-core"
+description = "The library's model: sessions, recordings, flights, clips, and the flight clock."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+uuid.workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "fpv-library"
+description = "The application layer: everything the GUI does, without the GUI — snapshots for display, imports, segmentation, export, proxies, tags, card detection."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+dirs = "7.0.0"
+fpv-core.workspace = true
+fpv-detect.workspace = true
+fpv-export.workspace = true
+fpv-import.workspace = true
+fpv-media.workspace = true
+fpv-pipeline.workspace = true
+fpv-proxy.workspace = true
+fpv-store.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+trash = "5.2.9"
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

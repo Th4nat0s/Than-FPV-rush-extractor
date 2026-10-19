@@ -1,0 +1,19 @@
+[package]
+name = "fpv-proxy"
+description = "Playback proxies: one H.264/AAC MP4 per flight, kept under a byte budget."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+fpv-core.workspace = true
+fpv-media.workspace = true
+fpv-store.workspace = true
+filetime = "0.2"
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

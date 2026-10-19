@@ -1,0 +1,21 @@
+[package]
+name = "fpv-import"
+description = "Card in, library out: discovery, ordering, session grouping, copying, and whole-file flights for action cams."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+filetime = "0.2.29"
+fpv-core.workspace = true
+fpv-media.workspace = true
+fpv-store.workspace = true
+log.workspace = true
+sha2 = "0.11.1"
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

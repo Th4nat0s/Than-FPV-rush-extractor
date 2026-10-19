@@ -1,0 +1,17 @@
+[package]
+name = "fpv-pipeline"
+description = "Turns a session's DVR recordings into flights: detection, frame conversion, stitching, posters, storage."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fpv-core.workspace = true
+fpv-detect.workspace = true
+fpv-media.workspace = true
+fpv-store.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

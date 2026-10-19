@@ -1,0 +1,41 @@
+# FPV Rush: the library crates, the fpvlib CLI and the Tauri app. Ported from
+# a Swift package (removed 2026-10-18) once every crate reproduced it on real
+# footage; the detector's reference is now spike/fpv_spike.py and the numbers
+# recorded in CLAUDE.md.
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+fpv-core = { path = "crates/fpv-core" }
+fpv-media = { path = "crates/fpv-media" }
+fpv-detect = { path = "crates/fpv-detect" }
+fpv-store = { path = "crates/fpv-store" }
+fpv-import = { path = "crates/fpv-import" }
+fpv-pipeline = { path = "crates/fpv-pipeline" }
+fpv-export = { path = "crates/fpv-export" }
+fpv-proxy = { path = "crates/fpv-proxy" }
+fpv-library = { path = "crates/fpv-library" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+env_logger = "0.11"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# The detector is pure arithmetic over every sampled frame and measures ~15x
+# slower unoptimised (CLAUDE.md 10): a debug build of the app was once
+# mistaken for a hang. Optimise it in every profile.
+[profile.dev.package.fpv-detect]
+opt-level = 3
+
+[profile.test.package.fpv-detect]
+opt-level = 3

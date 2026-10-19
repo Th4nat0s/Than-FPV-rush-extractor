@@ -1,0 +1,32 @@
+{
+  "name": "FPV Rush",
+  // A plain image build, not Docker Compose: Compose v5 builds through
+  // `buildx bake`, which refuses the Dockerfile the Dev Containers extension
+  // generates outside the build context ("additional privileges requested:
+  // --allow=fs.read=..."). Nothing here needs a second service anyway.
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code" // Optional: if you also use the extension
+      ]
+    }
+  },
+  "mounts": [
+    "source=claude-history,target=/home/vscode/.claude,type=volume",
+    "source=vscode-extensions,target=/home/vscode/.vscode-server/extensions,type=volume"
+    // Real DVR footage for the detector. Uncomment and point at the folder
+    // holding the PICT####.AVI files (rebuild the container after).
+    // Alternative without a rebuild: copy the files into ./media (gitignored).
+    // , "source=/path/to/footage,target=/workspace/media,type=bind,readonly"
+  ],
+  "workspaceMount": "source=${localWorkspaceFolder}/,target=/workspace,type=bind,consistency=cached",
+  "workspaceFolder": "/workspace",
+  "onCreateCommand": "sudo chown -R vscode /home/vscode/.vscode-server/ && sudo chown -R vscode /home/vscode/.claude/",
+  "postCreateCommand": "claude update",
+  "runArgs": [
+    "--ipc=host"
+  ]
+}

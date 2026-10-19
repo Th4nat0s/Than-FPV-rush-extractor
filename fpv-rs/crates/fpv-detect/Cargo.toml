@@ -1,0 +1,12 @@
+[package]
+name = "fpv-detect"
+description = "The segmentation detector: per-frame signal metrics, the state machine, DISARMED tagging."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fpv-core.workspace = true
+fpv-media.workspace = true
+thiserror.workspace = true

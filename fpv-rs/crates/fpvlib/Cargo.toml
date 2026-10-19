@@ -1,0 +1,21 @@
+[package]
+name = "fpvlib"
+description = "Headless CLI: runs the library against a real card where there is no GUI."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+env_logger.workspace = true
+fpv-core.workspace = true
+fpv-detect.workspace = true
+fpv-export.workspace = true
+fpv-import.workspace = true
+fpv-pipeline.workspace = true
+fpv-proxy.workspace = true
+fpv-media.workspace = true
+fpv-store.workspace = true
+log.workspace = true
+uuid.workspace = true

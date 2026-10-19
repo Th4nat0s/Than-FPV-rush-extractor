@@ -1,0 +1,16 @@
+[package]
+name = "fpv-export"
+description = "Cuts flights out of the recordings: lossless stream copies, or a chosen re-encode."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fpv-core.workspace = true
+fpv-media.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+uuid.workspace = true
