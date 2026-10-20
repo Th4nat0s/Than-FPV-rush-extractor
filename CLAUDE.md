@@ -420,6 +420,12 @@ Tauri app's (§10).
     one concern goes in its crate (the detector, the importer, the store…). The front end's own
     logic — stores, helpers in `.ts` / `.svelte.ts` modules — is tested with **Vitest**
     (`*.test.ts` beside the module; Tauri's `invoke`/`listen` mocked, timers faked).
+  - **Every crate, the adapters included.** Each crate tests its own rules; the ffmpeg
+    boundary, which everything above reaches through stubs, is also run against the real
+    binaries (`fpv-media/tests/real_ffmpeg.rs`: pipes drained under load, with a timer so a
+    deadlock fails instead of hanging `make check`; failures carrying the full command); the
+    `fpvlib` CLI is driven end to end as a user types it (`fpvlib/tests/cli.rs`: the built
+    binary on a generated card — import, re-import, segment, tag, export, exit codes).
   - **Keep logic out of what cannot be tested.** The `#[tauri::command]`s and the Svelte
     components stay thin; anything with a rule in it moves to `fpv-library` or a `.ts` module
     first (the import/segmentation progress counting moved out of `main.rs` for this,

@@ -1328,6 +1328,7 @@ dependencies = [
  "fpv-proxy",
  "fpv-store",
  "log",
+ "tempfile",
  "uuid",
 ]
 
