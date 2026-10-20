@@ -12,10 +12,9 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_import::ImportEvent;
-use fpv_library::{BulkExport, Card, Config, ExportMode, ImportSummary, Library, LibraryError, SessionView,
-                  TagView, Thumbnail, detect_cards, ffmpeg_available, tool_directory};
-use fpv_pipeline::SegmentationEvent;
+use fpv_library::{BulkExport, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
+                  SegmentProgress, SessionView, Step, TagView, Thumbnail, detect_cards, ffmpeg_available,
+                  tool_directory};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -141,30 +140,9 @@ struct Progress {
 async fn import_card(handle: AppHandle, app: Shared<'_>, task: String, folder: PathBuf, name: String,
                      date: Option<String>, delete_originals: bool) -> Reply<ImportSummary> {
     blocking(&app, move |app| {
-        let (mut done, mut total) = (0, 0);
+        let mut progress = ImportProgress::default();
         app.library().import(&folder, &name, date.as_deref(), delete_originals, |event| {
-            let line = match event {
-                ImportEvent::Discovered { count, sessions } => {
-                    total = count;
-                    format!("{count} recording(s) → {sessions} session(s)")
-                }
-                ImportEvent::Copying(path) => format!("Copying {}…", name_of(&path)),
-                ImportEvent::Imported(file) => {
-                    done += 1;
-                    format!("Imported {} — {}, {:.1} s", name_of(&PathBuf::from(&file.imported_path)),
-                            file.media.frame_rate, file.media.duration)
-                }
-                ImportEvent::Skipped(path) => {
-                    done += 1;
-                    format!("Skipped {} (already in library)", name_of(&path))
-                }
-                ImportEvent::Failed(path, reason) => {
-                    done += 1;
-                    format!("FAILED {}: {reason}", name_of(&path))
-                }
-                ImportEvent::Flight { order, parts, .. } =>
-                    format!("Flight {order}: action-cam take, {parts} file(s)"),
-            };
+            let Step { line, done, total } = progress.step(event);
             let _ = handle.emit("import-progress", Progress { task: task.clone(), line, done, total });
         })
     }).await
@@ -175,24 +153,9 @@ async fn segment(handle: AppHandle, app: Shared<'_>, task: String, session: Stri
     blocking(&app, move |app| {
         let total = app.library().snapshot()?.iter().find(|s| s.id == session)
             .map_or(0, |s| s.files.iter().filter(|f| !f.action_cam).count());
-        let mut done = 0;
+        let mut progress = SegmentProgress::new(total);
         let report = app.library().segment(&session, |event| {
-            let line = match event {
-                // A file counts once it is through, so the bar never shows
-                // full while the last one is still being read.
-                SegmentationEvent::Detecting(file) => format!(
-                    "Detecting {} ({}/{total})…", name_of(&PathBuf::from(&file.imported_path)), done + 1),
-                SegmentationEvent::Detected(file, clips) => {
-                    done += 1;
-                    format!("{}: {clips} clip(s) ({done}/{total})", name_of(&PathBuf::from(&file.imported_path)))
-                }
-                SegmentationEvent::Stitched(a, b) => format!(
-                    "One flight spans {} and {}", name_of(&PathBuf::from(a)), name_of(&PathBuf::from(b))),
-                SegmentationEvent::Failed(file, reason) => {
-                    done += 1;
-                    format!("FAILED {}: {reason}", name_of(&PathBuf::from(&file.imported_path)))
-                }
-            };
+            let Step { line, done, total } = progress.step(event);
             let _ = handle.emit("segment-progress", Progress { task: task.clone(), line, done, total });
         })?;
         let failed = if report.failed.is_empty() { String::new() }
@@ -321,10 +284,6 @@ async fn delete_tag(app: Shared<'_>, id: String) -> Reply<()> {
 #[tauri::command]
 async fn tag_labels(app: Shared<'_>) -> Reply<Vec<String>> {
     blocking(&app, |app| app.library().tag_labels()).await
-}
-
-fn name_of(path: &std::path::Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 fn main() {

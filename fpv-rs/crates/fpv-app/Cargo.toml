@@ -13,9 +13,7 @@ path = "src/main.rs"
 [dependencies]
 env_logger.workspace = true
 fpv-export.workspace = true
-fpv-import.workspace = true
 fpv-library.workspace = true
-fpv-pipeline.workspace = true
 log.workspace = true
 serde.workspace = true
 uuid.workspace = true
