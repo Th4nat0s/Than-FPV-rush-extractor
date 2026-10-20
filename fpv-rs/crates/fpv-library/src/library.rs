@@ -49,6 +49,24 @@ pub enum ExportMode {
     Reencode,
 }
 
+/// One hover-strip frame still to make.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StripFrame {
+    pub flight: String,
+    pub index: usize,
+    /// "Session — Flight 3", for the progress line.
+    pub label: String,
+}
+
+/// What `prepare_strips` did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StripsPrepared {
+    pub made: usize,
+    /// (flight, reason), once per flight.
+    pub failed: Vec<(String, String)>,
+}
+
 /// What a batch export wrote, and what it could not.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -354,8 +372,7 @@ impl Library {
     /// *ever* — not per hover.
     pub fn filmstrip_frame(&self, flight: &str, index: usize, count: usize) -> Result<Thumbnail> {
         let (flight, clips, timeline) = self.flight(flight)?;
-        let cached = self.cache_directory.join("strips")
-            .join(format!("{}-{index}.jpg", Flight::cache_key(flight.id, &clips)));
+        let cached = self.strip_path(&flight, &clips, index);
         if cached.exists() {
             return Ok(Thumbnail::cached(cached));
         }
@@ -366,6 +383,60 @@ impl Library {
         let ffmpeg = self.ffmpeg();
         Ok(Thumbnail::made(ThumbnailGenerator::new(&ffmpeg)
             .generate(Path::new(&position.file.imported_path), seconds, 320, &cached)?))
+    }
+
+    fn strip_path(&self, flight: &Flight, clips: &[Clip], index: usize) -> PathBuf {
+        self.cache_directory.join("strips").join(format!("{}-{index}.jpg", Flight::cache_key(flight.id, clips)))
+    }
+
+    /// The hover-strip frames not on disk yet, across the whole library, the
+    /// `first` session's flights first — the one on screen fills before the
+    /// rest. Cheap: a file check per frame, no ffmpeg.
+    pub fn missing_strip_frames(&self, count: usize, first: Option<&str>) -> Result<Vec<StripFrame>> {
+        let mut sessions = self.store.sessions()?;
+        if let Some(first) = first.map(parse).transpose()? {
+            sessions.sort_by_key(|s| s.id != first);
+        }
+        let mut missing = vec![];
+        for session in sessions {
+            for (flight, clips) in self.store.flights(session.id)? {
+                let label = format!("{} — {}", session.name,
+                                    flight.title.clone().unwrap_or_else(|| format!("Flight {}", flight.order_in_session)));
+                for index in 0..count {
+                    if !self.strip_path(&flight, &clips, index).exists() {
+                        missing.push(StripFrame { flight: uuid_string(flight.id), index, label: label.clone() });
+                    }
+                }
+            }
+        }
+        Ok(missing)
+    }
+
+    /// Makes every missing hover-strip frame ahead of the pointer, so a card
+    /// scrubs at once even on a long 4K take. A flight that disappears
+    /// meanwhile (re-segmented, deleted) is passed over; one whose recording
+    /// cannot be read is reported once and its other frames skipped.
+    pub fn prepare_strips(&self, count: usize, first: Option<&str>,
+                          mut progress: impl FnMut(usize, usize, &str)) -> Result<StripsPrepared> {
+        let missing = self.missing_strip_frames(count, first)?;
+        let mut prepared = StripsPrepared::default();
+        let mut broken: HashSet<String> = HashSet::new();
+        for (done, frame) in missing.iter().enumerate() {
+            progress(done, missing.len(), &frame.label);
+            if broken.contains(&frame.flight) {
+                continue;
+            }
+            match self.filmstrip_frame(&frame.flight, frame.index, count) {
+                Ok(thumbnail) => prepared.made += usize::from(thumbnail.made),
+                Err(LibraryError::NotFound(_)) => { broken.insert(frame.flight.clone()); }
+                Err(error) => {
+                    broken.insert(frame.flight.clone());
+                    prepared.failed.push((frame.label.clone(), error.to_string()));
+                }
+            }
+        }
+        progress(missing.len(), missing.len(), "");
+        Ok(prepared)
     }
 
     /// Where a recording was copied to, for showing it in the file manager.

@@ -9,6 +9,7 @@
   import EditorDialog from "./EditorDialog.svelte";
   import Modal from "./Modal.svelte";
   import { runningTask, track } from "./tasks.svelte";
+  import { prepareStrips } from "./strips";
 
   let { session, ffmpegOk, onchange }: {
     session: SessionView;
@@ -228,7 +229,8 @@
   <PlayerDialog flight={playing} onclose={() => (playing = null)} />
 {/if}
 {#if editing}
-  <EditorDialog flight={editing} onclose={() => { editing = null; onchange(); }} />
+  <!-- A boundary edit re-keys the flight's strip: it is remade straight away. -->
+  <EditorDialog flight={editing} onclose={() => { editing = null; onchange(); prepareStrips(session.id); }} />
 {/if}
 {#if conflict}
   {@const pending = conflict}

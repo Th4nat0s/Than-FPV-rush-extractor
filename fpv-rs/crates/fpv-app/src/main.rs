@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use fpv_library::{BulkExport, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
-                  SegmentProgress, SessionView, Step, TagView, Thumbnail, detect_cards, ffmpeg_available,
+                  SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -199,6 +199,26 @@ async fn filmstrip_frame(app: Shared<'_>, flight: String, index: usize, count: u
     blocking(&app, move |app| app.library().filmstrip_frame(&flight, index, count)).await
 }
 
+/// How many hover-strip frames the library is missing: a file check each,
+/// so the UI starts a task only when there is work.
+#[tauri::command]
+async fn missing_strips(app: Shared<'_>, count: usize) -> Reply<usize> {
+    blocking(&app, move |app| Ok(app.library().missing_strip_frames(count, None)?.len())).await
+}
+
+/// Makes the missing hover strips ahead of the pointer, `first` session's
+/// first; progress as events.
+#[tauri::command]
+async fn prepare_strips(handle: AppHandle, app: Shared<'_>, task: String, count: usize,
+                        first: Option<String>) -> Reply<StripsPrepared> {
+    blocking(&app, move |app| {
+        app.library().prepare_strips(count, first.as_deref(), |done, total, label| {
+            let line = if label.is_empty() { "Done".into() } else { label.to_owned() };
+            let _ = handle.emit("strips-progress", Progress { task: task.clone(), line, done, total });
+        })
+    }).await
+}
+
 /// A clip's poster, remade when the cache no longer has it.
 #[tauri::command]
 async fn poster(app: Shared<'_>, clip: String) -> Reply<Thumbnail> {
@@ -318,6 +338,7 @@ fn main() {
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
             segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
+            missing_strips, prepare_strips,
             export_flight, export_flights, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])
         .run(tauri::generate_context!())

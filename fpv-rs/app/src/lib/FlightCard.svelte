@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, clock, flightName, media, message, type FlightView } from "../api";
   import { batch } from "./tasks.svelte";
+  import { STRIP } from "./strips";
   import Icon, { type IconName } from "./Icon.svelte";
 
   let { flight, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
@@ -22,7 +23,6 @@
   // the pointer. The frames come from a pre-extracted strip — never decoded
   // live during the hover — cached on disk under the flight's cache key, so
   // a strip fills once ever and a boundary edit gets a fresh one.
-  const STRIP = 24;
   let frames = $state<(string | undefined)[]>(Array(STRIP).fill(undefined));
   let hover = $state<number | null>(null);
   let menuOpen = $state(false);

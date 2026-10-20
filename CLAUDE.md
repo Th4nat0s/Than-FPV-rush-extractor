@@ -897,6 +897,20 @@ frame-exact boundary editor. Layout:
   flight is listed in the summary and the batch goes on. Verified in the app on the reference
   pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
   the GoPro take as `.mp4`.
+- **Hover strips are made ahead of the pointer** (2026-10-20, the pilot's request: on a
+  long 4K take, a strip made on hover kept the user waiting). `Library::prepare_strips` makes
+  every missing strip frame of the library, the session on screen first, as one "Hover strips"
+  task; the UI starts it (`lib/strips.ts`) when the app opens — which also covers an emptied
+  cache — after an import or a segmentation ends, and when the boundary editor closes. A
+  cheap `missing_strips` count (a file check per frame) comes first, so nothing shows when
+  nothing is missing; one job runs at a time, and requests during it buy exactly one more pass.
+  A flight that vanishes mid-run is passed over, an unreadable recording reported once.
+  `STRIP` (24) lives in `strips.ts` for the cards and the job alike: frames are cached by index.
+  **Stills are written atomically now** (`ThumbnailGenerator::generate`): ffmpeg writes a
+  hidden `.name.<pid>-<n>.jpg` beside the target, renamed over it once whole — the job and the
+  pointer may make the same frame at once, and a half-written JPEG must never be shown (tested
+  with eight racing writers against the real ffmpeg). Verified in the app: 168 frames for 7
+  flights in 6 s at open, again after a re-segment, and hovering then made nothing.
 - **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
   *Keep the Videos* as the main button and *Also Trash the Videos* beside it
   (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the

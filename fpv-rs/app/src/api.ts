@@ -105,6 +105,12 @@ export interface Thumbnail {
   made: boolean;
 }
 
+export interface StripsPrepared {
+  made: number;
+  /** [flight, reason], once per flight. */
+  failed: [string, string][];
+}
+
 export type ExportMode = "lossless" | "parts" | "reencode";
 
 export interface BulkExport {
@@ -140,6 +146,9 @@ export const api = {
     invoke<Thumbnail>("filmstrip_frame", { flight, index, count }),
   /** Shows the recording in the system file manager. */
   revealFile: (file: string) => invoke<void>("reveal_file", { file }),
+  missingStrips: (count: number) => invoke<number>("missing_strips", { count }),
+  prepareStrips: (task: string, count: number, first: string | null) =>
+    invoke<StripsPrepared>("prepare_strips", { task, count, first }),
   previewFrame: (file: string, frame: number) => invoke<Thumbnail>("preview_frame", { file, frame }),
   poster: (clip: string) => invoke<Thumbnail>("poster", { clip }),
   exportFlight: (flight: string, destination: string, mode: ExportMode) =>
@@ -156,7 +165,7 @@ export const api = {
   tagLabels: () => invoke<string[]>("tag_labels"),
 };
 
-export function onProgress(event: "import-progress" | "segment-progress" | "export-progress",
+export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress",
                            handler: (progress: Progress) => void): Promise<UnlistenFn> {
   return listen<Progress>(event, (message) => handler(message.payload));
 }

@@ -8,6 +8,7 @@
   import SettingsDialog from "./lib/SettingsDialog.svelte";
   import TaskBar from "./lib/TaskBar.svelte";
   import { onTaskEnd } from "./lib/tasks.svelte";
+  import { prepareStrips } from "./lib/strips";
 
   let sessions = $state<SessionView[]>([]);
   let cards = $state<Card[]>([]);
@@ -39,13 +40,20 @@
 
   onMount(() => {
     api.info().then((loaded) => (info = loaded));
-    refresh();
+    // Strips missing since the last run — never made, or the cache emptied.
+    refresh().then(() => prepareStrips(selectedId));
     // Removable media, polled: cheap, and the same on every desktop.
     const poll = async () => { cards = await api.cards().catch(() => []); };
     poll();
     const timer = setInterval(poll, 3000);
     // A job finishing changes the library even when its window is long closed.
-    const stop = onTaskEnd(() => refresh());
+    const stop = onTaskEnd((task) => {
+      refresh();
+      // New flights, or flights re-keyed: their strips are made now, not on hover.
+      if (task.state === "done" && (task.key === "import" || task.key?.startsWith("segment:"))) {
+        prepareStrips(selectedId);
+      }
+    });
     return () => { clearInterval(timer); stop(); };
   });
 </script>

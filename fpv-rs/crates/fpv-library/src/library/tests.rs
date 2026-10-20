@@ -483,3 +483,68 @@ fn finds_where_a_recording_was_copied_to() {
     assert!(matches!(fixture.library.recording_path(&uuid::Uuid::new_v4().to_string()),
                      Err(LibraryError::NotFound(_))));
 }
+
+#[test]
+fn makes_every_hover_strip_ahead_of_the_pointer_once() {
+    let (fixture, session) = imported();
+    // Two takes, nothing made yet.
+    assert_eq!(fixture.library.missing_strip_frames(8, None).unwrap().len(), 16);
+
+    let mut steps = vec![];
+    let prepared = fixture.library.prepare_strips(8, None, |done, total, label| {
+        steps.push((done, total, label.to_owned()));
+    }).unwrap();
+    assert_eq!((prepared.made, prepared.failed.len()), (16, 0));
+    assert_eq!(steps.first(), Some(&(0, 16, "Letz Kwad — Flight 1".to_owned())));
+    assert_eq!(steps.last(), Some(&(16, 16, String::new())));
+    assert!(fixture.library.missing_strip_frames(8, None).unwrap().is_empty());
+    // The pointer now finds them on disk.
+    assert!(!fixture.library.filmstrip_frame(&session.flights[0].id, 3, 8).unwrap().made);
+
+    // Nothing left to make: a second run costs nothing.
+    assert_eq!(fixture.library.prepare_strips(8, None, |_, _, _| {}).unwrap().made, 0);
+
+    // A boundary edit re-keys one flight: only its strip is missing again.
+    fixture.library.update_clip(&session.flights[1].clips[0].id, 6, 10_000).unwrap();
+    let missing = fixture.library.missing_strip_frames(8, None).unwrap();
+    assert_eq!(missing.len(), 8);
+    assert!(missing.iter().all(|frame| frame.flight == session.flights[1].id));
+}
+
+#[test]
+fn makes_the_session_on_screen_first() {
+    let (fixture, _) = imported();
+    // A second card with footage of its own — the same bytes would be
+    // recognised as duplicates and skipped.
+    let other = tempfile::tempdir().unwrap();
+    for (name, pattern) in [("GH010050.MP4", "testsrc"), ("GH010051.MP4", "smptebars")] {
+        let status = Command::new("ffmpeg")
+            .args(["-v", "error", "-f", "lavfi", "-i", &format!("{pattern}=size=320x240:rate=30:duration=1"),
+                   "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   "-metadata", "creation_time=2026-08-24T10:00:00Z", "-y"])
+            .arg(other.path().join(name))
+            .status().unwrap();
+        assert!(status.success());
+    }
+    let summary = fixture.library.import(other.path(), "Bando", Some("2026-08-24"), false, |_| {}).unwrap();
+    assert_eq!(summary.flights, 2);
+    // Whichever session comes last on its own is the one asked for first.
+    let natural = fixture.library.missing_strip_frames(2, None).unwrap();
+    let last = natural.last().unwrap().label.split(" — ").next().unwrap().to_owned();
+    assert!(!natural[0].label.starts_with(&format!("{last} — ")));
+    let wanted = fixture.library.snapshot().unwrap().into_iter().find(|s| s.name == last).unwrap();
+    let missing = fixture.library.missing_strip_frames(2, Some(&wanted.id)).unwrap();
+    assert_eq!(missing.len(), 8);
+    assert!(missing[..4].iter().all(|frame| frame.label.starts_with(&format!("{last} — "))));
+}
+
+#[test]
+fn reports_an_unreadable_recording_once_and_makes_the_other_strips() {
+    let (fixture, session) = imported();
+    let broken = fixture.library.recording_path(&session.flights[1].clips[0].file_id).unwrap();
+    std::fs::write(&broken, b"not a video any more").unwrap();
+    let prepared = fixture.library.prepare_strips(8, None, |_, _, _| {}).unwrap();
+    assert_eq!(prepared.made, 8);
+    assert_eq!(prepared.failed.len(), 1);
+    assert_eq!(prepared.failed[0].0, "Letz Kwad — Flight 2");
+}

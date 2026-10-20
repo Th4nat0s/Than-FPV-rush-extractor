@@ -28,7 +28,7 @@ const KEEP = 20;
 let counter = 0;
 const endListeners = new Set<(task: Task) => void>();
 
-for (const event of ["import-progress", "segment-progress", "export-progress"]) {
+for (const event of ["import-progress", "segment-progress", "export-progress", "strips-progress"]) {
   listen<Progress>(event, ({ payload }) => {
     const task = tasks.find((t) => t.id === payload.task);
     if (task?.state !== "running") return;
