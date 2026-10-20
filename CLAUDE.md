@@ -799,8 +799,10 @@ tagged, never segmented: the pilot starts and stops the camera, so one file is o
   halving, a 120 fps one 30), decoded with `-hwaccel auto` and remade in software if the
   hardware fails the job. Measured on 20 s of 4K 10-bit HEVC at 59.94 fps: 1080p60 14.5 s,
   720p60 11.7 s, 720p30 9.7 s, decoding alone 7.8 s — so the rest of the gain can only come
-  from the hardware decoder (VideoToolbox on the Mac, not measured here: no Mac, no GPU in the
-  container). The faster x264 presets were *slower* (superfast 10.4 s, ultrafast 12.6 s, and
+  from the hardware decoder. **Measured by the pilot on their Mac, on a real Osmo take: 30 s
+  of 4K 10-bit HEVC decoded in 78 s in software (slower than real time) and 10 s with
+  VideoToolbox, 7.8×.** So the Mac names `videotoolbox` rather than trusting `auto` to find it;
+  other systems keep `auto` (`HWACCEL`). The faster x264 presets were *slower* (superfast 10.4 s, ultrafast 12.6 s, and
   files twice the size). Tags are unaffected: they go back to the recording's frames through
   seconds. The DVR's 480 lines and 24–30 fps are never touched, so its proxy is unchanged.
   Proxies built before keep playing until evicted. HEVC needs a proxy anyway — WebKitGTK will

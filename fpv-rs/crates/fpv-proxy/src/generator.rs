@@ -26,6 +26,13 @@ const MAX_PROXY_HEIGHT: i64 = 720;
 /// halves the frames to encode. The DVR records 24–30 fps and is unaffected.
 const MAX_PROXY_RATE: f64 = 30.5;
 
+/// The hardware decoder for sources taller than the proxy. Named on the Mac:
+/// on the pilot's Osmo 4K 10-bit HEVC, 30 s of footage decoded in 78 s in
+/// software and 10 s with VideoToolbox (measured on their Mac, 2026-10-20) —
+/// too much to leave to `auto`'s choice. Elsewhere ffmpeg picks (VA-API,
+/// CUDA…) or decodes in software when it finds none.
+const HWACCEL: &str = if cfg!(target_os = "macos") { "videotoolbox" } else { "auto" };
+
 fn proxy_rate(mut rate: FrameRate) -> FrameRate {
     while rate.value() > MAX_PROXY_RATE {
         rate = if rate.numerator % 2 == 0 { FrameRate::new(rate.numerator / 2, rate.denominator) }
@@ -96,9 +103,8 @@ impl<'a> ProxyGenerator<'a> {
     }
 
     /// One part to `output`. A source taller than the proxy is decoded by the
-    /// hardware where ffmpeg finds one (`-hwaccel auto`: VideoToolbox on a Mac,
-    /// VA-API on Linux; software where there is none) — decoding is most of
-    /// the time on 4K — and if the hardware takes the job and fails it, the
+    /// hardware (`HWACCEL`) — decoding is most of the time on 4K, 7.8× faster
+    /// on the pilot's Mac — and if the hardware takes the job and fails it, the
     /// part is made again in software: a GPU quirk must not cost the preview.
     fn transcode(&self, part: &(Clip, SourceFile), rate: FrameRate, height: i64, audio: Audio,
                  output: &Path) -> Result<PathBuf, ProxyError> {
@@ -132,7 +138,7 @@ impl<'a> ProxyGenerator<'a> {
         }
         let mut arguments: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
         if hardware {
-            arguments.extend(["-hwaccel".into(), "auto".into()]);
+            arguments.extend(["-hwaccel".into(), HWACCEL.into()]);
         }
         arguments.extend([
             "-i".into(), file.imported_path.clone(),
@@ -261,7 +267,10 @@ mod tests {
         assert_eq!(filter(&call), "fps=30000/1001,scale=-2:720");
         let input = call.iter().position(|a| a == "-i").unwrap();
         let hwaccel = call.iter().position(|a| a == "-hwaccel").unwrap();
-        assert!(hwaccel < input && call[hwaccel + 1] == "auto");
+        assert!(hwaccel < input);
+        // Named on the Mac, where it was measured; ffmpeg's pick elsewhere.
+        let expected = if cfg!(target_os = "macos") { "videotoolbox" } else { "auto" };
+        assert_eq!(call[hwaccel + 1], expected);
     }
 
     #[test]
