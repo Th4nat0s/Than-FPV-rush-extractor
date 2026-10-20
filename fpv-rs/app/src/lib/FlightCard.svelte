@@ -2,6 +2,7 @@
   import { api, clock, flightName, media, message, type FlightView } from "../api";
   import { batch } from "./tasks.svelte";
   import { STRIP } from "./strips";
+  import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
 
   let { flight, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
@@ -83,7 +84,7 @@
     const clip = flight.clips[0];
     if (clip && !clip.thumbnail && !remade && ffmpegOk) {
       // Every card missing one asks at once: one "Posters" task for them all.
-      batch("posters", "Posters", () => api.poster(clip.id))
+      batch("posters", "Posters", () => remake(clip.id))
         .then((made) => (remade = media(made.path))).catch(() => {});
     }
   });
