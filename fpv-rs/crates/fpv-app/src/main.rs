@@ -12,7 +12,7 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_library::{BulkExport, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
+use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
                   SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
@@ -219,6 +219,17 @@ async fn prepare_strips(handle: AppHandle, app: Shared<'_>, task: String, count:
     }).await
 }
 
+#[tauri::command]
+async fn cache_usage(app: Shared<'_>) -> Reply<CacheUsage> {
+    blocking(&app, move |app| app.library().cache_usage()).await
+}
+
+/// Empties the cache folder; everything in it is made again on demand.
+#[tauri::command]
+async fn clear_cache(app: Shared<'_>) -> Reply<CacheUsage> {
+    blocking(&app, move |app| app.library().clear_cache()).await
+}
+
 /// A clip's poster, remade when the cache no longer has it.
 #[tauri::command]
 async fn poster(app: Shared<'_>, clip: String) -> Reply<Thumbnail> {
@@ -338,7 +349,7 @@ fn main() {
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
             segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
-            missing_strips, prepare_strips,
+            missing_strips, prepare_strips, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])
         .run(tauri::generate_context!())

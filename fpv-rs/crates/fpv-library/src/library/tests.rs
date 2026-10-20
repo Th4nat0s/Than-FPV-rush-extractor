@@ -561,3 +561,38 @@ fn takes_rough_strip_frames_only_on_long_gop_footage_spread_out_enough() {
     // The DVR is all keyframes: always exact, at no extra cost.
     assert!(!rough_strip(&dvr, 372.7 / 24.0));
 }
+
+#[test]
+fn measures_and_empties_the_cache_and_everything_comes_back() {
+    let (fixture, session) = imported();
+    let take = &session.flights[0];
+    fixture.library.proxy(&take.id).unwrap();
+    fixture.library.prepare_strips(4, None, |_, _, _| {}).unwrap();
+    fixture.library.preview_frame(&take.clips[0].file_id, 3).unwrap();
+
+    let usage = fixture.library.cache_usage().unwrap();
+    assert!(usage.proxies > 0 && usage.strips > 0 && usage.posters > 0 && usage.previews > 0, "{usage:?}");
+    assert_eq!(usage.total(), usage.proxies + usage.strips + usage.posters + usage.previews);
+
+    let freed = fixture.library.clear_cache().unwrap();
+    assert_eq!(freed.total(), usage.total());
+    let after = fixture.library.cache_usage().unwrap();
+    assert_eq!(after.total(), 0, "{after:?}");
+    // The proxy index forgot them too: the next play makes a new one.
+    assert!(fixture.library.proxy_cache().entries().unwrap().is_empty());
+
+    // Nothing is lost: each comes back on demand.
+    assert!(fixture.library.snapshot().unwrap()[0].flights[0].clips[0].thumbnail.is_none());
+    assert!(fixture.library.poster(&take.clips[0].id).unwrap().made);
+    assert!(fixture.library.proxy(&take.id).unwrap().is_file());
+    assert_eq!(fixture.library.missing_strip_frames(4, None).unwrap().len(), 8);
+}
+
+#[test]
+fn empties_only_the_folders_it_made() {
+    let (fixture, _) = imported();
+    let mine = fixture.library.cache_directory.join("notes.txt");
+    std::fs::write(&mine, b"keep me").unwrap();
+    fixture.library.clear_cache().unwrap();
+    assert!(mine.is_file());
+}

@@ -59,6 +59,33 @@ fn rough_strip(media: &MediaInfo, spacing: f64) -> bool {
     !media.is_all_intra() && spacing >= 2.0
 }
 
+/// The cache folder's contents by kind, in bytes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheUsage {
+    pub proxies: u64,
+    pub strips: u64,
+    pub posters: u64,
+    /// The boundary editor's source frames.
+    pub previews: u64,
+}
+
+impl CacheUsage {
+    pub fn total(&self) -> u64 {
+        self.proxies + self.strips + self.posters + self.previews
+    }
+}
+
+/// Bytes under a folder, 0 if it is not there.
+fn folder_size(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+    entries.flatten().map(|entry| match entry.file_type() {
+        Ok(kind) if kind.is_dir() => folder_size(&entry.path()),
+        Ok(_) => entry.metadata().map(|m| m.len()).unwrap_or(0),
+        Err(_) => 0,
+    }).sum()
+}
+
 /// One hover-strip frame still to make.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StripFrame {
@@ -217,7 +244,31 @@ impl Library {
         Ok(())
     }
 
-    fn proxy_cache(&self) -> ProxyCache<'_> {
+    /// What the cache folder holds, by kind, in bytes.
+    pub fn cache_usage(&self) -> Result<CacheUsage> {
+        let size = |name: &str| folder_size(&self.cache_directory.join(name));
+        Ok(CacheUsage { proxies: size("proxies"), strips: size("strips"), posters: size("posters"),
+                        previews: size("preview") })
+    }
+
+    /// Empties the cache: playback previews (and their index), hover strips,
+    /// posters and editor frames. All of it is made again on demand — posters
+    /// when shown, strips by the background job, a preview when played — so
+    /// nothing is lost but time. Only the folders the library made are
+    /// touched, whatever else the cache folder holds. Returns what was freed.
+    pub fn clear_cache(&self) -> Result<CacheUsage> {
+        let freed = self.cache_usage()?;
+        self.proxy_cache().purge_all()?;
+        for name in ["proxies", "strips", "posters", "preview"] {
+            match std::fs::remove_dir_all(self.cache_directory.join(name)) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
+                _ => {}
+            }
+        }
+        Ok(freed)
+    }
+
+    pub(crate) fn proxy_cache(&self) -> ProxyCache<'_> {
         ProxyCache::new(self.cache_directory.join("proxies"), self.config.proxy_budget_bytes(),
                         &self.store)
     }

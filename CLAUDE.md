@@ -906,6 +906,15 @@ frame-exact boundary editor. Layout:
   flight is listed in the summary and the batch goes on. Verified in the app on the reference
   pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
   the GoPro take as `.mp4`.
+- **Empty Cache, in Settings** (2026-10-20, the pilot's request): the Cache section shows
+  what it holds by kind (`Library::cache_usage`: playback previews, hover strips, posters,
+  editor frames) and empties it after a confirmation (`clear_cache`): the four folders the
+  library made and the proxy index rows — nothing else in the cache folder, wherever
+  `FPV_RUSH_CACHE` points. Afterwards the library refreshes, posters are remade as cards show
+  and the strips job runs; a preview is remade when its flight is played. Doing it showed
+  every missing poster made twice — a refresh redraws the cards while their posters are being
+  made, and each asked again — so `lib/posters.ts` lets a second ask wait for the first,
+  answered `made: false` so the Posters task counts each poster once.
 - **Hover strips are made ahead of the pointer** (2026-10-20, the pilot's request: on a
   long 4K take, a strip made on hover kept the user waiting). `Library::prepare_strips` makes
   every missing strip frame of the library, the session on screen first, as one "Hover strips"

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { clock, day, flightName, message, type FlightView } from "./api";
+import { bytes, clock, day, flightName, message, type FlightView } from "./api";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (path: string) => path }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -14,6 +14,16 @@ describe("clock", () => {
 
   it("never shows a negative time", () => {
     expect(clock(-3)).toBe("0:00");
+  });
+});
+
+describe("bytes", () => {
+  it("writes a size the way a file manager does", () => {
+    expect(bytes(0)).toBe("0 bytes");
+    expect(bytes(999)).toBe("999 bytes");
+    expect(bytes(340_000)).toBe("340 KB");
+    expect(bytes(1_234_567_890)).toBe("1.2 GB");
+    expect(bytes(12_400_000_000)).toBe("12 GB");
   });
 });
 

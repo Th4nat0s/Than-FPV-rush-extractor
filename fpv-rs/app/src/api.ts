@@ -111,6 +111,14 @@ export interface StripsPrepared {
   failed: [string, string][];
 }
 
+/** Bytes in the cache folder, by kind. */
+export interface CacheUsage {
+  proxies: number;
+  strips: number;
+  posters: number;
+  previews: number;
+}
+
 export type ExportMode = "lossless" | "parts" | "reencode";
 
 export interface BulkExport {
@@ -146,6 +154,8 @@ export const api = {
     invoke<Thumbnail>("filmstrip_frame", { flight, index, count }),
   /** Shows the recording in the system file manager. */
   revealFile: (file: string) => invoke<void>("reveal_file", { file }),
+  cacheUsage: () => invoke<CacheUsage>("cache_usage"),
+  clearCache: () => invoke<CacheUsage>("clear_cache"),
   missingStrips: (count: number) => invoke<number>("missing_strips", { count }),
   prepareStrips: (task: string, count: number, first: string | null) =>
     invoke<StripsPrepared>("prepare_strips", { task, count, first }),
@@ -182,6 +192,18 @@ export function clock(seconds: number, tenths = false): string {
   const rest = value - minutes * 60;
   const text = tenths ? rest.toFixed(1).padStart(4, "0") : Math.floor(rest).toString().padStart(2, "0");
   return `${minutes}:${text}`;
+}
+
+/** A size as people read it: "340 KB", "1.2 GB". */
+export function bytes(count: number): string {
+  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  let value = count;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return unit === 0 ? `${value} ${units[0]}` : `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
 export function flightName(flight: FlightView): string {
