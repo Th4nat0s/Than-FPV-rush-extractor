@@ -292,7 +292,10 @@ impl Library {
 
     /// Removes a session and moves its imported recordings to the trash —
     /// recoverable, unlike the rows. The card originals were never touched.
-    pub fn delete_session(&self, id: &str) -> Result<()> {
+    /// Removes the session from the library. Its recordings go to the trash,
+    /// or with `keep_recordings` stay where they are — re-importing the card
+    /// later takes them back without copying them again.
+    pub fn delete_session(&self, id: &str, keep_recordings: bool) -> Result<()> {
         let session = self.session(id)?;
         // The media folders, recovered from the files rather than recomputed
         // from a name the user may have changed since.
@@ -300,7 +303,7 @@ impl Library {
             .filter_map(|f| Path::new(&f.imported_path).parent().map(Path::to_path_buf))
             .collect();
         self.store.delete_session(session.id)?;
-        for folder in folders.iter().filter(|f| f.exists()) {
+        for folder in folders.iter().filter(|f| !keep_recordings && f.exists()) {
             if let Err(error) = trash::delete(folder) {
                 log::warn!("could not move {} to the trash: {error}", folder.display());
             }

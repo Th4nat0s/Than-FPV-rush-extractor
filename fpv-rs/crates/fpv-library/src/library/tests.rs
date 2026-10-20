@@ -148,11 +148,47 @@ fn deletes_a_session_and_its_media_folder() {
     let (fixture, session) = imported();
     let folder = fixture.library.root.join("2026-08-23 Letz Kwad GOPRO");
     assert!(folder.is_dir());
-    fixture.library.delete_session(&session.id).unwrap();
+    fixture.library.delete_session(&session.id, false).unwrap();
     assert!(fixture.library.snapshot().unwrap().is_empty());
     assert!(!folder.exists());
     // The card was never touched.
     assert!(fixture.card.join("DCIM/100GOPRO/GH010042.MP4").exists());
+}
+
+#[test]
+fn removes_a_session_but_keeps_its_recordings_for_a_later_import() {
+    let (fixture, session) = imported();
+    let take = fixture.library.root.join("2026-08-23 Letz Kwad GOPRO/GH010042.MP4");
+    let written = std::fs::metadata(&take).unwrap().modified().unwrap();
+    fixture.library.delete_session(&session.id, true).unwrap();
+    assert!(fixture.library.snapshot().unwrap().is_empty());
+    assert!(take.is_file());
+
+    // The same card again: the copies on disk are taken back — not skipped as
+    // "already in the library", which would leave no session, and not copied twice.
+    let mut copied = 0;
+    let summary = fixture.library.import(&fixture.card, "Letz Kwad", Some("2026-08-23"), false, |event| {
+        if matches!(event, ImportEvent::Copying(_)) { copied += 1; }
+    }).unwrap();
+    assert_eq!((summary.imported, summary.skipped, summary.failed, summary.flights), (3, 0, 0, 2));
+    assert_eq!(copied, 0);
+    assert_eq!(std::fs::metadata(&take).unwrap().modified().unwrap(), written);
+    assert_eq!(fixture.library.snapshot().unwrap()[0].flights.len(), 2);
+
+    // A third time, they are the library's again: skipped.
+    let summary = fixture.library.import(&fixture.card, "Letz Kwad", Some("2026-08-23"), false, |_| {}).unwrap();
+    assert_eq!((summary.imported, summary.skipped), (0, 3));
+}
+
+#[test]
+fn never_overwrites_a_different_file_left_in_the_import_folder() {
+    let (fixture, session) = imported();
+    let take = fixture.library.root.join("2026-08-23 Letz Kwad GOPRO/GH010042.MP4");
+    fixture.library.delete_session(&session.id, true).unwrap();
+    std::fs::write(&take, b"something else").unwrap();
+    let summary = fixture.library.import(&fixture.card, "Letz Kwad", Some("2026-08-23"), false, |_| {}).unwrap();
+    assert_eq!(summary.failed, 1);
+    assert_eq!(std::fs::read(&take).unwrap(), b"something else");
 }
 
 #[test]

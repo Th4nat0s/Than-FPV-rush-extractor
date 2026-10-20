@@ -146,6 +146,7 @@ impl<'a> LibraryImporter<'a> {
         // already holds. A file that cannot be hashed is not skipped: the copy
         // will fail on its own and land in the report.
         let mut seen = self.store.checksums().unwrap_or_default();
+        let known = self.store.imported_paths()?;
         let total = groups.len();
         for (index, (whole_file, group)) in groups.into_iter().enumerate() {
             let session_name = if total == 1 { name.to_owned() } else { format!("{name} ({})", index + 1) };
@@ -165,8 +166,24 @@ impl<'a> LibraryImporter<'a> {
             for (file, media) in group {
                 let folder = self.folders.render(session_date, &session_name, source_label(&file, &media));
                 let destination = library.join(folder).join(file.name());
-                let checksum = if destination.exists() { None } else { sha256(&file.path).ok() };
-                if destination.exists() || checksum.as_ref().is_some_and(|c| seen.contains(c)) {
+                let on_disk = destination.exists();
+                if on_disk && known.contains(destination.to_string_lossy().as_ref()) {
+                    report.skipped.push(file.path.clone());
+                    progress(ImportEvent::Skipped(file.path));
+                    continue;
+                }
+                // On disk but in no session: a session removed from the
+                // library with its recordings kept. The copy is taken back as
+                // it is, never re-copied over; a different file of that name
+                // is never overwritten either.
+                let adopt = on_disk && same_size(&file.path, &destination);
+                if on_disk && !adopt {
+                    fail(&mut report, &mut progress, &file.path,
+                         format!("a different file is already at {}", destination.display()));
+                    continue;
+                }
+                let checksum = sha256(&file.path).ok();
+                if checksum.as_ref().is_some_and(|c| seen.contains(c)) {
                     report.skipped.push(file.path.clone());
                     progress(ImportEvent::Skipped(file.path));
                     continue;
@@ -174,7 +191,7 @@ impl<'a> LibraryImporter<'a> {
                 if let Some(checksum) = &checksum {
                     seen.insert(checksum.clone());
                 }
-                pending.push((file, media, checksum, destination));
+                pending.push((file, media, checksum, destination, adopt));
             }
             if pending.is_empty() {
                 continue;
@@ -191,9 +208,14 @@ impl<'a> LibraryImporter<'a> {
             report.sessions.push(session.clone());
 
             let mut saved: Vec<(SourceFile, Option<GoProChapter>)> = vec![];
-            for (file, media, checksum, destination) in pending {
-                progress(ImportEvent::Copying(file.path.clone()));
-                match copy_preserving_mtime(&file.path, &destination) {
+            for (file, media, checksum, destination, adopt) in pending {
+                let copied = if adopt {
+                    Ok(destination)
+                } else {
+                    progress(ImportEvent::Copying(file.path.clone()));
+                    copy_preserving_mtime(&file.path, &destination)
+                };
+                match copied {
                     Ok(destination) => {
                         let mut record = SourceFile::new(
                             session.id, file.path.to_string_lossy(), destination.to_string_lossy(),
@@ -268,6 +290,13 @@ impl<'a> LibraryImporter<'a> {
             index = end;
         }
         Ok(flights)
+    }
+}
+
+fn same_size(a: &Path, b: &Path) -> bool {
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(a), Ok(b)) => a.len() == b.len(),
+        _ => false,
     }
 }
 

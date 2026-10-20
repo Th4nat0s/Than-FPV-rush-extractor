@@ -130,7 +130,8 @@ export const api = {
   setDetectionProfile: (session: string, profile: string) =>
     invoke<void>("set_detection_profile", { session, profile }),
   renameSession: (id: string, name: string) => invoke<void>("rename_session", { id, name }),
-  deleteSession: (id: string) => invoke<void>("delete_session", { id }),
+  deleteSession: (id: string, keepRecordings: boolean) =>
+    invoke<void>("delete_session", { id, keepRecordings }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),
   toggleLike: (id: string) => invoke<boolean>("toggle_like", { id }),
   updateClip: (id: string, startFrame: number, endFrame: number) =>

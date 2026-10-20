@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { ask } from "@tauri-apps/plugin-dialog";
   import { api, day, message, type Card, type SessionView } from "../api";
   import Icon from "./Icon.svelte";
+  import Modal from "./Modal.svelte";
 
   let { sessions, cards, selectedId, ffmpegOk, error, onselect, onimportcard, onimportfolder,
         onsettings, onchange, onerror }: {
@@ -40,14 +40,14 @@
     }
   }
 
-  async function remove(session: SessionView) {
-    const confirmed = await ask(
-      "Its flights are removed from the library and the imported recordings move to the " +
-      "trash. The SD card originals are untouched.",
-      { title: `Delete “${session.name}”?`, kind: "warning", okLabel: "Delete Session" });
-    if (!confirmed) return;
+  // Removing a session asks what becomes of its recordings: kept on disk (the
+  // default, and the one that loses nothing) or moved to the trash.
+  let removing = $state<SessionView | null>(null);
+
+  async function remove(session: SessionView, keepRecordings: boolean) {
+    removing = null;
     try {
-      await api.deleteSession(session.id);
+      await api.deleteSession(session.id, keepRecordings);
       onchange();
     } catch (e) {
       onerror(`Cannot delete the session: ${message(e)}`);
@@ -88,13 +88,29 @@
                  onblur={(e) => rename(session, e.currentTarget)} />
           <span class="caption">{subtitle(session)}</span>
         </div>
-        <button class="plain delete" title="Delete session" onclick={() => remove(session)}>✕</button>
+        <button class="plain delete" title="Delete session" onclick={() => (removing = session)}>✕</button>
       </li>
     {:else}
       <li class="caption none">No sessions yet.</li>
     {/each}
   </ul>
 </aside>
+
+{#if removing}
+  {@const session = removing}
+  <Modal title="Delete “{session.name}”?" width={500} onclose={() => (removing = null)}>
+    <p>Its flights, titles, likes and figure tags are removed from the library.</p>
+    <p class="caption">Keep the videos to leave its {session.files.length} recording{session.files.length === 1 ? "" : "s"}
+      in the import folder: importing the same card again brings the session back
+      without copying them twice. The SD card originals are untouched either way.</p>
+    {#snippet footer()}
+      <button onclick={() => (removing = null)}>Cancel</button>
+      <span class="spacer"></span>
+      <button class="danger" onclick={() => remove(session, false)}>Also Trash the Videos</button>
+      <button class="primary" onclick={() => remove(session, true)}>Keep the Videos</button>
+    {/snippet}
+  </Modal>
+{/if}
 
 <style>
   aside {

@@ -212,8 +212,8 @@ async fn rename_session(app: Shared<'_>, id: String, name: String) -> Reply<()> 
 }
 
 #[tauri::command]
-async fn delete_session(app: Shared<'_>, id: String) -> Reply<()> {
-    blocking(&app, move |app| app.library().delete_session(&id)).await
+async fn delete_session(app: Shared<'_>, id: String, keep_recordings: bool) -> Reply<()> {
+    blocking(&app, move |app| app.library().delete_session(&id, keep_recordings)).await
 }
 
 #[tauri::command]

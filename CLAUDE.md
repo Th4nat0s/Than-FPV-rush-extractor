@@ -871,6 +871,17 @@ frame-exact boundary editor. Layout:
   flight is listed in the summary and the batch goes on. Verified in the app on the reference
   pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
   the GoPro take as `.mp4`.
+- **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
+  *Keep the Videos* as the main button and *Also Trash the Videos* beside it
+  (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the
+  card is untouched. **The import had to learn about it**: it skipped any file whose
+  destination existed, so re-importing the card would have skipped every kept recording as
+  "already in library" and left no session. A destination is now skipped only if the library
+  knows it (`LibraryStore::imported_paths`); one on disk but in no session is *taken back* —
+  registered as it is, no copy, its mtime unchanged — if its size matches the card's file, and
+  a different file at that path is a failure, never overwritten (both tested). Taking back
+  needs the same folder, i.e. the same session name and date under the same pattern;
+  otherwise the card is copied afresh, as before.
 - **Show in the file manager** (2026-10-20): a folder button on each row of the Files tab.
   `reveal_file` takes the recording's ID, never a path from the web view, and calls
   `tauri_plugin_opener::reveal_item_in_dir` as a plain function — no plugin registered, no

@@ -313,6 +313,15 @@ impl LibraryStore {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Where every recording in the library was copied to: a file on disk
+    /// that is not among them belongs to no session.
+    pub fn imported_paths(&self) -> Result<HashSet<String>> {
+        let db = self.db();
+        let mut statement = db.prepare("SELECT importedPath FROM sourceFile")?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn tags_of_source_file(&self, id: Uuid) -> Result<Vec<FigureTag>> {
         let db = self.db();
         let mut statement = db.prepare(&format!(
