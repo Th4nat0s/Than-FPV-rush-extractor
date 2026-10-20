@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
-use fpv_core::{Clip, DetectionProfile, FigureTag, Flight, FlightTimeline, Session, uuid_string};
+use fpv_core::{Clip, DetectionProfile, FigureTag, Flight, FlightTimeline, MediaInfo, Session, uuid_string};
 use fpv_detect::{DetectorSettings, DisarmedTemplate, FileDetector};
 use fpv_export::{ClipExporter, ExportError};
 use fpv_import::{FolderPattern, ImportEvent, LibraryImporter};
@@ -47,6 +47,16 @@ pub enum ExportMode {
     Parts,
     /// One file, each part resampled to the dominant rate (CLAUDE.md 2).
     Reencode,
+}
+
+/// Whether a strip frame may be the nearest keyframe rather than the exact
+/// frame. Only on long-GOP footage, where the exact one costs a GOP of 4K
+/// decoding (~1.7 s on 10-bit HEVC, the pilot's Osmo takes), and only when the
+/// strip's frames are at least 2 s apart: on a short take several would land
+/// on the same keyframe and the strip would repeat itself. The DVR's MJPEG is
+/// all keyframes, so it is always exact and costs nothing extra.
+fn rough_strip(media: &MediaInfo, spacing: f64) -> bool {
+    !media.is_all_intra() && spacing >= 2.0
 }
 
 /// One hover-strip frame still to make.
@@ -381,8 +391,14 @@ impl Library {
             .ok_or_else(|| LibraryError::NotFound("footage in this flight".into()))?;
         let seconds = position.file.media.frame_rate.seconds(position.source_frame);
         let ffmpeg = self.ffmpeg();
-        Ok(Thumbnail::made(ThumbnailGenerator::new(&ffmpeg)
-            .generate(Path::new(&position.file.imported_path), seconds, 320, &cached)?))
+        let generator = ThumbnailGenerator::new(&ffmpeg);
+        let source = Path::new(&position.file.imported_path);
+        let spacing = timeline.duration() / count.max(1) as f64;
+        Ok(Thumbnail::made(if rough_strip(&position.file.media, spacing) {
+            generator.generate_near(source, seconds, 320, &cached)?
+        } else {
+            generator.generate(source, seconds, 320, &cached)?
+        }))
     }
 
     fn strip_path(&self, flight: &Flight, clips: &[Clip], index: usize) -> PathBuf {

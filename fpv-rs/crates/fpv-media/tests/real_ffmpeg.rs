@@ -147,3 +147,26 @@ fn makes_one_whole_still_when_several_writers_race_for_it() {
         .map(|e| e.unwrap().file_name()).collect();
     assert_eq!(left, ["flight-7.jpg"]);
 }
+
+#[test]
+fn finds_a_keyframe_even_past_the_last_one() {
+    // A long-GOP take like an action cam's: one keyframe every 2 s. Near the
+    // end there is no keyframe after the position, and an accurate seek in
+    // keyframe-only mode writes nothing; the rough one takes the one before.
+    let folder = tempfile::tempdir().unwrap();
+    let take = folder.path().join("DJI_0042.MP4");
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=5",
+               "-c:v", "libx264", "-g", "50", "-keyint_min", "50", "-sc_threshold", "0",
+               "-pix_fmt", "yuv420p", "-y"])
+        .arg(&take).status().unwrap();
+    assert!(status.success());
+    let runner = FfmpegRunner::default();
+    let generator = fpv_media::ThumbnailGenerator::new(&runner);
+    for seconds in [0.1, 1.9, 4.9] {
+        let still = folder.path().join(format!("strip-{seconds}.jpg"));
+        generator.generate_near(&take, seconds, 160, &still)
+            .unwrap_or_else(|error| panic!("at {seconds} s: {error}"));
+        assert!(still.is_file());
+    }
+}

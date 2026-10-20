@@ -42,6 +42,22 @@ impl<'a> ThumbnailGenerator<'a> {
     /// half-written JPEG must never be the one that is shown.
     pub fn generate(&self, source: &Path, seconds: f64, width: u32, destination: &Path)
         -> Result<PathBuf, FfmpegError> {
+        self.generate_with(source, seconds, width, destination, false)
+    }
+
+    /// Like `generate`, but the still is the keyframe at or before `seconds`,
+    /// and only that keyframe is decoded. For hover strips on long-GOP
+    /// action-cam takes: an exact still decodes from the previous keyframe up
+    /// to the frame, which on 10-bit 4K HEVC was ~1.7 s a still on the pilot's
+    /// Mac; a strip does not need the exact frame. Never the keyframe *after*
+    /// — near the end there may be none, and ffmpeg then writes nothing.
+    pub fn generate_near(&self, source: &Path, seconds: f64, width: u32, destination: &Path)
+        -> Result<PathBuf, FfmpegError> {
+        self.generate_with(source, seconds, width, destination, true)
+    }
+
+    fn generate_with(&self, source: &Path, seconds: f64, width: u32, destination: &Path, near: bool)
+        -> Result<PathBuf, FfmpegError> {
         let io = |source| FfmpegError::Launch { tool: "ffmpeg".into(), source };
         let parent = destination.parent().unwrap_or(Path::new("."));
         std::fs::create_dir_all(parent).map_err(io)?;
@@ -51,7 +67,7 @@ impl<'a> ThumbnailGenerator<'a> {
         let name = destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let partial = parent.join(format!(".{name}.{}-{}.jpg", std::process::id(),
                                           WRITERS.fetch_add(1, Ordering::Relaxed)));
-        let written = self.write(source, seconds, width, &partial);
+        let written = self.write(source, seconds, width, &partial, near);
         if written.is_err() {
             let _ = std::fs::remove_file(&partial);
             return written;
@@ -63,18 +79,24 @@ impl<'a> ThumbnailGenerator<'a> {
         Ok(destination.to_path_buf())
     }
 
-    fn write(&self, source: &Path, seconds: f64, width: u32, destination: &Path)
+    fn write(&self, source: &Path, seconds: f64, width: u32, destination: &Path, near: bool)
         -> Result<PathBuf, FfmpegError> {
         // -ss before -i seeks by index instead of decoding up to the point, which
         // is the difference between milliseconds and a minute on a 600 s file.
-        let arguments: Vec<String> = vec![
-            "-hide_banner".into(), "-loglevel".into(), "error".into(),
+        let mut arguments: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
+        if near {
+            // -copyts keeps the keyframe's own time: without it the seek point
+            // becomes 0, the keyframe before it goes negative and is dropped,
+            // and near the end of a take nothing is written (measured).
+            arguments.extend(["-skip_frame", "nokey", "-noaccurate_seek", "-copyts"].map(String::from));
+        }
+        arguments.extend([
             "-ss".into(), format!("{:.3}", seconds.max(0.0)),
             "-i".into(), source.to_string_lossy().into_owned(),
             "-frames:v".into(), "1".into(), "-an".into(),
             "-vf".into(), format!("scale={width}:-2"),
             "-q:v".into(), "3".into(), "-y".into(), destination.to_string_lossy().into_owned(),
-        ];
+        ]);
         let result = self.ffmpeg.run(FfmpegTool::Ffmpeg, &arguments)?;
         if !result.succeeded() {
             return Err(FfmpegError::tool_failed(FfmpegTool::Ffmpeg, &arguments, &result));
@@ -173,6 +195,22 @@ mod tests {
         let left: Vec<_> = std::fs::read_dir(directory.path()).unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         assert_eq!(left, ["strip-3.jpg"]);
+    }
+
+    #[test]
+    fn decodes_only_the_keyframe_at_or_before_a_rough_position() {
+        let ffmpeg = RecordingFfmpeg::new(true);
+        let directory = tempfile::tempdir().unwrap();
+        ThumbnailGenerator::new(&ffmpeg)
+            .generate_near(Path::new("/library/DJI_0042.MP4"), 400.0, 320,
+                           &directory.path().join("strip.jpg"))
+            .unwrap();
+        let arguments = ffmpeg.last_call();
+        let input = arguments.iter().position(|a| a == "-i").unwrap();
+        for flag in ["-skip_frame", "nokey", "-noaccurate_seek", "-copyts", "-ss"] {
+            let at = arguments.iter().position(|a| a == flag).unwrap_or_else(|| panic!("no {flag}"));
+            assert!(at < input, "{flag} must come before -i");
+        }
     }
 
     #[test]

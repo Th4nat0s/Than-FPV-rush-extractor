@@ -906,6 +906,16 @@ frame-exact boundary editor. Layout:
   nothing is missing; one job runs at a time, and requests during it buy exactly one more pass.
   A flight that vanishes mid-run is passed over, an unreadable recording reported once.
   `STRIP` (24) lives in `strips.ts` for the cards and the job alike: frames are cached by index.
+  **On long-GOP takes a strip frame is the nearest keyframe** (`ThumbnailGenerator::generate_near`,
+  `rough_strip`): the pilot's first run on real Osmo 4K footage made ~1.7 s per frame — an exact
+  still decodes a whole GOP of 10-bit HEVC — and over a library of ~2300 frames the bar read as
+  stuck. `-skip_frame nokey -noaccurate_seek -copyts` before `-i` decodes one keyframe, the one
+  *at or before* the point: the default accurate seek takes the one after and, past a take's
+  last keyframe, writes nothing; and without `-copyts` the keyframe before the seek point gets a
+  negative time and is dropped (all three measured). 3–5× faster on a generated 4K HEVC file,
+  more on real footage. Only when strip frames are ≥ 2 s apart (takes ≥ 48 s), else several
+  would share a keyframe; MJPEG is all keyframes and stays exact, posters stay exact. The job's
+  line now counts through the library: "Test OSMO — Flight 3 (52/2304)".
   **Stills are written atomically now** (`ThumbnailGenerator::generate`): ffmpeg writes a
   hidden `.name.<pid>-<n>.jpg` beside the target, renamed over it once whole — the job and the
   pointer may make the same frame at once, and a half-written JPEG must never be shown (tested

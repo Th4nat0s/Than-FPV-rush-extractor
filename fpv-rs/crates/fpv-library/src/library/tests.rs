@@ -548,3 +548,16 @@ fn reports_an_unreadable_recording_once_and_makes_the_other_strips() {
     assert_eq!(prepared.failed.len(), 1);
     assert_eq!(prepared.failed[0].0, "Letz Kwad — Flight 2");
 }
+
+#[test]
+fn takes_rough_strip_frames_only_on_long_gop_footage_spread_out_enough() {
+    use fpv_core::FrameRate;
+    let osmo = MediaInfo::new(3840, 2160, FrameRate::new(60_000, 1001), 441.0, "hevc");
+    let dvr = MediaInfo::new(640, 480, FrameRate::new(1_000_000, 40_061), 372.7, "mjpeg");
+    // A 7:21 Osmo take, 24 frames 18 s apart: the nearest keyframe will do.
+    assert!(rough_strip(&osmo, 441.0 / 24.0));
+    // A 3 s chapter: frames 0.125 s apart would land on the same keyframe.
+    assert!(!rough_strip(&osmo, 3.0 / 24.0));
+    // The DVR is all keyframes: always exact, at no extra cost.
+    assert!(!rough_strip(&dvr, 372.7 / 24.0));
+}

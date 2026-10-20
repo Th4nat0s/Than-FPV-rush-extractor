@@ -88,6 +88,13 @@ impl SegmentProgress {
     }
 }
 
+/// The line a strip-making job shows: which flight, and how far through the
+/// library — a job over a whole library is long, and a bare flight name with a
+/// bar barely moving reads as stuck.
+pub fn strip_line(done: usize, total: usize, label: &str) -> String {
+    if label.is_empty() { format!("{total} frame(s) done") } else { format!("{label} ({}/{total})", done + 1) }
+}
+
 fn name_of(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -121,6 +128,12 @@ mod tests {
         // A failure is through too: the bar reaches the end.
         let step = progress.step(SegmentationEvent::Failed(b, "cannot decode".into()));
         assert_eq!((step.line.as_str(), step.done), ("FAILED PICT0004.AVI: cannot decode", 2));
+    }
+
+    #[test]
+    fn says_how_far_through_the_library_a_strip_job_is() {
+        assert_eq!(strip_line(51, 2304, "Test OSMO — Flight 3"), "Test OSMO — Flight 3 (52/2304)");
+        assert_eq!(strip_line(2304, 2304, ""), "2304 frame(s) done");
     }
 
     #[test]

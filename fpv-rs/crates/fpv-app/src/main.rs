@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use fpv_library::{BulkExport, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
-                  SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, detect_cards, ffmpeg_available,
+                  SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -213,7 +213,7 @@ async fn prepare_strips(handle: AppHandle, app: Shared<'_>, task: String, count:
                         first: Option<String>) -> Reply<StripsPrepared> {
     blocking(&app, move |app| {
         app.library().prepare_strips(count, first.as_deref(), |done, total, label| {
-            let line = if label.is_empty() { "Done".into() } else { label.to_owned() };
+            let line = strip_line(done, total, label);
             let _ = handle.emit("strips-progress", Progress { task: task.clone(), line, done, total });
         })
     }).await
