@@ -72,4 +72,18 @@ mod tests {
         assert_eq!(pal.osd_rows(), 16);
         assert!(ntsc.is_all_intra());
     }
+
+    #[test]
+    fn segments_the_analog_dvr_and_never_an_action_cam_take() {
+        let dvr = MediaInfo::new(640, 480, FrameRate::new(1_000_000, 40_061), 372.7, "mjpeg");
+        assert!(dvr.needs_segmentation() && dvr.is_all_intra());
+        // On a clean digital picture the detector would find "snow" in
+        // nothing, and re-segmenting would wipe the take.
+        for codec in ["h264", "hevc"] {
+            let take = MediaInfo::new(3840, 2160, FrameRate::new(60_000, 1001), 30.0, codec);
+            assert!(!take.needs_segmentation(), "{codec}");
+            // Long-GOP: cut only from frame 0, never mid-stream.
+            assert!(!take.is_all_intra(), "{codec}");
+        }
+    }
 }

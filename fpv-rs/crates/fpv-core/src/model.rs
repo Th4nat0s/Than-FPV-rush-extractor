@@ -271,6 +271,24 @@ mod tests {
     }
 
     #[test]
+    fn a_new_session_uses_the_tuned_detector() {
+        let session = Session::new("Alpes", None);
+        assert_eq!(session.detection_profile, DetectionProfile::Standard);
+        assert_eq!(DetectionProfile::default(), DetectionProfile::Standard);
+        // The stored names, which the database and the UI both speak.
+        for profile in [DetectionProfile::Standard, DetectionProfile::Textured] {
+            assert_eq!(DetectionProfile::from_raw(profile.as_str()), Some(profile));
+        }
+        assert_eq!(DetectionProfile::Textured.as_str(), "textured");
+        assert_eq!(DetectionProfile::from_raw("fuzzy"), None);
+    }
+
+    #[test]
+    fn a_tag_with_one_frame_is_a_marker() {
+        assert!(FigureTag::new(Uuid::new_v4(), 120, 120, "flip").is_marker());
+    }
+
+    #[test]
     fn orders_a_tags_ends() {
         let tag = FigureTag::new(Uuid::new_v4(), 367, 245, "split-s");
         assert_eq!((tag.start_frame, tag.end_frame), (245, 367));

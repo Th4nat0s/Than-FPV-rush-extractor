@@ -100,6 +100,47 @@ mod tests {
     }
 
     #[test]
+    fn refuses_what_is_not_a_rate() {
+        for text in ["", "abc", "30/x", "25/0", "0/1", "/25"] {
+            assert_eq!(FrameRate::from_ffprobe(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn shows_the_measured_rate_not_a_nominal_one() {
+        assert_eq!(FrameRate::new(1_000_000, 40_061).to_string(), "24.962 fps");
+        assert_eq!(FrameRate::new(30_000, 1001).to_string(), "29.970 fps");
+    }
+
+    #[test]
+    fn turns_every_frame_into_a_time_and_back_in_the_files_own_rate() {
+        let rate = FrameRate::new(1_000_000, 33_459); // PICT0030, 29.887 fps
+        for frame in 0..20_000 {
+            assert_eq!(rate.frame_index(rate.seconds(frame)), frame);
+        }
+        // Ten minutes in, a nominal 30 fps would be off by 68 frames.
+        assert_eq!(rate.frame_index(600.0), 17_932);
+    }
+
+    #[test]
+    fn picks_the_longest_parts_rate_and_the_last_of_equals_like_swift() {
+        use crate::MediaInfo;
+        use uuid::Uuid;
+        let part = |rate: FrameRate, seconds: f64| {
+            let file = SourceFile::new(Uuid::new_v4(), "card", "library", None,
+                                       MediaInfo::new(640, 480, rate, seconds, "mjpeg"));
+            let clip = Clip::new(Uuid::new_v4(), file.id, 0, rate.frame_index(seconds));
+            (clip, file)
+        };
+        let (head, tail) = (FrameRate::new(1_000_000, 33_459), FrameRate::new(1_000_000, 40_839));
+        assert_eq!(FrameRate::dominant(&[part(head, 0.75), part(tail, 60.0)]), tail);
+        assert_eq!(FrameRate::dominant(&[part(head, 60.0), part(tail, 0.75)]), head);
+        // Two parts as long as each other: the later one wins.
+        let (first, last) = (FrameRate::new(25, 1), FrameRate::new(30, 1));
+        assert_eq!(FrameRate::dominant(&[part(first, 10.0), part(last, 10.0)]), last);
+    }
+
+    #[test]
     fn rounds_half_frames_away_from_zero_like_swift() {
         let rate = FrameRate::new(10, 1);
         assert_eq!(rate.frame_index(0.25), 3);
