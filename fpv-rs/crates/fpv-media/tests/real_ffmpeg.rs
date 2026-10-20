@@ -123,3 +123,27 @@ fn reports_an_unreadable_recording_with_the_command_that_failed() {
         other => panic!("expected a tool failure, got {other:?}"),
     }
 }
+
+#[test]
+fn makes_one_whole_still_when_several_writers_race_for_it() {
+    // The background job and the pointer asking for the same strip frame.
+    let folder = tempfile::tempdir().unwrap();
+    let source = recording(folder.path());
+    let destination = folder.path().join("strips/flight-7.jpg");
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            scope.spawn(|| {
+                let runner = FfmpegRunner::default();
+                fpv_media::ThumbnailGenerator::new(&runner)
+                    .generate(&source, 1.0, 120, &destination).unwrap();
+            });
+        }
+    });
+    let probe = Command::new("ffprobe")
+        .args(["-v", "error", "-show_entries", "stream=codec_name,width", "-of", "csv=p=0"])
+        .arg(&destination).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "mjpeg,120");
+    let left: Vec<_> = std::fs::read_dir(destination.parent().unwrap()).unwrap()
+        .map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(left, ["flight-7.jpg"]);
+}

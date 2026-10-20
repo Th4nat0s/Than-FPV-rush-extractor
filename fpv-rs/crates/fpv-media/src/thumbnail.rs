@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use fpv_core::{Clip, SourceFile, uuid_string};
 
@@ -34,13 +35,36 @@ impl<'a> ThumbnailGenerator<'a> {
 
     /// Writes a JPEG still taken `seconds` into `source`, `width` wide; the
     /// height follows the source aspect.
+    ///
+    /// The still appears under `destination` only once whole: ffmpeg writes a
+    /// hidden file beside it, which is then renamed over. Strips are made in
+    /// the background while the pointer may ask for the same frame, and a
+    /// half-written JPEG must never be the one that is shown.
     pub fn generate(&self, source: &Path, seconds: f64, width: u32, destination: &Path)
         -> Result<PathBuf, FfmpegError> {
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| FfmpegError::Launch {
-                tool: "ffmpeg".into(), source,
-            })?;
+        let io = |source| FfmpegError::Launch { tool: "ffmpeg".into(), source };
+        let parent = destination.parent().unwrap_or(Path::new("."));
+        std::fs::create_dir_all(parent).map_err(io)?;
+        // Unique per writer, so two making the same still never share one;
+        // ending in .jpg, which is how ffmpeg picks the format.
+        static WRITERS: AtomicU64 = AtomicU64::new(0);
+        let name = destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let partial = parent.join(format!(".{name}.{}-{}.jpg", std::process::id(),
+                                          WRITERS.fetch_add(1, Ordering::Relaxed)));
+        let written = self.write(source, seconds, width, &partial);
+        if written.is_err() {
+            let _ = std::fs::remove_file(&partial);
+            return written;
         }
+        std::fs::rename(&partial, destination).map_err(|error| {
+            let _ = std::fs::remove_file(&partial);
+            io(error)
+        })?;
+        Ok(destination.to_path_buf())
+    }
+
+    fn write(&self, source: &Path, seconds: f64, width: u32, destination: &Path)
+        -> Result<PathBuf, FfmpegError> {
         // -ss before -i seeks by index instead of decoding up to the point, which
         // is the difference between milliseconds and a minute on a 600 s file.
         let arguments: Vec<String> = vec![
@@ -128,6 +152,27 @@ mod tests {
         let input = arguments.iter().position(|a| a == "-i").unwrap();
         // -ss after -i decodes 120 s of MJPEG before writing one frame.
         assert!(seek < input);
+    }
+
+    #[test]
+    fn never_lets_a_half_written_still_be_seen() {
+        // Strips are made in the background while the pointer may be asking
+        // for the same frame: ffmpeg writes beside it, and the still appears
+        // under its name only once whole.
+        let ffmpeg = RecordingFfmpeg::new(true);
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("strip-3.jpg");
+        ThumbnailGenerator::new(&ffmpeg)
+            .generate(Path::new("/library/PICT0032.AVI"), 12.0, 320, &destination)
+            .unwrap();
+        let arguments = ffmpeg.last_call();
+        let written = &arguments[arguments.iter().rposition(|a| a == "-y").unwrap() + 1];
+        assert_ne!(Path::new(written), destination);
+        assert!(written.ends_with(".jpg"), "ffmpeg picks the format from the name: {written}");
+        assert!(destination.is_file());
+        let left: Vec<_> = std::fs::read_dir(directory.path()).unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(left, ["strip-3.jpg"]);
     }
 
     #[test]
