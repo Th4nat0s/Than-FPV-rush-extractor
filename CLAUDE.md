@@ -412,12 +412,26 @@ Tauri app's (§10).
 - Keep this file updated when architectural decisions change.
 - ffmpeg invocations: always log the full argument vector at debug level. Silent ffmpeg failures
   are the most likely source of hard-to-diagnose bugs in this project.
-- Tests: the `FFmpegRunner` boundary and the detector fusion logic are the two places where unit
-  tests earn their keep, plus `fpv-library`, where the app's actions are glued together — tested
-  through the real ffmpeg on generated takes. Do not chase coverage on Svelte components; drive
-  the built app headless instead (Xvfb + xdotool, §10).
+- **Every feature and every bug fix ships with its tests, in the same commit** (settled
+  2026-10-20, the pilot's rule). Not coverage for its own sake: each test pins down a behaviour
+  someone asked for or a bug that happened, and is named after it.
+  - **Where the test goes is where the logic lives.** A GUI action is a method on
+    `fpv-library`'s `Library`, tested through the real ffmpeg on generated takes; a rule inside
+    one concern goes in its crate (the detector, the importer, the store…). The front end's own
+    logic — stores, helpers in `.ts` / `.svelte.ts` modules — is tested with **Vitest**
+    (`*.test.ts` beside the module; Tauri's `invoke`/`listen` mocked, timers faked).
+  - **Keep logic out of what cannot be tested.** The `#[tauri::command]`s and the Svelte
+    components stay thin; anything with a rule in it moves to `fpv-library` or a `.ts` module
+    first (the import/segmentation progress counting moved out of `main.rs` for this,
+    `fpv_library::progress`). Components themselves are not unit-tested: what only shows in the
+    window is driven headless (Xvfb + xdotool, §10) and what was seen is reported.
+  - **A bug fix starts from a test that fails on the bug.** Every new test is seen failing
+    once — break the code it guards, watch it go red, restore it — before it is trusted; a test
+    that has only ever passed proves nothing.
+  - `make check` runs it all: clippy at `-D warnings`, `cargo test`, Vitest, svelte-check. A
+    feature is not done while it is red.
 - Rust: `cargo clippy --workspace --all-targets` at zero warnings; front end: `npm run check` at
-  zero errors and zero warnings.
+  zero errors and zero warnings, `npm test` (Vitest) green.
 
 ---
 

@@ -75,13 +75,15 @@ $(NPM_STAMP): $(FRONTEND)/package.json $(FRONTEND)/package-lock.json
 	cd $(FRONTEND) && npm ci
 	touch $@
 
-check: deps ## clippy, every test, and svelte-check — what must be green before packaging
+check: deps ## clippy, every test (Rust and front end), and svelte-check — what must be green before packaging
 	cd $(WORKSPACE) && cargo clippy --workspace --all-targets -- -D warnings
 	cd $(WORKSPACE) && cargo test --workspace
+	cd $(FRONTEND) && npm run -s test
 	cd $(FRONTEND) && npm run -s check -- --fail-on-warnings
 
-test: tools ## the Rust tests only
+test: deps ## every test: the Rust crates and the front end's logic (Vitest)
 	cd $(WORKSPACE) && cargo test --workspace
+	cd $(FRONTEND) && npm run -s test
 
 app: deps ## the app binary for this machine, no installer (fpv-rs/target/release/fpv-rush)
 	cd $(SHELL_APP) && $(TAURI) build --no-bundle $(TARGET_FLAG)

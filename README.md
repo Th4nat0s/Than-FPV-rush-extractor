@@ -45,7 +45,7 @@ make package     # the installers for the machine you are on
 make linux       # .deb + AppImage            (on Linux, or in the devcontainer)
 make macos       # a .dmg holding FPV Rush.app (on macOS)
 make app         # just the binary, no installer
-make check       # clippy, every test, svelte-check — green before packaging
+make check       # clippy, every test (Rust + Vitest), svelte-check — green before packaging
 make icons       # every icon size, from fpv-rs/crates/fpv-app/icons/source.png
 ```
 
@@ -67,7 +67,8 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 155 tests
+cd fpv-rs && cargo test --workspace     # 165 tests
+cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
 
