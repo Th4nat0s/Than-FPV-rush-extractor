@@ -794,8 +794,17 @@ tagged, never segmented: the pilot starts and stops the camera, so one file is o
 - **Export:** a long-GOP file is stream-copied only from frame 0 (a keyframe) — whole takes
   and chapters — and **without `-ss`**: on H.264 an output-side seek drops packets even at 0
   (a 479-frame chapter came out 229, measured). DVR cuts keep `-ss` after `-i` as before.
-- **Proxy:** sources taller than 1080 lines are scaled to 1080 for playback; the DVR's 480
-  never is. HEVC needs a proxy anyway — WebKitGTK will not play it.
+- **Proxy:** sources taller than 720 lines are scaled to 720 and played at 30 fps at most
+  (2026-10-20, the pilot's 4K Osmo takes were slow to open; a 59.94 fps take becomes 29.97 by
+  halving, a 120 fps one 30), decoded with `-hwaccel auto` and remade in software if the
+  hardware fails the job. Measured on 20 s of 4K 10-bit HEVC at 59.94 fps: 1080p60 14.5 s,
+  720p60 11.7 s, 720p30 9.7 s, decoding alone 7.8 s — so the rest of the gain can only come
+  from the hardware decoder (VideoToolbox on the Mac, not measured here: no Mac, no GPU in the
+  container). The faster x264 presets were *slower* (superfast 10.4 s, ultrafast 12.6 s, and
+  files twice the size). Tags are unaffected: they go back to the recording's frames through
+  seconds. The DVR's 480 lines and 24–30 fps are never touched, so its proxy is unchanged.
+  Proxies built before keep playing until evicted. HEVC needs a proxy anyway — WebKitGTK will
+  not play it.
 Verified on a synthetic GoPro card (two H.264 chapters, one HEVC take, `.LRV`/`.THM`),
 imported into a library the Swift CLI built and read back by it; no real GoPro file has been
 through it yet.

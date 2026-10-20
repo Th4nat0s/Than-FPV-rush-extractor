@@ -14,10 +14,25 @@ pub enum ProxyError {
     Io(#[from] std::io::Error),
 }
 
-/// Taller than this, a source is scaled down for playback: a 4K action-cam
-/// take would otherwise make a 4K proxy, slow to build and to scrub. The DVR's
-/// 480 lines are never touched.
-const MAX_PROXY_HEIGHT: i64 = 1080;
+/// Taller than this, a source is scaled down for playback, and decoded by the
+/// hardware where there is one. 720 lines, not 1080: measured on a 4K 10-bit
+/// HEVC 59.94 fps take, 1080p60 took 14.5 s for 20 s of footage, 720p30 9.7 s,
+/// and decoding alone 7.8 s. The DVR's 480 lines are never touched.
+const MAX_PROXY_HEIGHT: i64 = 720;
+
+/// Faster than this, a proxy plays at half the rate (or a quarter…): 30 fps is
+/// enough to watch a flight and mark a figure — a tag goes back to the
+/// recording's own frames through seconds, never through the proxy's — and
+/// halves the frames to encode. The DVR records 24–30 fps and is unaffected.
+const MAX_PROXY_RATE: f64 = 30.5;
+
+fn proxy_rate(mut rate: FrameRate) -> FrameRate {
+    while rate.value() > MAX_PROXY_RATE {
+        rate = if rate.numerator % 2 == 0 { FrameRate::new(rate.numerator / 2, rate.denominator) }
+               else { FrameRate::new(rate.numerator, rate.denominator * 2) };
+    }
+    rate
+}
 
 /// Transcodes a flight into one H.264/AAC MP4 the player can open — a web
 /// view's `<video>` can play neither MJPEG-in-AVI nor, on Linux, HEVC.
@@ -55,22 +70,17 @@ impl<'a> ProxyGenerator<'a> {
         if parts.is_empty() {
             return Err(ProxyError::NothingToGenerate);
         }
-        let rate = FrameRate::dominant(parts);
+        let rate = proxy_rate(FrameRate::dominant(parts));
         let height = parts.iter().map(|(_, f)| f.media.height).max().unwrap_or(0);
-        let output = |path: &Path| ["-y".into(), path.to_string_lossy().into_owned()];
         if let [part] = parts {
-            let mut arguments = Self::arguments(part, rate, height, Audio::Aac);
-            arguments.extend(output(destination));
-            return Ok(run_writing(self.ffmpeg, &arguments, destination)?);
+            return self.transcode(part, rate, height, Audio::Aac, destination);
         }
 
         let workspace = Workspace::beside(destination, "fpv-proxy")?;
         let mut pieces = vec![];
         for (index, part) in parts.iter().enumerate() {
             let piece = workspace.path().join(format!("part{index:03}.mov"));
-            let mut arguments = Self::arguments(part, rate, height, Audio::Pcm);
-            arguments.extend(output(&piece));
-            run_writing(self.ffmpeg, &arguments, &piece)?;
+            self.transcode(part, rate, height, Audio::Pcm, &piece)?;
             pieces.push(piece);
         }
         let list = workspace.path().join("parts.txt");
@@ -81,14 +91,38 @@ impl<'a> ProxyGenerator<'a> {
         arguments.push(list.to_string_lossy().into_owned());
         arguments.extend(["-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
                           "-movflags", "+faststart"].map(String::from));
-        arguments.extend(output(destination));
+        arguments.extend(["-y".into(), destination.to_string_lossy().into_owned()]);
         Ok(run_writing(self.ffmpeg, &arguments, destination)?)
+    }
+
+    /// One part to `output`. A source taller than the proxy is decoded by the
+    /// hardware where ffmpeg finds one (`-hwaccel auto`: VideoToolbox on a Mac,
+    /// VA-API on Linux; software where there is none) — decoding is most of
+    /// the time on 4K — and if the hardware takes the job and fails it, the
+    /// part is made again in software: a GPU quirk must not cost the preview.
+    fn transcode(&self, part: &(Clip, SourceFile), rate: FrameRate, height: i64, audio: Audio,
+                 output: &Path) -> Result<PathBuf, ProxyError> {
+        let attempt = |hardware: bool| {
+            let mut arguments = Self::arguments(part, rate, height, audio, hardware);
+            arguments.extend(["-y".into(), output.to_string_lossy().into_owned()]);
+            run_writing(self.ffmpeg, &arguments, output)
+        };
+        if height <= MAX_PROXY_HEIGHT {
+            return Ok(attempt(false)?);
+        }
+        match attempt(true) {
+            Ok(path) => Ok(path),
+            Err(error) => {
+                log::warn!("hardware decoding failed, transcoding in software: {error}");
+                Ok(attempt(false)?)
+            }
+        }
     }
 
     /// One part, cut at its own file's rate and resampled to `rate`; every
     /// part is scaled alike, to the flight's tallest source, so the pieces join.
-    fn arguments((clip, file): &(Clip, SourceFile), rate: FrameRate, height: i64, audio: Audio)
-        -> Vec<String> {
+    fn arguments((clip, file): &(Clip, SourceFile), rate: FrameRate, height: i64, audio: Audio,
+                 hardware: bool) -> Vec<String> {
         let source = file.media.frame_rate;
         let start = source.seconds(clip.start_frame);
         let duration = source.seconds(clip.end_frame) - start;
@@ -96,8 +130,11 @@ impl<'a> ProxyGenerator<'a> {
         if height > MAX_PROXY_HEIGHT {
             filter.push_str(&format!(",scale=-2:{MAX_PROXY_HEIGHT}"));
         }
-        let mut arguments: Vec<String> = vec![
-            "-hide_banner".into(), "-loglevel".into(), "error".into(),
+        let mut arguments: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
+        if hardware {
+            arguments.extend(["-hwaccel".into(), "auto".into()]);
+        }
+        arguments.extend([
             "-i".into(), file.imported_path.clone(),
             // After -i, as in the exporter: input-side seeking lands early on
             // these AVIs, and the proxy's clock has to match FlightTimeline's
@@ -110,7 +147,7 @@ impl<'a> ProxyGenerator<'a> {
             "-vf".into(), filter,
             "-c:v".into(), "libx264".into(), "-preset".into(), "veryfast".into(),
             "-crf".into(), "20".into(), "-pix_fmt".into(), "yuv420p".into(),
-        ];
+        ]);
         arguments.extend(match audio {
             // The DVR records pcm_s16le, which MP4 will not carry: -c:a copy
             // fails here, with the reason only in stderr.
@@ -201,17 +238,74 @@ mod tests {
         assert!(has(&calls[0], "libx264") && has(&calls[0], "fps=3125/126") && has(&calls[0], "aac"));
     }
 
-    #[test]
-    fn scales_a_4k_action_cam_take_down_to_1080_lines() {
+    fn take(name: &str, rate: FrameRate, height: i64) -> Vec<String> {
         let ffmpeg = RecordingFfmpeg::default();
         let out = tempfile::tempdir().unwrap();
-        let file = source("GX010043.MP4", FrameRate::new(60000, 1001), 2160);
+        let file = source(name, rate, height);
         ProxyGenerator::new(&ffmpeg)
-            .generate(&[(Clip::new(Uuid::new_v4(), file.id, 0, 300), file)],
-                      &out.path().join("take.mp4"))
+            .generate(&[(Clip::new(Uuid::new_v4(), file.id, 0, 300), file)], &out.path().join("take.mp4"))
             .unwrap();
-        let calls = ffmpeg.calls.lock().unwrap().clone();
-        assert!(calls[0].windows(2).any(|w| w == ["-vf", "fps=60000/1001,scale=-2:1080"]));
+        ffmpeg.calls.lock().unwrap()[0].clone()
+    }
+
+    fn filter(call: &[String]) -> &str {
+        &call[call.iter().position(|a| a == "-vf").unwrap() + 1]
+    }
+
+    #[test]
+    fn plays_a_4k_action_cam_take_from_a_720p_proxy_at_half_its_rate() {
+        // The pilot's Osmo takes: 4K, 59.94 fps. 720p30 is enough to watch and
+        // tag (tags go back to source frames through seconds) and cuts a third
+        // of the time; the rest is decoding, which the hardware does faster.
+        let call = take("DJI_0042.MP4", FrameRate::new(60000, 1001), 2160);
+        assert_eq!(filter(&call), "fps=30000/1001,scale=-2:720");
+        let input = call.iter().position(|a| a == "-i").unwrap();
+        let hwaccel = call.iter().position(|a| a == "-hwaccel").unwrap();
+        assert!(hwaccel < input && call[hwaccel + 1] == "auto");
+    }
+
+    #[test]
+    fn halves_a_high_rate_until_it_is_30_or_less_and_keeps_the_rest() {
+        assert_eq!(filter(&take("GX010043.MP4", FrameRate::new(120, 1), 1080)), "fps=30/1,scale=-2:720");
+        assert_eq!(filter(&take("GX010044.MP4", FrameRate::new(25, 1), 2160)), "fps=25/1,scale=-2:720");
+        // 720 lines already: nothing to scale, nothing for the hardware to do.
+        let call = take("GX010045.MP4", FrameRate::new(30000, 1001), 720);
+        assert_eq!(filter(&call), "fps=30000/1001");
+        assert!(!has(&call, "-hwaccel"));
+    }
+
+    #[test]
+    fn leaves_the_dvr_as_recorded() {
+        let call = take("PICT0030.AVI", FrameRate::new(1_000_000, 33459), 480);
+        assert_eq!(filter(&call), "fps=1000000/33459");
+        assert!(!has(&call, "-hwaccel"));
+    }
+
+    #[test]
+    fn falls_back_to_software_when_the_hardware_decoder_fails() {
+        /// A GPU that accepts the job and then fails it.
+        #[derive(Default)]
+        struct FlakyGpu(Mutex<Vec<Vec<String>>>);
+        impl FfmpegInvoking for FlakyGpu {
+            fn run(&self, _: FfmpegTool, arguments: &[String]) -> Result<ProcessResult, FfmpegError> {
+                self.0.lock().unwrap().push(arguments.to_vec());
+                if arguments.iter().any(|a| a == "-hwaccel") {
+                    return Ok(ProcessResult { status: 1, stdout: vec![], stderr: "hwaccel failed".into() });
+                }
+                std::fs::write(arguments.last().unwrap(), b"v").unwrap();
+                Ok(ProcessResult { status: 0, stdout: vec![], stderr: String::new() })
+            }
+        }
+        let ffmpeg = FlakyGpu::default();
+        let out = tempfile::tempdir().unwrap();
+        let file = source("DJI_0042.MP4", FrameRate::new(60000, 1001), 2160);
+        let written = ProxyGenerator::new(&ffmpeg)
+            .generate(&[(Clip::new(Uuid::new_v4(), file.id, 0, 300), file)], &out.path().join("take.mp4"))
+            .unwrap();
+        assert!(written.is_file());
+        let calls = ffmpeg.0.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert!(has(&calls[0], "-hwaccel") && !has(&calls[1], "-hwaccel"));
     }
 
     #[test]

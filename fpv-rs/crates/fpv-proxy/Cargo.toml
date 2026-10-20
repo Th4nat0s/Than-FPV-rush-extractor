@@ -12,6 +12,7 @@ fpv-core.workspace = true
 fpv-media.workspace = true
 fpv-store.workspace = true
 filetime = "0.2"
+log.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 

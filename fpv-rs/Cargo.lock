@@ -1296,6 +1296,7 @@ dependencies = [
  "fpv-core",
  "fpv-media",
  "fpv-store",
+ "log",
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
