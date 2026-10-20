@@ -6,6 +6,7 @@ tmp/
 
 # Real DVR footage, if copied into the repo to reach it from the devcontainer
 media/
+spike/
 
 # Python
 __pycache__/

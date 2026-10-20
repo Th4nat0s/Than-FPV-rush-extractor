@@ -76,11 +76,12 @@ The `fpvlib` CLI (`cargo run --release -p fpvlib -- help`) drives the whole
 library headless — import, detect, segment, export, proxy, tags — where there is
 no GUI.
 
-The detector's tuning harness is *not* the Rust tests: it is the Python spike
-(`spike/fpv_spike.py`, `spike/labels.csv`, hand-labelled ground truth). Any change
-to detector metrics or thresholds must go through it — see `CLAUDE.md` §10. The
-Rust detector is asserted equal to the Python reference on checked-in fixture
-frames and produces the identical 26 clips on the 12-file reference card.
+The detector's tuning harness is *not* the Rust tests: it is a Python spike with
+hand-labelled ground truth, kept outside the repository with the footage it was
+tuned on. Any change to detector metrics or thresholds must go through it — see
+`CLAUDE.md` §10. The Rust detector is asserted equal to the Python reference on
+checked-in fixture frames and produces the identical 26 clips on the 12-file
+reference card.
 
 ---
 
@@ -210,7 +211,6 @@ dominant part's rate.
 |---|---|
 | `fpv-rs/crates/` | The Rust workspace: `fpv-core` (model, flight clock), `fpv-media` (the ffmpeg boundary), `fpv-detect`, `fpv-store` (SQLite), `fpv-import`, `fpv-pipeline`, `fpv-export`, `fpv-proxy`, `fpv-library` (every app action, tested without a GUI), `fpv-app` (the Tauri shell), `fpvlib` (the CLI). |
 | `fpv-rs/app/` | The front end: Svelte 5, TypeScript, Vite. |
-| `spike/` | The Phase-0 Python detector and its tuning harness — still the reference the Rust detector is held equal to. |
 | `CLAUDE.md` | The project record: format facts, architecture, measurements, settled decisions. Read it before changing anything. |
 
 ---

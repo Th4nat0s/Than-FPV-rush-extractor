@@ -468,6 +468,12 @@ Tauri app's (§10).
    now in Rust (`fpv-detect`), both measured faster than numpy without any SIMD library. Any
    optimisation comes only against a measured need, and the acceptance test is unchanged: the
    same clips on the same twelve files, and `eval` reporting the same numbers.
+   **`spike/` is local, not tracked** (2026-10-20, the pilot's call): the harness, its labels
+   and its reference frames live beside the footage they were measured on, which is not in the
+   repository either. What the build and the tests need from it is already checked in — the
+   DISARMED template as raw grayscale in `fpv-detect`, and the three fixture frames with the
+   Python values they are held to (`fpv-detect/tests/parity.rs`). Every `spike/…` path cited
+   in this file is in that local folder.
 8. **The OSD is never required.** Boundaries come from the picture alone; every OSD-derived
    field (`entry` tag, craft name, feed identity) degrades to `unknown` rather than failing.
    Verified by re-running the full 12-file scan with no template at all: identical clips.
