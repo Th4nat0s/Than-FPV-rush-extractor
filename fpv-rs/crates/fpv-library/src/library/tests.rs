@@ -121,17 +121,20 @@ fn exports_plays_and_scrubs_a_take() {
     assert_eq!(fixture.library.proxy(&take.id).unwrap(), proxy); // a cache hit
 
     let frame = fixture.library.filmstrip_frame(&take.id, 23, 24).unwrap();
-    assert!(frame.exists() && frame.to_string_lossy().contains(&take.cache_key));
+    assert!(frame.made && frame.path.exists() && frame.path.to_string_lossy().contains(&take.cache_key));
+    // Asked again, it comes from the cache: the task bar records no work.
+    assert!(!fixture.library.filmstrip_frame(&take.id, 23, 24).unwrap().made);
     let preview = fixture.library.preview_frame(&take.clips[0].file_id, 15).unwrap();
-    assert!(preview.exists());
+    assert!(preview.made && preview.path.exists());
+    assert!(!fixture.library.preview_frame(&take.clips[0].file_id, 15).unwrap().made);
 }
 
 #[test]
 fn sweeps_stale_strips_and_previews_at_open() {
     let (fixture, session) = imported();
     let take = &session.flights[0];
-    let kept = fixture.library.filmstrip_frame(&take.id, 0, 24).unwrap();
-    let preview = fixture.library.preview_frame(&take.clips[0].file_id, 3).unwrap();
+    let kept = fixture.library.filmstrip_frame(&take.id, 0, 24).unwrap().path;
+    let preview = fixture.library.preview_frame(&take.clips[0].file_id, 3).unwrap().path;
     let stale = kept.with_file_name("00000000-0000-0000-0000-000000000000-0-30-0.jpg");
     std::fs::write(&stale, b"x").unwrap();
 
@@ -267,8 +270,8 @@ fn keeps_proxies_strips_and_previews_in_the_cache_folder() {
     let base = fixture.library.root.parent().unwrap().to_path_buf();
     let take = &session.flights[0];
     assert!(fixture.library.proxy(&take.id).unwrap().starts_with(base.join("cache/proxies")));
-    assert!(fixture.library.filmstrip_frame(&take.id, 0, 24).unwrap().starts_with(base.join("cache/strips")));
-    assert!(fixture.library.preview_frame(&take.clips[0].file_id, 3).unwrap()
+    assert!(fixture.library.filmstrip_frame(&take.id, 0, 24).unwrap().path.starts_with(base.join("cache/strips")));
+    assert!(fixture.library.preview_frame(&take.clips[0].file_id, 3).unwrap().path
         .starts_with(base.join("cache/preview")));
     assert!(!base.join("library/proxies").exists());
 }
@@ -305,7 +308,10 @@ fn keeps_posters_in_the_cache_and_remakes_one_the_cache_lost() {
     std::fs::remove_dir_all(base.join("cache")).unwrap();
     assert_eq!(fixture.library.snapshot().unwrap()[0].flights[0].clips[0].thumbnail, None);
     let remade = fixture.library.poster(&clip.id).unwrap();
+    assert!(remade.made);
+    let remade = remade.path;
     assert!(remade.is_file() && remade.starts_with(base.join("cache/posters")));
+    assert!(!fixture.library.poster(&clip.id).unwrap().made);
     assert_eq!(fixture.library.snapshot().unwrap()[0].flights[0].clips[0].thumbnail.as_deref(),
                Some(remade.to_string_lossy().as_ref()));
 }

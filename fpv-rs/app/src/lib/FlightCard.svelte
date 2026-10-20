@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, clock, media, message, type FlightView } from "../api";
+  import { api, clock, flightName, media, message, type FlightView } from "../api";
+  import { batch } from "./tasks.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
 
   let { flight, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
@@ -42,8 +43,9 @@
     try {
       for (let index = 0; index < STRIP && hover !== null && key === stripKey; index++) {
         if (frames[index]) continue;
-        const path = await api.filmstripFrame(flight.id, index, STRIP).catch(() => null);
-        if (path && key === stripKey) frames[index] = media(path);
+        const strip = await batch(`strip:${flight.id}`, `Hover strip of ${flightName(flight)}`,
+                                  () => api.filmstripFrame(flight.id, index, STRIP)).catch(() => null);
+        if (strip && key === stripKey) frames[index] = media(strip.path);
       }
     } finally {
       filling = false;
@@ -77,7 +79,9 @@
   $effect(() => {
     const clip = flight.clips[0];
     if (clip && !clip.thumbnail && !remade && ffmpegOk) {
-      api.poster(clip.id).then((path) => (remade = media(path))).catch(() => {});
+      // Every card missing one asks at once: one "Posters" task for them all.
+      batch("posters", "Posters", () => api.poster(clip.id))
+        .then((made) => (remade = media(made.path))).catch(() => {});
     }
   });
 

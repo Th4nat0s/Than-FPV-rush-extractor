@@ -349,24 +349,22 @@ impl Library {
     /// One frame of a flight's hover filmstrip, cached on disk under the
     /// flight's cache key, so scrubbing a card costs one ffmpeg run per frame
     /// *ever* — not per hover.
-    pub fn filmstrip_frame(&self, flight: &str, index: usize, count: usize) -> Result<PathBuf> {
+    pub fn filmstrip_frame(&self, flight: &str, index: usize, count: usize) -> Result<Thumbnail> {
         let (flight, clips, timeline) = self.flight(flight)?;
         let cached = self.cache_directory.join("strips")
             .join(format!("{}-{index}.jpg", Flight::cache_key(flight.id, &clips)));
         if cached.exists() {
-            return Ok(cached);
+            return Ok(Thumbnail::cached(cached));
         }
         let fraction = (index as f64 + 0.5) / count.max(1) as f64;
         let position = timeline.position(fraction * timeline.duration())
             .ok_or_else(|| LibraryError::NotFound("footage in this flight".into()))?;
         let seconds = position.file.media.frame_rate.seconds(position.source_frame);
         let ffmpeg = self.ffmpeg();
-        Ok(ThumbnailGenerator::new(&ffmpeg)
-            .generate(Path::new(&position.file.imported_path), seconds, 320, &cached)?)
+        Ok(Thumbnail::made(ThumbnailGenerator::new(&ffmpeg)
+            .generate(Path::new(&position.file.imported_path), seconds, 320, &cached)?))
     }
 
-    /// The source frame under a boundary, for the editor — decoded from the
-    /// recording itself, never the proxy, whose frames are resampled.
     /// Where a recording was copied to, for showing it in the file manager.
     pub fn recording_path(&self, file: &str) -> Result<PathBuf> {
         let file = self.store.source_file(parse(file)?)?
@@ -374,17 +372,19 @@ impl Library {
         Ok(PathBuf::from(file.imported_path))
     }
 
-    pub fn preview_frame(&self, file: &str, frame: i64) -> Result<PathBuf> {
+    /// The source frame under a boundary, for the editor — decoded from the
+    /// recording itself, never the proxy, whose frames are resampled.
+    pub fn preview_frame(&self, file: &str, frame: i64) -> Result<Thumbnail> {
         let file = self.store.source_file(parse(file)?)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording {file}")))?;
         let cached = self.cache_directory.join("preview")
             .join(format!("{}-{frame}.jpg", uuid_string(file.id)));
         if cached.exists() {
-            return Ok(cached);
+            return Ok(Thumbnail::cached(cached));
         }
         let ffmpeg = self.ffmpeg();
-        Ok(ThumbnailGenerator::new(&ffmpeg).generate(
-            Path::new(&file.imported_path), file.media.frame_rate.seconds(frame), 640, &cached)?)
+        Ok(Thumbnail::made(ThumbnailGenerator::new(&ffmpeg).generate(
+            Path::new(&file.imported_path), file.media.frame_rate.seconds(frame), 640, &cached)?))
     }
 
     /// Deletes thumbnails nothing points at any more: re-segmenting replaces
@@ -666,21 +666,34 @@ impl Library {
 
     /// A clip's poster, remade if the cache lost it. Never its first frame:
     /// analog reception fades in through sync bands (`poster_offset`).
-    pub fn poster(&self, clip: &str) -> Result<PathBuf> {
+    pub fn poster(&self, clip: &str) -> Result<Thumbnail> {
         let clip = self.store.clip(parse(clip)?)?
             .ok_or_else(|| LibraryError::NotFound(format!("clip {clip}")))?;
         if let Some(path) = clip.thumbnail_path.as_deref().map(PathBuf::from)
             && path.is_file()
         {
-            return Ok(path);
+            return Ok(Thumbnail::cached(path));
         }
         let file = self.store.source_file(clip.source_file_id)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording of clip {}", clip.id)))?;
         let ffmpeg = self.ffmpeg();
         let path = ThumbnailGenerator::new(&ffmpeg).generate_for_clip(&clip, &file, &self.posters(), 480)?;
         self.store.update_clip(&Clip { thumbnail_path: Some(path.to_string_lossy().into_owned()), ..clip })?;
-        Ok(path)
+        Ok(Thumbnail::made(path))
     }
+}
+
+/// A picture from the cache folder, and whether this call had to make it —
+/// what the task bar records: a hover over strips already on disk is not work.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Thumbnail {
+    pub path: PathBuf,
+    pub made: bool,
+}
+
+impl Thumbnail {
+    fn cached(path: PathBuf) -> Self { Self { path, made: false } }
+    fn made(path: PathBuf) -> Self { Self { path, made: true } }
 }
 
 /// `<folder>/<stem>.<extension>`, or with " (2)", " (3)"… until it names

@@ -10,6 +10,6 @@ mod views;
 
 pub use cards::{Card, detect_cards, recordings_folder};
 pub use config::{APP_DIRECTORY, Config};
-pub use library::{BulkExport, ExportMode, ImportSummary, Library, LibraryError};
+pub use library::{BulkExport, ExportMode, ImportSummary, Library, LibraryError, Thumbnail};
 pub use tools::{ffmpeg_available, tool_directory};
 pub use views::{ClipView, FileView, FlightView, SessionView, TagView};

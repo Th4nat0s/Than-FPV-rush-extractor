@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, media, message, type ClipView } from "../api";
+  import { batch } from "./tasks.svelte";
 
   let { clip }: { clip: ClipView } = $props();
 
@@ -30,7 +31,8 @@
     const wanted = frame;
     const timer = setTimeout(async () => {
       try {
-        preview = media(await api.previewFrame(clip.fileId, wanted));
+        preview = media((await batch("previews", "Editor previews",
+                                     () => api.previewFrame(clip.fileId, wanted))).path);
         failure = null;
       } catch (e) {
         failure = message(e);

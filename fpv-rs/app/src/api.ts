@@ -99,6 +99,12 @@ export interface Progress {
   total: number;
 }
 
+/** A picture in the cache folder; `made` when this call had to make it. */
+export interface Thumbnail {
+  path: string;
+  made: boolean;
+}
+
 export type ExportMode = "lossless" | "parts" | "reencode";
 
 export interface BulkExport {
@@ -130,11 +136,11 @@ export const api = {
   updateClip: (id: string, startFrame: number, endFrame: number) =>
     invoke<void>("update_clip", { id, startFrame, endFrame }),
   filmstripFrame: (flight: string, index: number, count: number) =>
-    invoke<string>("filmstrip_frame", { flight, index, count }),
+    invoke<Thumbnail>("filmstrip_frame", { flight, index, count }),
   /** Shows the recording in the system file manager. */
   revealFile: (file: string) => invoke<void>("reveal_file", { file }),
-  previewFrame: (file: string, frame: number) => invoke<string>("preview_frame", { file, frame }),
-  poster: (clip: string) => invoke<string>("poster", { clip }),
+  previewFrame: (file: string, frame: number) => invoke<Thumbnail>("preview_frame", { file, frame }),
+  poster: (clip: string) => invoke<Thumbnail>("poster", { clip }),
   exportFlight: (flight: string, destination: string, mode: ExportMode) =>
     invoke<ExportOutcome>("export_flight", { flight, destination, mode }),
   exportFlights: (task: string, flights: string[], folder: string, onMismatch: "parts" | "reencode") =>

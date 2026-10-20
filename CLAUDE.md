@@ -886,7 +886,15 @@ frame-exact boundary editor. Layout:
   leaves a job running and visible, and the library refreshes when any job ends. Progress
   events carry the task's ID (`task` on `import_card`, `segment`, `export_flights`), so two
   jobs of one kind never mix. A segmented file counts as done when it is through, not when it
-  starts. Posters and hover strips are not tasks: many, short, and on screen anyway.
+  starts.
+  **Thumbnails are tasks too, batched** (2026-10-20): posters, hover strips and editor
+  previews are many short calls, so `batch(key, …)` counts the calls sharing a key as one task
+  ("Posters 7 made", "Hover strip of Flight 1 24 made"). `poster`, `filmstrip_frame` and
+  `preview_frame` return a `Thumbnail { path, made }` — only the library knows a cache hit from
+  real work — and a batch that made nothing leaves no trace, while one that made anything is
+  kept however fast. A batch appears in the bar live only after 400 ms (no flash on hover), and
+  waits 300 ms before closing, because a strip asks for its frames one after the other: without
+  that linger each frame was its own task (seen, 24 lines for one hover).
 - **Session folders are named from a pattern** (2026-10-19, the pilot's example
   `2026-10-10 Alpes FATSHARK`): `folderPattern` in `config.json`, default
   `{date} {session} {source}`, edited with a live preview in Settings. `{date}` is the session's

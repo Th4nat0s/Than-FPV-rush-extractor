@@ -14,7 +14,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use fpv_import::ImportEvent;
 use fpv_library::{BulkExport, Card, Config, ExportMode, ImportSummary, Library, LibraryError, SessionView,
-                  TagView, detect_cards, ffmpeg_available, tool_directory};
+                  TagView, Thumbnail, detect_cards, ffmpeg_available, tool_directory};
 use fpv_pipeline::SegmentationEvent;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -232,13 +232,13 @@ async fn update_clip(app: Shared<'_>, id: String, start_frame: i64, end_frame: i
 }
 
 #[tauri::command]
-async fn filmstrip_frame(app: Shared<'_>, flight: String, index: usize, count: usize) -> Reply<PathBuf> {
+async fn filmstrip_frame(app: Shared<'_>, flight: String, index: usize, count: usize) -> Reply<Thumbnail> {
     blocking(&app, move |app| app.library().filmstrip_frame(&flight, index, count)).await
 }
 
 /// A clip's poster, remade when the cache no longer has it.
 #[tauri::command]
-async fn poster(app: Shared<'_>, clip: String) -> Reply<PathBuf> {
+async fn poster(app: Shared<'_>, clip: String) -> Reply<Thumbnail> {
     blocking(&app, move |app| app.library().poster(&clip)).await
 }
 
@@ -255,7 +255,7 @@ async fn reveal_file(app: Shared<'_>, file: String) -> Reply<()> {
 }
 
 #[tauri::command]
-async fn preview_frame(app: Shared<'_>, file: String, frame: i64) -> Reply<PathBuf> {
+async fn preview_frame(app: Shared<'_>, file: String, frame: i64) -> Reply<Thumbnail> {
     blocking(&app, move |app| app.library().preview_frame(&file, frame)).await
 }
 
