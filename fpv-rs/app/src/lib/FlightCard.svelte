@@ -45,7 +45,10 @@
         if (frames[index]) continue;
         const strip = await batch(`strip:${flight.id}`, `Hover strip of ${flightName(flight)}`,
                                   () => api.filmstripFrame(flight.id, index, STRIP)).catch(() => null);
-        if (strip && key === stripKey) frames[index] = media(strip.path);
+        // One failure stands for the rest — the flight is gone or its
+        // recording unreadable — so the strip stops instead of asking 24 times.
+        if (!strip) break;
+        if (key === stripKey) frames[index] = media(strip.path);
       }
     } finally {
       filling = false;

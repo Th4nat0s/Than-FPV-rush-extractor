@@ -193,7 +193,12 @@
     {:else if !visible.length}
       <div class="empty"><h2>No liked flights</h2><p>Like a flight, or turn the filter off.</p></div>
     {:else}
-      <div class="grid">
+      <!-- Re-segmenting replaces every flight, file by file: until it ends
+           these cards name flights that may be gone, so they are put aside. -->
+      {#if segmenting}
+        <p class="caption busy-note">Re-segmenting — the flights below are replaced when it ends.</p>
+      {/if}
+      <div class="grid" class:busy={segmenting} inert={segmenting}>
         {#each visible as flight (flight.id)}
           <FlightCard {flight} {exporting} {ffmpegOk} onchange={onchange} {selecting}
                       selected={picked.includes(flight.id)} ontoggle={() => toggle(flight.id)}
@@ -269,6 +274,8 @@
     gap: 16px;
     padding: 16px 18px;
   }
+  .grid.busy { opacity: 0.4; }
+  .busy-note { margin: 12px 18px 0; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 7px 18px; border-bottom: 1px solid var(--line); }
   td.actions { width: 1%; padding-top: 2px; padding-bottom: 2px; text-align: right; }
