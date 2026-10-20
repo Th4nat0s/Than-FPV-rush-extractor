@@ -430,3 +430,14 @@ fn keeps_a_sessions_detection_profile() {
     assert!(matches!(fixture.library.set_detection_profile(&session.id, "fuzzy"),
                      Err(LibraryError::Invalid(_))));
 }
+
+#[test]
+fn finds_where_a_recording_was_copied_to() {
+    let (fixture, session) = imported();
+    let file = &session.files[0];
+    let path = fixture.library.recording_path(&file.id).unwrap();
+    assert!(path.is_absolute() && path.is_file());
+    assert_eq!(path.file_name().unwrap().to_str(), Some(file.name.as_str()));
+    assert!(matches!(fixture.library.recording_path(&uuid::Uuid::new_v4().to_string()),
+                     Err(LibraryError::NotFound(_))));
+}

@@ -242,6 +242,18 @@ async fn poster(app: Shared<'_>, clip: String) -> Reply<PathBuf> {
     blocking(&app, move |app| app.library().poster(&clip)).await
 }
 
+/// Opens the system file manager on a recording, selected where the file
+/// manager can (Nautilus, Dolphin, Finder, Explorer), its folder otherwise.
+/// The UI names the recording; the path never comes from the web view.
+#[tauri::command]
+async fn reveal_file(app: Shared<'_>, file: String) -> Reply<()> {
+    let path = blocking(&app, move |app| app.library().recording_path(&file)).await?;
+    tauri::async_runtime::spawn_blocking(move || tauri_plugin_opener::reveal_item_in_dir(&path)
+        .map_err(|error| format!("cannot show {}: {error}", path.display())))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn preview_frame(app: Shared<'_>, file: String, frame: i64) -> Reply<PathBuf> {
     blocking(&app, move |app| app.library().preview_frame(&file, frame)).await
@@ -346,7 +358,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
             segment, set_detection_profile, rename_session, delete_session,
-            set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame,
+            set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
             export_flight, export_flights, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])
         .run(tauri::generate_context!())

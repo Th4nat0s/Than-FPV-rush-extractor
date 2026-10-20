@@ -367,6 +367,13 @@ impl Library {
 
     /// The source frame under a boundary, for the editor — decoded from the
     /// recording itself, never the proxy, whose frames are resampled.
+    /// Where a recording was copied to, for showing it in the file manager.
+    pub fn recording_path(&self, file: &str) -> Result<PathBuf> {
+        let file = self.store.source_file(parse(file)?)?
+            .ok_or_else(|| LibraryError::NotFound(format!("recording {file}")))?;
+        Ok(PathBuf::from(file.imported_path))
+    }
+
     pub fn preview_frame(&self, file: &str, frame: i64) -> Result<PathBuf> {
         let file = self.store.source_file(parse(file)?)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording {file}")))?;

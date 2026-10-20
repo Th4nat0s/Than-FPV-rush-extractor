@@ -131,6 +131,8 @@ export const api = {
     invoke<void>("update_clip", { id, startFrame, endFrame }),
   filmstripFrame: (flight: string, index: number, count: number) =>
     invoke<string>("filmstrip_frame", { flight, index, count }),
+  /** Shows the recording in the system file manager. */
+  revealFile: (file: string) => invoke<void>("reveal_file", { file }),
   previewFrame: (file: string, frame: number) => invoke<string>("preview_frame", { file, frame }),
   poster: (clip: string) => invoke<string>("poster", { clip }),
   exportFlight: (flight: string, destination: string, mode: ExportMode) =>

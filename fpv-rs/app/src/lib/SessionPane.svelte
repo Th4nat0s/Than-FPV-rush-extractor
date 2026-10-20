@@ -161,7 +161,7 @@
   <div class="content">
     {#if tab === "files"}
       <table>
-        <thead><tr><th>File</th><th>Source</th><th>Size</th><th>Rate</th><th>Duration</th></tr></thead>
+        <thead><tr><th>File</th><th>Source</th><th>Size</th><th>Rate</th><th>Duration</th><th></th></tr></thead>
         <tbody>
           {#each session.files as file (file.id)}
             <tr>
@@ -171,6 +171,11 @@
               <!-- Per file and non-standard by design (CLAUDE.md 2). -->
               <td class="mono">{file.fps.toFixed(3)} fps</td>
               <td class="mono">{clock(file.duration)}</td>
+              <td class="actions">
+                <button class="plain small" title="Show in the file manager" aria-label="Show {file.name} in the file manager"
+                        onclick={() => api.revealFile(file.id).catch((e) => (status = message(e)))}>
+                  <Icon name="folder" /></button>
+              </td>
             </tr>
           {/each}
         </tbody>
@@ -266,6 +271,7 @@
   }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 7px 18px; border-bottom: 1px solid var(--line); }
+  td.actions { width: 1%; padding-top: 2px; padding-bottom: 2px; text-align: right; }
   th { font-weight: 500; color: var(--muted); font-size: 12px; position: sticky; top: 0; background: var(--bg); }
   footer { padding: 8px 18px; border-top: 1px solid var(--line); background: var(--panel); }
 </style>

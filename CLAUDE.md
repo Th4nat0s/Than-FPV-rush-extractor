@@ -871,6 +871,13 @@ frame-exact boundary editor. Layout:
   flight is listed in the summary and the batch goes on. Verified in the app on the reference
   pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
   the GoPro take as `.mp4`.
+- **Show in the file manager** (2026-10-20): a folder button on each row of the Files tab.
+  `reveal_file` takes the recording's ID, never a path from the web view, and calls
+  `tauri_plugin_opener::reveal_item_in_dir` as a plain function — no plugin registered, no
+  web-side permission. On Linux that is D-Bus only (`org.freedesktop.FileManager1.ShowItems`,
+  then the OpenURI portal): verified against a stand-in service on a private session bus,
+  which received the clicked row's `file://` URI. A desktop with neither shows the error in
+  the session's status line.
 - **Task bar** (2026-10-20): a strip along the bottom of the window counts the running jobs —
   import, segmentation, export (single and batch), preview transcode — shows their mean
   progress, and lists them (running, then the last 20 finished, ✓/✕ with their result) on a
