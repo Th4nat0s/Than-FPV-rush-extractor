@@ -130,13 +130,15 @@ async fn cards() -> Vec<Card> {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Progress {
+    /// The UI's ID for the task this reports on, so two of a kind never mix.
+    task: String,
     line: String,
     done: usize,
     total: usize,
 }
 
 #[tauri::command]
-async fn import_card(handle: AppHandle, app: Shared<'_>, folder: PathBuf, name: String,
+async fn import_card(handle: AppHandle, app: Shared<'_>, task: String, folder: PathBuf, name: String,
                      date: Option<String>, delete_originals: bool) -> Reply<ImportSummary> {
     blocking(&app, move |app| {
         let (mut done, mut total) = (0, 0);
@@ -163,31 +165,35 @@ async fn import_card(handle: AppHandle, app: Shared<'_>, folder: PathBuf, name: 
                 ImportEvent::Flight { order, parts, .. } =>
                     format!("Flight {order}: action-cam take, {parts} file(s)"),
             };
-            let _ = handle.emit("import-progress", Progress { line, done, total });
+            let _ = handle.emit("import-progress", Progress { task: task.clone(), line, done, total });
         })
     }).await
 }
 
 #[tauri::command]
-async fn segment(handle: AppHandle, app: Shared<'_>, session: String) -> Reply<String> {
+async fn segment(handle: AppHandle, app: Shared<'_>, task: String, session: String) -> Reply<String> {
     blocking(&app, move |app| {
         let total = app.library().snapshot()?.iter().find(|s| s.id == session)
             .map_or(0, |s| s.files.iter().filter(|f| !f.action_cam).count());
         let mut done = 0;
         let report = app.library().segment(&session, |event| {
             let line = match event {
-                SegmentationEvent::Detecting(file) => {
+                // A file counts once it is through, so the bar never shows
+                // full while the last one is still being read.
+                SegmentationEvent::Detecting(file) => format!(
+                    "Detecting {} ({}/{total})…", name_of(&PathBuf::from(&file.imported_path)), done + 1),
+                SegmentationEvent::Detected(file, clips) => {
                     done += 1;
-                    format!("Detecting {} ({done}/{total})…", name_of(&PathBuf::from(&file.imported_path)))
+                    format!("{}: {clips} clip(s) ({done}/{total})", name_of(&PathBuf::from(&file.imported_path)))
                 }
-                SegmentationEvent::Detected(file, clips) =>
-                    format!("{}: {clips} clip(s) ({done}/{total})", name_of(&PathBuf::from(&file.imported_path))),
                 SegmentationEvent::Stitched(a, b) => format!(
                     "One flight spans {} and {}", name_of(&PathBuf::from(a)), name_of(&PathBuf::from(b))),
-                SegmentationEvent::Failed(file, reason) =>
-                    format!("FAILED {}: {reason}", name_of(&PathBuf::from(&file.imported_path))),
+                SegmentationEvent::Failed(file, reason) => {
+                    done += 1;
+                    format!("FAILED {}: {reason}", name_of(&PathBuf::from(&file.imported_path)))
+                }
             };
-            let _ = handle.emit("segment-progress", Progress { line, done, total });
+            let _ = handle.emit("segment-progress", Progress { task: task.clone(), line, done, total });
         })?;
         let failed = if report.failed.is_empty() { String::new() }
                      else { format!(" — {} file(s) failed", report.failed.len()) };
@@ -263,12 +269,12 @@ async fn export_flight(app: Shared<'_>, flight: String, destination: PathBuf, mo
 
 /// Several flights into one folder, one after the other; progress as events.
 #[tauri::command]
-async fn export_flights(handle: AppHandle, app: Shared<'_>, flights: Vec<String>, folder: PathBuf,
-                        on_mismatch: ExportMode) -> Reply<BulkExport> {
+async fn export_flights(handle: AppHandle, app: Shared<'_>, task: String, flights: Vec<String>,
+                        folder: PathBuf, on_mismatch: ExportMode) -> Reply<BulkExport> {
     blocking(&app, move |app| {
         app.library().export_flights(&flights, &folder, on_mismatch, |done, total, name| {
             let line = if name.is_empty() { "Done".into() } else { format!("Exporting {name}…") };
-            let _ = handle.emit("export-progress", Progress { line, done, total });
+            let _ = handle.emit("export-progress", Progress { task: task.clone(), line, done, total });
         })
     }).await
 }

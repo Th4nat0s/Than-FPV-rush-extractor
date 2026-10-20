@@ -3,6 +3,7 @@
   import { api, clock, flightName, message, type FlightView, type TagView } from "../api";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import { track } from "./tasks.svelte";
 
   // The player only ever opens the flight's proxy: a web view plays neither
   // MJPEG-in-AVI nor, on Linux, HEVC. The proxy is resampled, so a tag marked
@@ -26,7 +27,10 @@
   onMount(async () => {
     reload().catch((e) => (failure = message(e)));
     try {
-      source = await api.proxy(flight.id);
+      // Instant on a cache hit; a transcode otherwise, which the task bar shows.
+      source = await track(`Preview of ${flightName(flight)}`, () => api.proxy(flight.id),
+                           { key: `proxy:${flight.id}`, line: "Transcoding the flight for playback…",
+                             summary: () => "Ready" });
     } catch (e) {
       failure = message(e);
     }

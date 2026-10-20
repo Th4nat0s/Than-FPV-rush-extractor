@@ -871,6 +871,15 @@ frame-exact boundary editor. Layout:
   flight is listed in the summary and the batch goes on. Verified in the app on the reference
   pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
   the GoPro take as `.mp4`.
+- **Task bar** (2026-10-20): a strip along the bottom of the window counts the running jobs —
+  import, segmentation, export (single and batch), preview transcode — shows their mean
+  progress, and lists them (running, then the last 20 finished, ✓/✕ with their result) on a
+  click. Jobs live in `app/src/lib/tasks.svelte.ts`, not in the window that started them, so
+  closing the import or batch-export dialog (*Continue in background*) or switching session
+  leaves a job running and visible, and the library refreshes when any job ends. Progress
+  events carry the task's ID (`task` on `import_card`, `segment`, `export_flights`), so two
+  jobs of one kind never mix. A segmented file counts as done when it is through, not when it
+  starts. Posters and hover strips are not tasks: many, short, and on screen anyway.
 - **Session folders are named from a pattern** (2026-10-19, the pilot's example
   `2026-10-10 Alpes FATSHARK`): `folderPattern` in `config.json`, default
   `{date} {session} {source}`, edited with a live preview in Settings. `{date}` is the session's

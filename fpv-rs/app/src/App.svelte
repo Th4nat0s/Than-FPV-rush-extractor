@@ -6,6 +6,8 @@
   import SessionPane from "./lib/SessionPane.svelte";
   import ImportDialog from "./lib/ImportDialog.svelte";
   import SettingsDialog from "./lib/SettingsDialog.svelte";
+  import TaskBar from "./lib/TaskBar.svelte";
+  import { onTaskEnd } from "./lib/tasks.svelte";
 
   let sessions = $state<SessionView[]>([]);
   let cards = $state<Card[]>([]);
@@ -42,10 +44,13 @@
     const poll = async () => { cards = await api.cards().catch(() => []); };
     poll();
     const timer = setInterval(poll, 3000);
-    return () => clearInterval(timer);
+    // A job finishing changes the library even when its window is long closed.
+    const stop = onTaskEnd(() => refresh());
+    return () => { clearInterval(timer); stop(); };
   });
 </script>
 
+<div class="window">
 <div class="layout">
   <Sidebar {sessions} {cards} {selectedId} {ffmpegOk} {error}
            onselect={(id) => (selectedId = id)}
@@ -72,6 +77,8 @@
     {/if}
   </main>
 </div>
+<TaskBar />
+</div>
 
 {#if importing}
   <ImportDialog folder={importing.folder} suggestedName={importing.name}
@@ -87,6 +94,7 @@
 
 <style>
   .link { color: var(--accent); text-decoration: underline; padding: 0; }
-  .layout { display: flex; height: 100%; }
+  .window { display: flex; flex-direction: column; height: 100%; }
+  .layout { display: flex; flex: 1; min-height: 0; }
   main { flex: 1; min-width: 0; height: 100%; overflow: hidden; }
 </style>

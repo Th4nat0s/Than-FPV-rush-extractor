@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { save } from "@tauri-apps/plugin-dialog";
-  import { api, clock, day, flightName, message, onProgress, type FlightView,
+  import { api, clock, day, flightName, message, type FlightView,
            type SessionView } from "../api";
   import FlightCard from "./FlightCard.svelte";
   import BulkExportDialog from "./BulkExportDialog.svelte";
@@ -9,6 +8,7 @@
   import PlayerDialog from "./PlayerDialog.svelte";
   import EditorDialog from "./EditorDialog.svelte";
   import Modal from "./Modal.svelte";
+  import { runningTask, track } from "./tasks.svelte";
 
   let { session, ffmpegOk, onchange }: {
     session: SessionView;
@@ -22,10 +22,11 @@
   let selecting = $state(false);
   let picked = $state<string[]>([]);
   let bulk = $state<FlightView[] | null>(null);
-  let segmenting = $state(false);
+  // The segmentation is a task: it outlives this pane when another session is
+  // selected, and is found again on coming back.
+  let segmentTask = $derived(runningTask(`segment:${session.id}`));
+  let segmenting = $derived(segmentTask !== undefined);
   let status = $state<string | null>(null);
-  let segmentDone = $state(0);
-  let segmentTotal = $state(0);
   let exporting = $state(false);
   let notice = $state<string | null>(null);
   let playing = $state<FlightView | null>(null);
@@ -44,25 +45,13 @@
     picked = [];
   }
 
-  onMount(() => {
-    const unlisten = onProgress("segment-progress", (progress) => {
-      status = progress.line;
-      segmentDone = progress.done;
-      segmentTotal = progress.total;
-    });
-    return () => { unlisten.then((stop) => stop()); };
-  });
-
   async function segment() {
-    segmenting = true;
-    status = "Preparing…";
+    status = null;
     try {
-      status = await api.segment(session.id);
+      status = await track(`Segment “${session.name}”`, (id) => api.segment(id, session.id),
+                           { key: `segment:${session.id}`, summary: (s) => s });
     } catch (e) {
       status = `Segmentation failed: ${message(e)}`;
-    } finally {
-      segmenting = false;
-      onchange();
     }
   }
 
@@ -94,7 +83,8 @@
     exporting = true;
     conflict = null;
     try {
-      const outcome = await api.exportFlight(flight.id, destination, mode);
+      const outcome = await track(`Export ${flightName(flight)}`, () => api.exportFlight(flight.id, destination, mode),
+                                  { summary: (o) => o.kind === "mismatch" ? "Waiting for a choice" : "Written" });
       if (outcome.kind === "mismatch") {
         // Never write a file that looks fine and plays its second half at
         // the wrong speed: the user chooses what happens instead.
@@ -209,12 +199,12 @@
     {/if}
   </div>
 
-  {#if segmenting || status || exporting}
+  {#if segmentTask || status || exporting}
     <footer class="row">
-      {#if segmenting && segmentTotal}
-        <progress value={Math.max(0, segmentDone - 1)} max={segmentTotal} style:width="160px"></progress>
+      {#if segmentTask?.total}
+        <progress value={segmentTask.done} max={segmentTask.total} style:width="160px"></progress>
       {/if}
-      <span class="caption">{exporting ? "Exporting…" : status}</span>
+      <span class="caption">{exporting ? "Exporting…" : segmentTask?.line ?? status}</span>
       <span class="spacer"></span>
       {#if !segmenting && status}<button class="plain small" onclick={() => (status = null)}>✕</button>{/if}
     </footer>

@@ -92,6 +92,8 @@ export interface ImportSummary {
 }
 
 export interface Progress {
+  /** The tasks.svelte.ts ID of the task reporting. */
+  task: string;
   line: string;
   done: number;
   total: number;
@@ -116,9 +118,9 @@ export const api = {
     invoke<string>("folder_preview", { pattern, session }),
   snapshot: () => invoke<SessionView[]>("snapshot"),
   cards: () => invoke<Card[]>("cards"),
-  importCard: (folder: string, name: string, date: string | null, deleteOriginals: boolean) =>
-    invoke<ImportSummary>("import_card", { folder, name, date, deleteOriginals }),
-  segment: (session: string) => invoke<string>("segment", { session }),
+  importCard: (task: string, folder: string, name: string, date: string | null, deleteOriginals: boolean) =>
+    invoke<ImportSummary>("import_card", { task, folder, name, date, deleteOriginals }),
+  segment: (task: string, session: string) => invoke<string>("segment", { task, session }),
   setDetectionProfile: (session: string, profile: string) =>
     invoke<void>("set_detection_profile", { session, profile }),
   renameSession: (id: string, name: string) => invoke<void>("rename_session", { id, name }),
@@ -133,8 +135,8 @@ export const api = {
   poster: (clip: string) => invoke<string>("poster", { clip }),
   exportFlight: (flight: string, destination: string, mode: ExportMode) =>
     invoke<ExportOutcome>("export_flight", { flight, destination, mode }),
-  exportFlights: (flights: string[], folder: string, onMismatch: "parts" | "reencode") =>
-    invoke<BulkExport>("export_flights", { flights, folder, onMismatch }),
+  exportFlights: (task: string, flights: string[], folder: string, onMismatch: "parts" | "reencode") =>
+    invoke<BulkExport>("export_flights", { task, flights, folder, onMismatch }),
   exportLabels: (session: string, destination: string) =>
     invoke<number>("export_labels", { session, destination }),
   proxy: (flight: string) => invoke<string>("proxy", { flight }),

@@ -4,6 +4,7 @@
   import { api, message, onProgress, type BulkExport, type FlightView } from "../api";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import { track } from "./tasks.svelte";
 
   // Several flights into one folder. Each keeps the single export's rules —
   // lossless, frame-exact, never overwriting — and the one question a batch
@@ -17,9 +18,11 @@
   let line = $state("");
   let result = $state<BulkExport | null>(null);
   let failure = $state<string | null>(null);
+  let taskId: string | null = null;
 
   onMount(() => {
     const unlisten = onProgress("export-progress", (progress) => {
+      if (progress.task !== taskId) return;
       done = progress.done;
       line = progress.line;
     });
@@ -35,7 +38,11 @@
     if (!folder) return;
     running = true;
     try {
-      result = await api.exportFlights(flights.map((f) => f.id), folder, onMismatch);
+      const target = folder;
+      result = await track(`Export ${flights.length} flight${flights.length === 1 ? "" : "s"}`, (id) => {
+        taskId = id;
+        return api.exportFlights(id, flights.map((f) => f.id), target, onMismatch);
+      }, { summary: (r) => `${r.written.length} file(s) written${r.failed.length ? `, ${r.failed.length} failed` : ""}` });
     } catch (e) {
       failure = message(e);
     } finally {
@@ -47,7 +54,7 @@
 </script>
 
 <Modal title="Export {flights.length} flight{flights.length === 1 ? '' : 's'}" width={540}
-       onclose={running ? undefined : onclose}>
+       {onclose}>
   {#if !result && !failure}
     <p class="caption">Each flight becomes “Session — Title” in the folder: lossless and frame-exact
       for the DVR, the take as recorded for action cams. Existing files are never overwritten.</p>
@@ -85,7 +92,7 @@
     {#if result || failure}
       <button class="primary" onclick={onclose}>Done</button>
     {:else}
-      <button onclick={onclose} disabled={running}>Cancel</button>
+      <button onclick={onclose}>{running ? "Continue in background" : "Cancel"}</button>
       <button class="primary" onclick={start} disabled={running || !folder}>
         {running ? "Exporting…" : `Export ${flights.length}`}
       </button>

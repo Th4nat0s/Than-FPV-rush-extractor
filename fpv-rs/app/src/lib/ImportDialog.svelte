@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from "svelte";
   import { api, message, onProgress, type ImportSummary, type Info } from "../api";
   import MediaRoot from "./MediaRoot.svelte";
+  import { track } from "./tasks.svelte";
   import Modal from "./Modal.svelte";
 
   let { folder, suggestedName, existing, root, onrootchange, onclose }: {
@@ -31,11 +32,13 @@
   let summary = $state<ImportSummary | null>(null);
   let failure = $state<string | null>(null);
   let logBox: HTMLDivElement | undefined = $state();
+  let taskId: string | null = null;
 
   let joins = $derived(existing.includes(name.trim()));
 
   onMount(() => {
     const unlisten = onProgress("import-progress", async (progress) => {
+      if (progress.task !== taskId) return;
       log.push(progress.line);
       done = progress.done;
       total = progress.total;
@@ -48,7 +51,11 @@
   async function start() {
     running = true;
     try {
-      summary = await api.importCard(folder, name.trim(), hasDate ? date : null, deleteOriginals);
+      // A task, so the window can close and the import go on in the task bar.
+      summary = await track(`Import “${name.trim()}”`, (id) => {
+        taskId = id;
+        return api.importCard(id, folder, name.trim(), hasDate ? date : null, deleteOriginals);
+      }, { key: "import", summary: (s) => `${s.imported} imported, ${s.skipped} skipped, ${s.failed} failed` });
     } catch (e) {
       failure = `Import failed: ${message(e)}`;
     } finally {
@@ -59,7 +66,7 @@
   let finished = $derived(summary !== null || failure !== null);
 </script>
 
-<Modal title="Import recordings" width={520} onclose={running ? undefined : onclose}>
+<Modal title="Import recordings" width={520} {onclose}>
   <p class="caption path">{folder}</p>
 
   <fieldset disabled={running || finished}>
@@ -105,7 +112,7 @@
     {#if finished}
       <button class="primary" onclick={onclose}>Done</button>
     {:else}
-      <button onclick={onclose} disabled={running}>Cancel</button>
+      <button onclick={onclose}>{running ? "Continue in background" : "Cancel"}</button>
       <button class="primary" onclick={start} disabled={running || !name.trim()}>
         {running ? "Importing…" : "Import"}
       </button>
