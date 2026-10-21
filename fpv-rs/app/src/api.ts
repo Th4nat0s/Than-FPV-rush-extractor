@@ -119,6 +119,11 @@ export interface CacheUsage {
   previews: number;
 }
 
+/** How the player opens a flight: from its own files, or from a proxy. */
+export type Playback =
+  | { kind: "direct"; segments: { url: string; start: number; end: number; offset: number }[] }
+  | { kind: "proxy" };
+
 export type ExportMode = "lossless" | "parts" | "reencode";
 
 export interface BulkExport {
@@ -167,6 +172,7 @@ export const api = {
     invoke<BulkExport>("export_flights", { task, flights, folder, onMismatch }),
   exportLabels: (session: string, destination: string) =>
     invoke<number>("export_labels", { session, destination }),
+  playback: (flight: string) => invoke<Playback>("playback", { flight }),
   proxy: (flight: string) => invoke<string>("proxy", { flight }),
   flightTags: (flight: string) => invoke<TagView[]>("flight_tags", { flight }),
   addTag: (flight: string, label: string, start: number, end: number) =>

@@ -59,6 +59,33 @@ fn rough_strip(media: &MediaInfo, spacing: f64) -> bool {
     !media.is_all_intra() && spacing >= 2.0
 }
 
+/// Whether a flight can play from its own files: every part from an action
+/// cam. The DVR's MJPEG never can.
+fn plays_directly<'m>(media: impl IntoIterator<Item = &'m MediaInfo>) -> bool {
+    media.into_iter().all(|media| !media.needs_segmentation())
+}
+
+/// How the player opens a flight (`Library::playback`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Playback {
+    /// From the recordings themselves, one segment after the other.
+    Direct { segments: Vec<Segment> },
+    /// From the flight's proxy.
+    Proxy,
+}
+
+/// One recording's share of a flight, in that recording's own seconds.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Segment {
+    pub path: PathBuf,
+    pub start: f64,
+    pub end: f64,
+    /// Where it begins on the flight's clock.
+    pub offset: f64,
+}
+
 /// The cache folder's contents by kind, in bytes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -670,6 +697,32 @@ impl Library {
     }
 
     // Playback
+
+    /// How the player opens a flight. An action-cam take plays from its own
+    /// files — H.264 or HEVC in MP4, which the web view decodes itself (in
+    /// hardware on a Mac): no transcode to wait for, full quality, exact
+    /// frames, and no gigabytes in the cache. A GoPro take in chapters plays
+    /// them one after the other. The DVR needs the proxy: no web view reads
+    /// MJPEG-in-AVI, and a flight across two recordings at different rates
+    /// only plays right once resampled and joined. If the web view refuses a
+    /// file after all (HEVC on Linux without the GStreamer plugin), the player
+    /// falls back to `proxy`.
+    pub fn playback(&self, flight: &str) -> Result<Playback> {
+        let (_, _, timeline) = self.flight(flight)?;
+        if !plays_directly(timeline.parts.iter().map(|(_, file)| &file.media)) {
+            return Ok(Playback::Proxy);
+        }
+        let segments = timeline.parts.iter().map(|(clip, file)| {
+            let rate = file.media.frame_rate;
+            Segment {
+                path: PathBuf::from(&file.imported_path),
+                start: rate.seconds(clip.start_frame),
+                end: rate.seconds(clip.end_frame),
+                offset: timeline.flight_time(clip.start_frame, clip).unwrap_or_default(),
+            }
+        }).collect();
+        Ok(Playback::Direct { segments })
+    }
 
     /// The flight's playback proxy: a cache hit, or a fresh transcode
     /// registered into the cache and evicted against the budget — never the

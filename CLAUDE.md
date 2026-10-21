@@ -805,8 +805,9 @@ tagged, never segmented: the pilot starts and stops the camera, so one file is o
   other systems keep `auto` (`HWACCEL`). The faster x264 presets were *slower* (superfast 10.4 s, ultrafast 12.6 s, and
   files twice the size). Tags are unaffected: they go back to the recording's frames through
   seconds. The DVR's 480 lines and 24–30 fps are never touched, so its proxy is unchanged.
-  Proxies built before keep playing until evicted. HEVC needs a proxy anyway — WebKitGTK will
-  not play it.
+  Proxies built before keep playing until evicted. Since 2026-10-21 an action-cam take only
+  gets a proxy when the web view refuses its file (see "Action-cam takes play from their own
+  files").
 Verified on a synthetic GoPro card (two H.264 chapters, one HEVC take, `.LRV`/`.THM`),
 imported into a library the Swift CLI built and read back by it; no real GoPro file has been
 through it yet.
@@ -908,6 +909,24 @@ frame-exact boundary editor. Layout:
   flight is listed in the summary and the batch goes on. Verified in the app on the reference
   pair: flight 1 came out as two lossless parts at 29.887 and 24.486 fps, flight 2 as 19.276 s,
   the GoPro take as `.mp4`.
+- **Action-cam takes play from their own files** (2026-10-21, the pilot's call: a rush
+  library, not an editor). `Library::playback` answers `Direct` with one segment per recording
+  (its own seconds, and its offset on the flight's clock, through each file's rate) for any
+  flight with no MJPEG part, `Proxy` for the DVR — no web view reads MJPEG-in-AVI, and a flight
+  across two recordings at different rates only plays right resampled and joined. No
+  transcode, full quality, exact frames for tags, no gigabytes in the cache. The loopback
+  server hands each played recording over one by one (`MediaServer::share`, a random id per
+  file): the web view gets a URL, never a path, and a recording nobody handed over is not
+  reachable (tested). `lib/playlist.ts` is the player's clock over its files — flight time ↔
+  (segment, file time), the move to the next chapter, a stop at a trimmed end — so a GoPro take
+  in chapters plays one file after the other, with a short pause at each cut (accepted: not an
+  editor; a second preloading `<video>` would hide it). The native controls show the file's
+  time; an overlay shows the flight's ("0:04.7 / 0:07.0 · chapter 2/2"). If the web view
+  refuses a file, the player builds the proxy and carries on from the same flight time, saying
+  so. **WebKitGTK does play HEVC** — 4K 10-bit, with `gstreamer1.0-libav` installed, as in the
+  devcontainer; the earlier note that it would not was wrong. The fallback was exercised with
+  an FFV1 `.MOV` (refused, code 4). Verified in the app: a two-chapter take moving to chapter 2
+  on its own, a tag marked there landing on GH020060 frame 89 (read back by `fpvlib tags`).
 - **Empty Cache, in Settings** (2026-10-20, the pilot's request): the Cache section shows
   what it holds by kind (`Library::cache_usage`: playback previews, hover strips, posters,
   editor frames) and empties it after a confirmation (`clear_cache`): the four folders the

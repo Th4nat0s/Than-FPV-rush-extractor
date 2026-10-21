@@ -596,3 +596,37 @@ fn empties_only_the_folders_it_made() {
     fixture.library.clear_cache().unwrap();
     assert!(mine.is_file());
 }
+
+#[test]
+fn plays_an_action_cam_take_from_its_own_files_chapter_by_chapter() {
+    let (fixture, session) = imported();
+    // Take 42: two chapters, 2 s then 1 s, at 30 fps.
+    let take = &session.flights[0];
+    assert_eq!(take.recordings, 2);
+    let Playback::Direct { segments } = fixture.library.playback(&take.id).unwrap() else {
+        panic!("an action-cam take plays from its own files")
+    };
+    let spans: Vec<_> = segments.iter().map(|s| (s.start, s.end, s.offset)).collect();
+    assert_eq!(spans, [(0.0, 2.0, 0.0), (0.0, 1.0, 2.0)]);
+    assert!(segments[0].path.ends_with("GH010042.MP4") && segments[1].path.ends_with("GH020042.MP4"));
+    // No proxy was made for it.
+    assert!(fixture.library.proxy_cache().entries().unwrap().is_empty());
+
+    // Trimmed in the editor, it plays between its new bounds.
+    fixture.library.update_clip(&take.clips[0].id, 15, 45).unwrap();
+    let Playback::Direct { segments } = fixture.library.playback(&take.id).unwrap() else { panic!() };
+    assert_eq!((segments[0].start, segments[0].end, segments[1].offset), (0.5, 1.5, 1.0));
+}
+
+#[test]
+fn plays_the_dvr_through_a_proxy_and_action_cams_directly() {
+    use fpv_core::FrameRate;
+    let dvr = MediaInfo::new(640, 480, FrameRate::new(1_000_000, 33_459), 141.0, "mjpeg");
+    let gopro = MediaInfo::new(3840, 2160, FrameRate::new(60_000, 1001), 30.0, "h264");
+    let osmo = MediaInfo::new(3840, 2160, FrameRate::new(60_000, 1001), 441.0, "hevc");
+    assert!(!plays_directly([&dvr]));
+    assert!(plays_directly([&gopro, &gopro]));
+    assert!(plays_directly([&osmo]));
+    // Never seen, but a flight mixing the two would need the proxy's join.
+    assert!(!plays_directly([&gopro, &dvr]));
+}

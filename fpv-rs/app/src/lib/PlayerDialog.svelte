@@ -4,15 +4,25 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import { track } from "./tasks.svelte";
+  import { advance, duration, flightTime, locate, type Segment } from "./playlist";
 
-  // The player only ever opens the flight's proxy: a web view plays neither
-  // MJPEG-in-AVI nor, on Linux, HEVC. The proxy is resampled, so a tag marked
-  // here goes straight back to source frames in Rust (FlightTimeline) and is
-  // never stored on the proxy's clock.
+  // An action-cam take plays from its own files, chapter after chapter; a DVR
+  // flight from its proxy — no web view reads MJPEG-in-AVI — which is the
+  // one-segment case. Either way the player's time is a file's, and the
+  // flight's clock comes from playlist.ts; a tag marked on it goes back to
+  // source frames in Rust (FlightTimeline), never stored on a file's clock.
   let { flight, onclose }: { flight: FlightView; onclose: () => void } = $props();
 
   let video: HTMLVideoElement | undefined = $state();
-  let source = $state<string | undefined>();
+  let segments = $state<Segment[]>([]);
+  let index = $state(0);
+  /** A file time to go to once the current segment's file has loaded. */
+  let pending: number | null = null;
+  let direct = $state(false);
+  let building = $state(false);
+  let note = $state<string | null>(null);
+  let source = $derived(segments[index]?.url);
+  let total = $derived(duration(segments));
   let failure = $state<string | null>(null);
   let tags = $state<TagView[]>([]);
   let suggestions = $state<string[]>([]);
@@ -27,25 +37,81 @@
   onMount(async () => {
     reload().catch((e) => (failure = message(e)));
     try {
-      // Instant on a cache hit; a transcode otherwise, which the task bar shows.
-      source = await track(`Preview of ${flightName(flight)}`, () => api.proxy(flight.id),
-                           { key: `proxy:${flight.id}`, line: "Transcoding the flight for playback…",
-                             summary: () => "Ready" });
+      const playback = await api.playback(flight.id);
+      if (playback.kind === "direct") {
+        direct = true;
+        segments = playback.segments;
+        pending = segments[0]?.start ?? 0;
+      } else {
+        await openProxy(0);
+      }
     } catch (e) {
       failure = message(e);
     }
   });
 
+  /** The proxy, from flight time `at`. Instant on a cache hit; a transcode
+   * otherwise, which the task bar shows. */
+  async function openProxy(at: number) {
+    building = true;
+    try {
+      const url = await track(`Preview of ${flightName(flight)}`, () => api.proxy(flight.id),
+                              { key: `proxy:${flight.id}`, line: "Transcoding the flight for playback…",
+                                summary: () => "Ready" });
+      direct = false;
+      pending = at;
+      index = 0;
+      segments = [{ url, start: 0, end: flight.duration, offset: 0 }];
+    } finally {
+      building = false;
+    }
+  }
+
+  function loaded() {
+    if (video && pending !== null) video.currentTime = pending;
+    pending = null;
+  }
+
+  function go(next: number, time: number) {
+    if (next === index && video) {
+      video.currentTime = time;
+    } else {
+      // A new file: the player loads it and plays on (autoplay), from `time`.
+      pending = time;
+      index = next;
+    }
+  }
+
+  function tick() {
+    if (!video || !segments.length) return;
+    now = flightTime(segments, index, video.currentTime);
+    const step = advance(segments, index, video.currentTime);
+    if (step.kind === "next") go(step.index, step.time);
+    else if (step.kind === "end" && !video.paused) video.pause();
+  }
+
+  function refused() {
+    const reason = video?.error?.message || `code ${video?.error?.code}`;
+    if (direct) {
+      // HEVC on Linux without the GStreamer plugin, say: the proxy plays it.
+      note = `This recording cannot be played directly here (${reason}); playing a preview.`;
+      openProxy(now).catch((e) => (failure = message(e)));
+    } else {
+      failure = `The player refused the preview (${reason}): ${source}`;
+    }
+  }
+
   function seek(seconds: number) {
     // Setting currentTime seeks to the exact frame (fastSeek is the
     // keyframe-snapping one); a tag lands on its figure.
-    if (video) video.currentTime = seconds;
+    const target = locate(segments, seconds);
+    go(target.index, target.time);
   }
 
   async function commit() {
     const name = label.trim();
     if (!name || !video) return;
-    const at = video.currentTime;
+    const at = now;
     try {
       // A range across the DVR's cut, or a GoPro chapter's, is clipped to the
       // recording holding its start: a tag lives in one recording.
@@ -66,7 +132,7 @@
   function keydown(event: KeyboardEvent) {
     // I marks the start of a range, unless typing a name.
     if (event.key.toLowerCase() === "i" && !(event.target instanceof HTMLInputElement) && video) {
-      markIn = video.currentTime;
+      markIn = now;
     }
   }
 </script>
@@ -76,20 +142,28 @@
 <Modal title={flightName(flight)} width={1100} {onclose}>
   <div class="layout">
     <div class="player">
-      {#if source}
+      {#if source && !building}
         <!-- svelte-ignore a11y_media_has_caption -->
         <video bind:this={video} src={source} controls autoplay
-               ontimeupdate={() => (now = video?.currentTime ?? 0)}
-               onerror={() => (failure = `The player refused the proxy (${video?.error?.message || `code ${video?.error?.code}`}): ${source}`)}></video>
+               onloadedmetadata={loaded} ontimeupdate={tick} onended={tick} onerror={refused}></video>
+        <div class="top">
+          {#if note && !failure}<p class="tag-on note">{note}</p>{/if}
+          <span class="spacer"></span>
+          <!-- The native controls show the file's time; this is the flight's. -->
+          <p class="tag-on clock mono">{clock(now, true)} / {clock(total, true)}{#if segments.length > 1}
+            · chapter {index + 1}/{segments.length}{/if}</p>
+        </div>
         {#if failure}<p class="overlay caption">{failure}</p>{/if}
       {:else if failure}
-        <div class="empty"><h2>Cannot build the preview</h2><p>{failure}</p></div>
-      {:else}
+        <div class="empty"><h2>Cannot play this flight</h2><p>{failure}</p></div>
+      {:else if building}
         <div class="empty">
           <div class="spinner"></div>
           <p>Building the preview…</p>
-          <p class="caption">A transcode of the whole flight, once; it is cached afterwards.</p>
+          <p class="caption">{note ?? "A transcode of the whole flight, once; it is cached afterwards."}</p>
         </div>
+      {:else}
+        <div class="empty"><div class="spinner"></div></div>
       {/if}
     </div>
 
@@ -146,6 +220,10 @@
 <style>
   .layout { display: flex; gap: 16px; height: min(600px, calc(100vh - 170px)); }
   .player { position: relative; flex: 1; min-width: 0; background: #000; border-radius: var(--radius); overflow: hidden; display: flex; }
+  /* Above the picture, clear of the native controls at the bottom. */
+  .top { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 8px; pointer-events: none; }
+  .tag-on { margin: 0; padding: 2px 6px; font-size: 12px; color: #eee; background: rgba(0, 0, 0, 0.6); border-radius: 4px; }
+  .clock { white-space: nowrap; }
   .overlay { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0; color: #f88; }
   video { width: 100%; height: 100%; object-fit: contain; }
   .player .empty { flex: 1; color: #aaa; }

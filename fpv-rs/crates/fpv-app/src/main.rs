@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
-                  SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
+                  Playback, SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -290,6 +290,36 @@ async fn export_labels(app: Shared<'_>, session: String, destination: PathBuf) -
     blocking(&app, move |app| app.library().export_labels(&session, &destination)).await
 }
 
+/// How the player opens a flight, with each recording it plays directly
+/// handed to the loopback server: the web view gets a URL, never a path.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum PlaybackView {
+    Direct { segments: Vec<SegmentView> },
+    Proxy,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SegmentView {
+    url: String,
+    start: f64,
+    end: f64,
+    offset: f64,
+}
+
+#[tauri::command]
+async fn playback(app: Shared<'_>, flight: String) -> Reply<PlaybackView> {
+    blocking(&app, move |app| Ok(match app.library().playback(&flight)? {
+        Playback::Proxy => PlaybackView::Proxy,
+        Playback::Direct { segments } => PlaybackView::Direct {
+            segments: segments.into_iter().map(|s| SegmentView {
+                url: app.media.share(&s.path), start: s.start, end: s.end, offset: s.offset,
+            }).collect(),
+        },
+    })).await
+}
+
 /// The URL the player loads the flight's proxy from, building it first if
 /// needed — over the loopback server, since WebKitGTK plays no `asset://` video.
 #[tauri::command]
@@ -350,7 +380,7 @@ fn main() {
             segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
             missing_strips, prepare_strips, cache_usage, clear_cache,
-            export_flight, export_flights, export_labels, proxy, flight_tags, add_tag, delete_tag, tag_labels,
+            export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])
         .run(tauri::generate_context!())
         .expect("the FPV Rush window could not start");

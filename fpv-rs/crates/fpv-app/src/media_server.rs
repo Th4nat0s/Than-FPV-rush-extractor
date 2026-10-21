@@ -7,19 +7,27 @@
 //! needs — it plays. Images keep using `asset://`, which works for them.
 //!
 //! Exposure is kept to the minimum: bound to 127.0.0.1 on a random port, every
-//! URL carries a per-run random token, and only files inside the library are
-//! ever served — and since the proxies moved to the cache folder, that folder
-//! is the only one, fixed for the run.
+//! URL carries a per-run random token, and only two kinds of file are ever
+//! served: anything inside the cache folder (the proxies), fixed for the run,
+//! and recordings handed over one by one with `share` — an action-cam take the
+//! player opens directly — each under a random id. A recording nobody handed
+//! over is not reachable, by path or by guess.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::thread;
+
+/// Recordings handed over, by their random id.
+type Shared = Arc<Mutex<HashMap<String, PathBuf>>>;
 
 pub struct MediaServer {
     port: u16,
     token: String,
+    shared: Shared,
 }
 
 impl MediaServer {
@@ -30,17 +38,35 @@ impl MediaServer {
         let token = uuid::Uuid::new_v4().simple().to_string();
         let root = root.canonicalize()?;
         let expected = token.clone();
+        let shared = Shared::default();
+        let handed = shared.clone();
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                let (root, token) = (root.clone(), expected.clone());
+                let (root, token, shared) = (root.clone(), expected.clone(), handed.clone());
                 thread::spawn(move || {
-                    if let Err(error) = serve(stream, &root, &token) {
+                    if let Err(error) = serve(stream, &root, &token, &shared) {
                         log::debug!("media request ended: {error}");
                     }
                 });
             }
         });
-        Ok(Self { port, token })
+        Ok(Self { port, token, shared })
+    }
+
+    /// Makes one recording playable, wherever it lives, and returns its URL;
+    /// the same file keeps the same URL for the run.
+    pub fn share(&self, path: &Path) -> String {
+        let mut shared = self.shared.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let id = match shared.iter().find(|(_, p)| p.as_path() == path) {
+            Some((id, _)) => id.clone(),
+            None => {
+                let id = uuid::Uuid::new_v4().simple().to_string();
+                shared.insert(id.clone(), path.to_path_buf());
+                id
+            }
+        };
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        format!("http://127.0.0.1:{}/{}/shared/{id}/{}", self.port, self.token, encode(&name))
     }
 
     /// The URL the player loads `path` from.
@@ -50,7 +76,7 @@ impl MediaServer {
 }
 
 /// One request: GET or HEAD, with or without a `Range` header.
-fn serve(stream: TcpStream, root: &Path, token: &str) -> std::io::Result<()> {
+fn serve(stream: TcpStream, root: &Path, token: &str, shared: &Shared) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -72,12 +98,14 @@ fn serve(stream: TcpStream, root: &Path, token: &str) -> std::io::Result<()> {
     if method != "GET" && method != "HEAD" {
         return respond(&mut stream, "405 Method Not Allowed", &[], b"");
     }
-    let Some(path) = resolve(target, root, token) else {
+    let Some(path) = resolve(target, root, token, shared) else {
         return respond(&mut stream, "404 Not Found", &[], b"");
     };
     let mut file = File::open(&path)?;
     let length = file.metadata()?.len();
-    let content_type = match path.extension().and_then(|e| e.to_str()) {
+    // Cameras write upper-case extensions: DJI_0001.MP4, GH010042.MP4.
+    let extension = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    let content_type = match extension.as_deref() {
         Some("mp4") => "video/mp4",
         Some("mov") => "video/quicktime",
         Some("jpg") => "image/jpeg",
@@ -109,9 +137,15 @@ fn serve(stream: TcpStream, root: &Path, token: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// `/<token>/shared/<id>/<name>` → a recording handed over with `share`;
 /// `/<token>/<encoded path>` → the file, if it exists and sits inside `root`.
-fn resolve(target: &str, root: &Path, token: &str) -> Option<PathBuf> {
+fn resolve(target: &str, root: &Path, token: &str, shared: &Shared) -> Option<PathBuf> {
     let rest = target.strip_prefix('/')?.strip_prefix(token)?.strip_prefix('/')?;
+    if let Some(handed) = rest.strip_prefix("shared/") {
+        let id = handed.split('/').next()?;
+        let path = shared.lock().ok()?.get(id).cloned()?;
+        return path.is_file().then_some(path);
+    }
     let path = PathBuf::from(decode(rest)?).canonicalize().ok()?;
     (path.starts_with(root) && path.is_file()).then_some(path)
 }
@@ -234,5 +268,32 @@ mod tests {
                              encode(&outside.path().join("secret.mp4").to_string_lossy()));
         assert!(get(&escape, None).0.starts_with("HTTP/1.1 404"));
 
+    }
+
+    #[test]
+    fn serves_a_recording_it_was_handed_and_no_other() {
+        let cache = tempfile::tempdir().unwrap();
+        let footage = tempfile::tempdir().unwrap();
+        let take = footage.path().join("Test OSMO/DJI_0001.MP4");
+        std::fs::create_dir_all(take.parent().unwrap()).unwrap();
+        std::fs::write(&take, b"0123456789").unwrap();
+        std::fs::write(footage.path().join("Test OSMO/DJI_0002.MP4"), b"not shared").unwrap();
+        let server = MediaServer::start(cache.path()).unwrap();
+
+        let url = server.share(&take);
+        let (head, body) = get(&url, Some("bytes=4-"));
+        assert!(head.starts_with("HTTP/1.1 206") && head.contains("video/mp4"), "{head}");
+        assert_eq!(body, b"456789");
+        // Handing it again gives the same address.
+        assert_eq!(server.share(&take), url);
+
+        // Its neighbour was never handed over, by path or by a guessed id.
+        let neighbour = footage.path().join("Test OSMO/DJI_0002.MP4");
+        assert!(get(&server.url(&neighbour), None).0.starts_with("HTTP/1.1 404"));
+        let guessed = format!("http://127.0.0.1:{}/{}/shared/{}/DJI_0002.MP4", server.port, server.token,
+                              uuid::Uuid::new_v4().simple());
+        assert!(get(&guessed, None).0.starts_with("HTTP/1.1 404"));
+        let wrong_token = url.replace(&server.token, "guess");
+        assert!(get(&wrong_token, None).0.starts_with("HTTP/1.1 404"));
     }
 }

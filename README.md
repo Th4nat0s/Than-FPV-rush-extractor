@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 198 tests
+cd fpv-rs && cargo test --workspace     # 201 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -170,8 +170,11 @@ A grid of flight cards: poster, duration, badges (take-off/pickup, action cam,
 
 ### 4. Play and tag figures
 
-Click a card to play it. The player opens a transcoded proxy of the whole flight
-(built once, then cached), and a sidebar lists its **figures** — labelled points
+Click a card to play it. An action-cam take plays straight from its own files —
+no waiting, full quality, a GoPro take's chapters one after the other. A DVR
+flight plays from a proxy transcoded once and cached (no web view reads the
+DVR's MJPEG), as does any take the system cannot play directly. A sidebar lists
+the flight's **figures** — labelled points
 or ranges such as *split-S* or *power loop*. **Mark In** (or `I`) starts a range,
 a name and Enter finishes it at the playhead; without a mark, Enter tags a point.
 Names already used are suggested. Clicking a figure seeks to it. Tags are stored
