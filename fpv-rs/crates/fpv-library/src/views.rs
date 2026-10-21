@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use fpv_core::{Clip, ClipEntry, FigureTag, Flight, FlightTimeline, Session, SourceFile,
+use fpv_core::{Clip, FigureTag, Flight, FlightTimeline, Session, SourceFile,
                uuid_string};
 use serde::Serialize;
 use uuid::Uuid;
@@ -54,8 +54,6 @@ pub struct FlightView {
     pub action_cam: bool,
     /// What recorded it, as on the Files tab: its first recording's.
     pub source: String,
-    /// `poweron`, `midflight` or `unknown`, from the first clip.
-    pub entry: String,
     /// Changes whenever a boundary does: what cached strips are keyed on.
     pub cache_key: String,
 }
@@ -131,11 +129,6 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
         recordings: parts.len(),
         action_cam: parts.iter().any(|(_, f)| !f.media.needs_segmentation()),
         source: parts.first().map(|(_, f)| source(f)).unwrap_or_default(),
-        entry: match clips.first().map(|c| c.entry) {
-            Some(ClipEntry::Poweron) => "poweron",
-            Some(ClipEntry::Midflight) => "midflight",
-            _ => "unknown",
-        }.into(),
         cache_key: Flight::cache_key(flight.id, clips),
         clips: parts.iter().map(|(clip, file)| ClipView {
             id: uuid_string(clip.id),

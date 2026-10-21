@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use fpv_core::{Clip, DetectionProfile, FigureTag, Flight, FlightTimeline, MediaInfo, Session, uuid_string};
-use fpv_detect::{DetectorSettings, DisarmedTemplate, FileDetector};
+use fpv_detect::{DetectorSettings, FileDetector};
 use fpv_export::{ClipExporter, ExportError};
 use fpv_import::{FolderPattern, ImportEvent, LibraryImporter};
 use fpv_media::{FfmpegRunner, FrameReader, MediaProbe, ThumbnailGenerator};
@@ -400,8 +400,7 @@ impl Library {
         // The session's own thresholds; the run records them, so a clip set
         // stays explainable whichever profile produced it.
         let settings = DetectorSettings::for_profile(session.detection_profile);
-        let detector = FileDetector::new(settings.clone(), FrameReader::new(self.tools.clone()),
-                                         DisarmedTemplate::bundled().cloned());
+        let detector = FileDetector::new(settings.clone(), FrameReader::new(self.tools.clone()));
         let ffmpeg = self.ffmpeg();
         let report = SegmentationService::new(&detector, &ffmpeg, &self.store, settings)
             .segment(session.id, &self.posters(), progress)?;

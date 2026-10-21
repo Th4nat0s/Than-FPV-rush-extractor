@@ -90,7 +90,6 @@
   });
 
   let badges = $derived(([
-    flight.entry === "poweron" ? ["power", "Take-off"] : flight.entry === "midflight" ? ["antenna", "Pickup"] : null,
     [flight.actionCam ? "camera" : "goggles", flight.source],
     flight.recordings > 1 ? ["link", `${flight.recordings} ${flight.actionCam ? "chapters" : "recordings"}`] : null,
   ] as ([IconName, string] | null)[]).filter((badge) => badge !== null));

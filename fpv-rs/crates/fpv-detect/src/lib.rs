@@ -8,12 +8,10 @@
 //! loop into a different traversal without re-running the parity checks.
 
 mod detector;
-mod disarmed;
 mod file_detector;
 mod metrics;
 
 pub use detector::{ClipDetector, DetectedClip, DetectorSettings, FrameState};
-pub use disarmed::DisarmedTemplate;
 pub use file_detector::{ClipDetecting, ClipStitcher, DetectError, DetectionResult,
                         FileClips, FileDetector};
 pub use metrics::{FrameAnalyzer, FrameMetrics};

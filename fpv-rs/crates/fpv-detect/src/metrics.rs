@@ -25,9 +25,6 @@ pub struct FrameMetrics {
     /// transmitter tears the picture differently every frame, so it has no
     /// temporal continuity. Filled in by the sequence.
     pub coherence: f64,
-    /// DISARMED glyph match, 0…1. Negative means no template was available —
-    /// which costs nothing but the `entry` tag (CLAUDE.md 9.8).
-    pub disarmed: f64,
 }
 
 impl FrameMetrics {
@@ -36,7 +33,7 @@ impl FrameMetrics {
                vertical_correlation: f64, flat_fraction: f64) -> Self {
         Self {
             luma, laplacian_variance, block_variation, vertical_correlation, flat_fraction,
-            scene_correlation: 1.0, coherence: 1.0, disarmed: -1.0,
+            scene_correlation: 1.0, coherence: 1.0,
         }
     }
 }

@@ -2,8 +2,7 @@ use std::path::Path;
 
 use fpv_media::{FfmpegError, FrameReader};
 
-use crate::{ClipDetector, DetectedClip, DetectorSettings, DisarmedTemplate, FrameAnalyzer,
-            FrameMetrics};
+use crate::{ClipDetector, DetectedClip, DetectorSettings, FrameAnalyzer, FrameMetrics};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DetectError {
@@ -33,22 +32,17 @@ pub struct DetectionResult {
 pub struct FileDetector {
     pub settings: DetectorSettings,
     reader: FrameReader,
-    template: Option<DisarmedTemplate>,
 }
 
 impl Default for FileDetector {
     fn default() -> Self {
-        Self::new(DetectorSettings::default(), FrameReader::default(),
-                  DisarmedTemplate::bundled().cloned())
+        Self::new(DetectorSettings::default(), FrameReader::default())
     }
 }
 
 impl FileDetector {
-    /// The template is optional by design (CLAUDE.md 9.8): without one, every
-    /// clip reports `entry = unknown` and the boundaries are identical.
-    pub fn new(settings: DetectorSettings, reader: FrameReader,
-               template: Option<DisarmedTemplate>) -> Self {
-        Self { settings, reader, template }
+    pub fn new(settings: DetectorSettings, reader: FrameReader) -> Self {
+        Self { settings, reader }
     }
 
     pub fn detect(&self, path: &Path) -> Result<DetectionResult, DetectError> {
@@ -67,11 +61,7 @@ impl FileDetector {
         self.reader.read(path, rate, analyzer.width, analyzer.height, |index, pixels| {
             let time = index as f64 / rate;
             times.push(time);
-            let mut frame = analyzer.metrics(pixels);
-            if let Some(template) = &self.template {
-                frame.disarmed = template.match_frame(pixels, analyzer.width, analyzer.height);
-            }
-            metrics.push(frame);
+            metrics.push(analyzer.metrics(pixels));
             small_frames.push(analyzer.downsample(pixels));
             if progress(time) { Ok(()) } else { Err(DetectError::Cancelled) }
         })?;

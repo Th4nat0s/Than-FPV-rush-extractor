@@ -136,13 +136,18 @@ different Betaflight layout, and the segmentation must hold either way — so it
 picture itself (§4.1) and nothing else. This is the single most important constraint on the
 detector; do not let an OSD signal creep back into the boundary logic.
 
-Armed/disarmed is therefore *opportunistic metadata on the clip*. Where a DISARMED template is
-available and matches, a clip is tagged `entry = poweron` (the quad was on the ground at the
-start, i.e. a whole flight from power-up) or `midflight` (a pickup); otherwise `entry =
-unknown`, which is a perfectly good clip. The tag never moves a boundary and never lowers a
-clip's confidence — `confidence` describes the boundary alone. A disarm in the middle of a
-continuous feed (landing, battery swap on the bench with the VTX still up) must **not** cut the
-recording in two.
+Armed/disarmed is not read at all any more (**removed 2026-10-21**, the pilot's call). It was
+a tag — `entry = poweron` when a DISARMED template matched in the clip's first 15 s,
+`midflight` otherwise — and never moved a boundary. It was dropped because the template only
+fit one quad: it searched one fixed box, bottom-left, measured on the Letz Kwad layout, while
+Betaflight puts DISARMED wherever the pilot likes. On the Alps quad it sits mid-screen, so all
+nine clips of PICT0003 read `midflight`, the first one opening on the ground with DISARMED in
+plain view — a confident wrong label, worse than none. Searching the whole frame would work for
+the same font, at the cost of a template per font; not worth it for a badge. Removing it left
+every boundary of the 13 reference files identical. The detector now leaves `entry = unknown`
+(the pipeline still marks a DVR cut's `continuation`); `poweron`/`midflight` stay readable in
+the schema for clips segmented before. A disarm in the middle of a continuous feed (landing,
+battery swap on the bench with the VTX still up) must **not** cut the recording in two.
 
 ### 4.1 Signal presence (primary signal)
 
@@ -240,16 +245,10 @@ NTSC, × 16 rows PAL) of bitmap glyphs from a known `.mcm` font. This is not a g
 
 - Locate the grid once per file (the cell pitch is deterministic from the frame resolution;
   verify by correlating against a few known glyphs).
-- On this hardware the **`DISARMED` string bottom-left** is the armed indicator: present =
-  on the ground, absent = flying. Simpler and stronger than the flight timer. It sets a clip's
-  `entry` tag and its armed fraction — it no longer sets clip boundaries (§4.0).
-- Beware: Betaflight warnings (`LOW BATTERY`, …) share that OSD slot, hence glyph-signature
-  matching against a `DISARMED` template rather than mere text presence.
-- The **Betaflight boot screen** (`BETAFLIGHT` splash + `MENU: THR MID / YAW LEFT / PITCH UP`)
-  shows no `DISARMED` string but means the quad is unambiguously on the ground. Rather than
-  template-match it, the `entry` tag looks for ground evidence over the clip's first
-  `entry_window_s` (15 s) instead of its first frames. Trade-off: a mid-flight pickup that
-  lands inside that window is mislabelled `poweron`.
+- **Nothing reads the OSD today.** The `DISARMED` template (a fixed bottom-left box, one
+  quad's layout) was removed on 2026-10-21 — see §4.0 for why. If an OSD reading comes back,
+  it must find its glyphs wherever the pilot placed them: Betaflight's layout is per quad
+  (Letz Kwad: DISARMED bottom-left; Alps quad: centre, same font, ~23 px glyph pitch).
 - Bonus fields worth extracting for the library: craft name, pack voltage, RSSI. Craft name is a
   good auto-grouping key, and the OSD band doubles as the feed fingerprint of §4.2.
 - Do **not** use Vision / `VNRecognizeTextRequest`. The OSD font is stylized and the analog frame
@@ -269,7 +268,7 @@ one-off clock offset calibration per session against a detected event. Implement
 
 Signal presence (§4.1) owns the boundaries outright, and is the only signal that is always
 available. Feed identity (§4.2) may add splits it cannot see, but is off by default and has
-never fired on real footage. OSD (§4.3), audio and blackbox only tag the resulting clips —
+never fired on real footage. OSD (§4.3, nothing read today), audio and blackbox could only tag the resulting clips —
 they never move them, and their absence costs nothing but a label. Every clip carries a confidence
 score, and the UI must let the user correct boundaries by hand — the corrections should feed back
 as labelled data for threshold tuning.
@@ -471,12 +470,13 @@ Tauri app's (§10).
    **`spike/` is local, not tracked** (2026-10-20, the pilot's call): the harness, its labels
    and its reference frames live beside the footage they were measured on, which is not in the
    repository either. What the build and the tests need from it is already checked in — the
-   DISARMED template as raw grayscale in `fpv-detect`, and the three fixture frames with the
+   three fixture frames with the
    Python values they are held to (`fpv-detect/tests/parity.rs`). Every `spike/…` path cited
    in this file is in that local folder.
 8. **The OSD is never required.** Boundaries come from the picture alone; every OSD-derived
-   field (`entry` tag, craft name, feed identity) degrades to `unknown` rather than failing.
-   Verified by re-running the full 12-file scan with no template at all: identical clips.
+   field (craft name, feed identity) degrades to `unknown` rather than failing. Verified by
+   re-running the full 12-file scan with no template at all: identical clips — and again when
+   the DISARMED tag was removed outright (2026-10-21, §4.0).
 
 ### Settled 2026-10-18
 

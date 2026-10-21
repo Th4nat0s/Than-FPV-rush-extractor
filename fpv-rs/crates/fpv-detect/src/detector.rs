@@ -34,13 +34,6 @@ pub struct DetectorSettings {
     /// the same metric made things markedly worse.
     pub minimum_clip_coherence: f64,
     pub coherence_window: f64,
-    /// How far into a clip to look for ground evidence. Generous on purpose: a
-    /// clip opening on the Betaflight boot screen shows no DISARMED string for
-    /// several seconds, yet the quad is plainly on the ground. The cost is
-    /// that a mid-flight pickup landing within the window reads as a power-up.
-    pub entry_window: f64,
-    /// DISARMED glyph match above this means the quad is on the ground.
-    pub disarmed_threshold: f64,
 }
 
 impl Default for DetectorSettings {
@@ -57,8 +50,6 @@ impl Default for DetectorSettings {
             minimum_clip_duration: 5.0,
             minimum_clip_coherence: 0.50,
             coherence_window: 3.0,
-            entry_window: 15.0,
-            disarmed_threshold: 0.55,
         }
     }
 }
@@ -118,9 +109,8 @@ pub struct DetectedClip {
     pub start: f64,
     pub end: f64,
     pub exit: ClipExit,
-    /// How the clip opened, from the DISARMED evidence in its first
-    /// `entry_window` seconds. A tag, never a boundary (CLAUDE.md 4.0):
-    /// `Unknown` — no template or no legible OSD — is a perfectly good clip.
+    /// How the clip opened. The detector reads no OSD (CLAUDE.md 4.0), so this
+    /// is `Unknown` here; the pipeline marks a DVR cut's continuation.
     pub entry: ClipEntry,
     pub confidence: f64,
     pub coherence: f64,
@@ -287,28 +277,7 @@ impl ClipDetector {
             // screen, but a differently broken one every frame. Whole clips go on
             // that, never individual frames.
             .filter(|clip| clip.coherence >= self.settings.minimum_clip_coherence)
-            .map(|clip| self.tag_entry(clip, times, metrics))
             .collect()
-    }
-
-    /// The DISARMED evidence over the clip's opening window sets its `entry`
-    /// tag: seen on the ground → a whole flight from power-up; never seen →
-    /// a mid-flight pickup; no evidence at all → unknown, honestly.
-    fn tag_entry(&self, mut clip: DetectedClip, times: &[f64], metrics: &[FrameMetrics])
-        -> DetectedClip {
-        let limit = clip.end.min(clip.start + self.settings.entry_window);
-        let peak = times.iter().zip(metrics)
-            .filter(|&(&t, m)| clip.start <= t && t <= limit && m.disarmed >= 0.0)
-            .map(|(_, m)| m.disarmed)
-            .reduce(f64::max);
-        if let Some(peak) = peak {
-            clip.entry = if peak >= self.settings.disarmed_threshold {
-                ClipEntry::Poweron
-            } else {
-                ClipEntry::Midflight
-            };
-        }
-        clip
     }
 }
 
@@ -448,30 +417,6 @@ mod tests {
         let clips = detect(&[(picture(), 30.0), (menu(), 10.0)]);
         assert_eq!(clips.len(), 1);
         assert_eq!(clips[0].exit, ClipExit::Menu);
-    }
-
-    #[test]
-    fn tags_entry_from_the_opening_window_evidence() {
-        let detector = ClipDetector::default();
-        // 30 s of clean signal at 4 Hz.
-        let times: Vec<f64> = (0..120).map(|i| i as f64 / 4.0).collect();
-        let signal = |disarmed| FrameMetrics {
-            scene_correlation: 0.95, coherence: 0.95, disarmed,
-            ..FrameMetrics::new(100.0, 500.0, 1.2, 0.95, 0.0)
-        };
-        let entries = |evidence: &dyn Fn(f64) -> f64| -> Vec<ClipEntry> {
-            let metrics: Vec<_> = times.iter().map(|&t| signal(evidence(t))).collect();
-            detector.detect(&times, &metrics).iter().map(|c| c.entry).collect()
-        };
-
-        // DISARMED read once early on: the quad started on the ground.
-        assert_eq!(entries(&|t| if t == 2.0 { 0.8 } else { 0.1 }), [ClipEntry::Poweron]);
-        // A legible OSD that never says DISARMED: picked up mid-flight.
-        assert_eq!(entries(&|_| 0.3), [ClipEntry::Midflight]);
-        // DISARMED only after the entry window: that is the landing, not the take-off.
-        assert_eq!(entries(&|t| if t == 20.0 { 0.8 } else { 0.1 }), [ClipEntry::Midflight]);
-        // No template at all: unknown, and still a perfectly good clip.
-        assert_eq!(entries(&|_| -1.0), [ClipEntry::Unknown]);
     }
 
     #[test]

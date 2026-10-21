@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 210 tests
+cd fpv-rs && cargo test --workspace     # 207 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -144,8 +144,6 @@ Interference from another pilot's transmitter is rejected clip by clip.
 
 - The DVR cuts recordings on a size limit, sometimes mid-flight: consecutive files
   whose tail and head carry the same feed are stitched into **one flight**.
-- Where the Betaflight OSD is legible, the DISARMED template tags a flight
-  **Take-off** or **Pickup**. No OSD just means no tag — never a lost clip.
 - **Detection profile**, per session, next to the Segment button. *Standard* is
   the tuned default. *Textured terrain* is for footage whose clean picture the
   standard thresholds read as snow — rock faces, alpine slopes, a softer camera
@@ -157,7 +155,7 @@ Interference from another pilot's transmitter is rejected clip by clip.
 
 ### 3. Browse
 
-A grid of flight cards: poster, duration, badges (take-off/pickup, what recorded
+A grid of flight cards: poster, duration, badges (what recorded
 it — *DVR*, or the camera: *GoPro HERO11*, *DJI*… — and *spans N recordings*).
 The camera's model comes from the file's own tags where it writes one, else its
 brand from the file name.

@@ -43,7 +43,6 @@ export interface FlightView {
   actionCam: boolean;
   /** What recorded it, as on the Files tab. */
   source: string;
-  entry: "poweron" | "midflight" | "unknown";
   cacheKey: string;
 }
 

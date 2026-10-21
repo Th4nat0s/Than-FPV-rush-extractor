@@ -2,7 +2,7 @@
 //! against these numbers, so a metric that drifts would silently retune the
 //! whole detector — the contract every port of it is held to.
 
-use fpv_detect::{DisarmedTemplate, FrameAnalyzer};
+use fpv_detect::FrameAnalyzer;
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}.gray", env!("CARGO_MANIFEST_DIR"));
@@ -46,15 +46,4 @@ fn separates_snow_from_picture_and_finds_the_goggle_screen_flat() {
     assert!(snow.vertical_correlation < 0.7 && picture.vertical_correlation > 0.95);
     assert!(menu.flat_fraction > 0.10 && picture.flat_fraction == 0.0);
     assert!(menu.vertical_correlation < 0.90);
-}
-
-#[test]
-fn matches_the_python_disarmed_numbers_on_the_fixture_frames() {
-    let template = DisarmedTemplate::bundled().unwrap();
-    // The picture fixture is a flying frame: 0.486 is what a busy background
-    // reproduces by accident, and it sits below the 0.55 threshold.
-    for (name, expected) in [("snow", 0.0), ("picture", 0.4861538462), ("menu", 0.0)] {
-        let score = template.match_frame(&fixture(name), 640, 480);
-        assert!((score - expected).abs() < 1e-9, "{name}: {score}");
-    }
 }
