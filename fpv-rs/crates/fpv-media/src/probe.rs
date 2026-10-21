@@ -255,6 +255,33 @@ mod tests {
         }
     }
 
+    /// The pilot's DJI Osmo Nano take (2026-10-17, Alpes), ffprobe's output cut
+    /// to the fields read: the camera names itself in `encoder`, and the file
+    /// carries a 1280x720 MJPEG cover picture after the HEVC.
+    const OSMO_NANO: &str = r#"
+    {
+      "streams": [
+        { "codec_name": "hevc", "codec_type": "video", "width": 3840, "height": 2160,
+          "r_frame_rate": "60000/1001", "nb_frames": "26457" },
+        { "codec_name": "aac", "codec_type": "audio", "r_frame_rate": "0/0" },
+        { "codec_type": "data", "r_frame_rate": "0/0" },
+        { "codec_type": "data", "r_frame_rate": "0/0" },
+        { "codec_name": "mjpeg", "codec_type": "video", "width": 1280, "height": 720,
+          "r_frame_rate": "90000/1", "disposition": { "attached_pic": 1 } }
+      ],
+      "format": { "duration": "441.390950",
+                  "tags": { "major_brand": "isom", "creation_time": "2026-10-17T09:22:04.000000Z",
+                            "encoder": "DJI Osmo Nano" } }
+    }"#;
+
+    #[test]
+    fn names_the_pilots_osmo_nano_and_reads_its_hevc_not_its_cover_picture() {
+        let info = probe(OSMO_NANO).unwrap();
+        assert_eq!(info.camera.as_deref(), Some("DJI Osmo Nano"));
+        assert_eq!((info.video_codec.as_str(), info.width), ("hevc", 3840));
+        assert!(!info.needs_segmentation(), "its MJPEG cover is not a DVR recording");
+    }
+
     #[test]
     fn reads_the_camera_through_a_probe_and_none_from_the_dvr() {
         assert_eq!(probe(PICT0030).unwrap().camera, None);
