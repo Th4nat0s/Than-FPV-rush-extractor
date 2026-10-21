@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import Icon from "./Icon.svelte";
 
   let { title, width = 480, onclose, children, footer }: {
     title: string;
     width?: number;
-    /** Escape and the backdrop call this; leave it out to make the modal sticky. */
+    /** Escape, the backdrop and the ✕ call this; leave it out to make the modal sticky. */
     onclose?: () => void;
     children: Snippet;
     footer?: Snippet;
@@ -19,7 +20,12 @@
 
 <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose?.()}>
   <div class="modal" role="dialog" aria-modal="true" aria-label={title} style:width="{width}px">
-    <header><h2>{title}</h2></header>
+    <header>
+      <h2>{title}</h2>
+      {#if onclose}
+        <button class="plain close" title="Close" aria-label="Close" onclick={onclose}><Icon name="close" size={16} /></button>
+      {/if}
+    </header>
     <div class="body">{@render children()}</div>
     {#if footer}<footer>{@render footer()}</footer>{/if}
   </div>
@@ -45,7 +51,9 @@
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
   }
-  header { padding: 16px 20px 0; }
+  header { padding: 16px 20px 0; display: flex; align-items: center; gap: 12px; }
+  h2 { flex: 1; }
+  .close { margin: -6px -8px -6px 0; padding: 6px; line-height: 0; }
   h2 { margin: 0; font-size: 16px; font-weight: 600; }
   .body { padding: 14px 20px; overflow: auto; flex: 1; }
   footer {

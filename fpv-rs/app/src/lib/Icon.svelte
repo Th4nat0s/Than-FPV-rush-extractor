@@ -3,6 +3,7 @@
   // draws those as empty boxes.
   const paths = {
     camera: "M23 7l-7 5 7 5V7zM1 5h15v14H1z",
+    close: "M18 6L6 18M6 6l12 12",
     goggles: "M2 7h20v10h-7l-3-3-3 3H2zM6 11h3M15 11h3",
     link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
     film: "M2 2h20v20H2zM7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5",
