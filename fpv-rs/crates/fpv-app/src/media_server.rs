@@ -103,6 +103,23 @@ fn serve(stream: TcpStream, root: &Path, token: &str, shared: &Shared) -> std::i
 /// segments rather than 8 KiB ones.
 const SEND_BUFFER: usize = 256 * 1024;
 
+/// The most a closed range (`bytes=a-b`) is answered with; the
+/// `Content-Range` says what was sent, and the player asks for the rest.
+///
+/// WebKit on macOS prefetches a high-rate file with closed ranges of ~80 MB,
+/// re-asked about twelve times a second a few hundred KB further on (the
+/// pilot's log, 110 Mbit/s Osmo take). Over a network it cancels them long
+/// before the end; over loopback each arrived whole in 15–50 ms, ~1 GB/s
+/// read and thrown away beside the 64 KB reads playback actually made — the
+/// stutter. Open ranges (`bytes=a-`, GStreamer's) are answered whole.
+const MAX_CLOSED_RANGE: u64 = 4 * 1024 * 1024;
+
+fn closed(range: Option<&str>) -> bool {
+    range.and_then(|r| r.split_once('-')).is_some_and(|(first, last)| {
+        !first.trim().ends_with('=') && !last.trim().is_empty()
+    })
+}
+
 /// One request: GET or HEAD, with or without a `Range` header.
 struct Request {
     method: String,
@@ -168,6 +185,8 @@ fn answer(stream: &mut impl Write, request: &Request, root: &Path, token: &str, 
     };
     let (status, start, end) = match request.range.as_deref().map(|r| parse_range(r, length)) {
         None => ("200 OK", 0, length.saturating_sub(1)),
+        Some(Some((start, end))) if closed(request.range.as_deref()) =>
+            ("206 Partial Content", start, end.min(start + MAX_CLOSED_RANGE - 1)),
         Some(Some((start, end))) => ("206 Partial Content", start, end),
         Some(None) => {
             respond(stream, "416 Range Not Satisfiable", connection,
@@ -375,6 +394,27 @@ mod tests {
         assert!(head.contains("Connection: close") && body == b"0123456789", "{head}");
         let mut rest = Vec::new();
         assert_eq!(reader.read_to_end(&mut rest).unwrap(), 0);
+    }
+
+    #[test]
+    fn answers_a_huge_closed_range_with_its_first_part_and_says_so() {
+        // WebKit on the Mac re-asked ~80 MB prefetch ranges a dozen times a
+        // second, and over loopback each was sent whole: playback stuttered.
+        let footage = tempfile::tempdir().unwrap();
+        let take = footage.path().join("DJI_0002.MP4");
+        let length = MAX_CLOSED_RANGE + 1000;
+        std::fs::write(&take, vec![7u8; length as usize]).unwrap();
+        let server = MediaServer::start(footage.path()).unwrap();
+        let url = server.share(&take);
+
+        let (head, body) = get(&url, Some(&format!("bytes=100-{}", length - 1)));
+        assert!(head.contains(&format!("Content-Range: bytes 100-{}/{length}", 100 + MAX_CLOSED_RANGE - 1)),
+                "{head}");
+        assert_eq!(body.len() as u64, MAX_CLOSED_RANGE);
+        // A small closed range, a suffix and an open range are answered whole.
+        assert_eq!(get(&url, Some("bytes=0-65535")).1.len(), 65536);
+        assert_eq!(get(&url, Some("bytes=-500")).1.len(), 500);
+        assert_eq!(get(&url, Some("bytes=10-")).1.len() as u64, length - 10);
     }
 
     #[test]

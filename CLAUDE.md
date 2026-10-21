@@ -922,9 +922,13 @@ frame-exact boundary editor. Layout:
   take while Safari, QuickTime and IINA played it smoothly and the DVR's low-rate previews
   were fine. Now HTTP/1.1 keep-alive, Nagle off, bodies through a 256 KiB buffer, and every
   request logged at debug level with its range, bytes and milliseconds
-  (`RUST_LOG=fpv_rush=debug`). Not reproducible in the container (Linux loopback hides it,
-  and its software HEVC decode runs at 0.36× real time on that take anyway): **to be
-  confirmed on the Mac.** `lib/playlist.ts` is the player's clock over its files — flight time ↔
+  (`RUST_LOG=fpv_rush=debug`). That log, from the Mac, showed the real cause: beside the
+  64 KB reads playback makes, WebKit prefetches with **closed ranges of ~80 MB, re-asked about
+  twelve times a second** a few hundred KB further on; a network would see them cancelled,
+  loopback delivered each whole in 15–50 ms — ~1 GB/s read and discarded. A closed range is
+  now answered with at most 4 MiB (`MAX_CLOSED_RANGE`, an honest `Content-Range`; the player
+  asks for the rest); open ranges (`bytes=a-`, GStreamer's) are untouched. Not reproducible
+  in the container: **to be confirmed on the Mac.** `lib/playlist.ts` is the player's clock over its files — flight time ↔
   (segment, file time), the move to the next chapter, a stop at a trimmed end — so a GoPro take
   in chapters plays one file after the other, with a short pause at each cut (accepted: not an
   editor; a second preloading `<video>` would hide it). The native controls show the file's
