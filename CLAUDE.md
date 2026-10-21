@@ -917,7 +917,14 @@ frame-exact boundary editor. Layout:
   transcode, full quality, exact frames for tags, no gigabytes in the cache. The loopback
   server hands each played recording over one by one (`MediaServer::share`, a random id per
   file): the web view gets a URL, never a path, and a recording nobody handed over is not
-  reachable (tested). `lib/playlist.ts` is the player's clock over its files — flight time ↔
+  reachable (tested). **Connections stay open between ranges** (2026-10-21): the first server
+  closed after every answer, and the Mac app stuttered on the pilot's 110 Mbit/s 4K HEVC Osmo
+  take while Safari, QuickTime and IINA played it smoothly and the DVR's low-rate previews
+  were fine. Now HTTP/1.1 keep-alive, Nagle off, bodies through a 256 KiB buffer, and every
+  request logged at debug level with its range, bytes and milliseconds
+  (`RUST_LOG=fpv_rush=debug`). Not reproducible in the container (Linux loopback hides it,
+  and its software HEVC decode runs at 0.36× real time on that take anyway): **to be
+  confirmed on the Mac.** `lib/playlist.ts` is the player's clock over its files — flight time ↔
   (segment, file time), the move to the next chapter, a stop at a trimmed end — so a GoPro take
   in chapters plays one file after the other, with a short pause at each cut (accepted: not an
   editor; a second preloading `<video>` would hide it). The native controls show the file's

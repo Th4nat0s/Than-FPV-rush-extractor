@@ -14,12 +14,13 @@
 //! over is not reachable, by path or by guess.
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 
 /// Recordings handed over, by their random id.
 type Shared = Arc<Mutex<HashMap<String, PathBuf>>>;
@@ -75,31 +76,85 @@ impl MediaServer {
     }
 }
 
-/// One request: GET or HEAD, with or without a `Range` header.
+/// Requests answered on one connection, kept open between them. A player
+/// asks for many ranges as it plays and seeks; closing after each one, as the
+/// first version did, made the Mac app stutter on a 110 Mbit/s DJI take that
+/// Safari, QuickTime and the DVR's low-rate previews all played smoothly. The
+/// head and body go out through one large buffer with Nagle off, so a range
+/// never waits on the acknowledgement of its own head.
 fn serve(stream: TcpStream, root: &Path, token: &str, shared: &Shared) -> std::io::Result<()> {
+    stream.set_nodelay(true)?;
     let mut reader = BufReader::new(stream.try_clone()?);
-    let mut request_line = String::new();
-    reader.read_line(&mut request_line)?;
-    let mut range = None;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
+    let mut writer = BufWriter::with_capacity(SEND_BUFFER, stream);
+    while let Some(request) = Request::read(&mut reader)? {
+        let started = Instant::now();
+        let sent = answer(&mut writer, &request, root, token, shared)?;
+        writer.flush()?;
+        log::debug!("media {} {:?}: {sent} bytes in {} ms", request.method, request.range,
+                    started.elapsed().as_millis());
+        if request.close {
             break;
         }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("range")
-        {
-            range = Some(value.trim().to_owned());
+    }
+    Ok(())
+}
+
+/// What a body is written through: large enough that a range goes out in big
+/// segments rather than 8 KiB ones.
+const SEND_BUFFER: usize = 256 * 1024;
+
+/// One request: GET or HEAD, with or without a `Range` header.
+struct Request {
+    method: String,
+    target: String,
+    range: Option<String>,
+    /// The client asked for the connection to end with this answer.
+    close: bool,
+}
+
+impl Request {
+    /// `None` when the client has closed the connection.
+    fn read(reader: &mut impl BufRead) -> std::io::Result<Option<Self>> {
+        let mut request_line = String::new();
+        if reader.read_line(&mut request_line)? == 0 {
+            return Ok(None);
         }
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or("").to_owned();
+        let target = parts.next().unwrap_or("").to_owned();
+        // HTTP/1.0 closes unless asked otherwise; 1.1 keeps the connection.
+        let mut close = parts.next() == Some("HTTP/1.0");
+        let mut range = None;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
+                break;
+            }
+            if let Some((name, value)) = line.split_once(':') {
+                let value = value.trim();
+                if name.eq_ignore_ascii_case("range") {
+                    range = Some(value.to_owned());
+                } else if name.eq_ignore_ascii_case("connection") {
+                    close = value.eq_ignore_ascii_case("close");
+                }
+            }
+        }
+        Ok(Some(Self { method, target, range, close }))
     }
-    let mut stream = stream;
-    let mut parts = request_line.split_whitespace();
-    let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+}
+
+/// Answers one request; returns the body bytes sent.
+fn answer(stream: &mut impl Write, request: &Request, root: &Path, token: &str, shared: &Shared)
+    -> std::io::Result<u64> {
+    let connection = if request.close { "close" } else { "keep-alive" };
+    let method = request.method.as_str();
     if method != "GET" && method != "HEAD" {
-        return respond(&mut stream, "405 Method Not Allowed", &[], b"");
+        respond(stream, "405 Method Not Allowed", connection, &[], b"")?;
+        return Ok(0);
     }
-    let Some(path) = resolve(target, root, token, shared) else {
-        return respond(&mut stream, "404 Not Found", &[], b"");
+    let Some(path) = resolve(&request.target, root, token, shared) else {
+        respond(stream, "404 Not Found", connection, &[], b"")?;
+        return Ok(0);
     };
     let mut file = File::open(&path)?;
     let length = file.metadata()?.len();
@@ -111,12 +166,13 @@ fn serve(stream: TcpStream, root: &Path, token: &str, shared: &Shared) -> std::i
         Some("jpg") => "image/jpeg",
         _ => "application/octet-stream",
     };
-    let (status, start, end) = match range.as_deref().map(|r| parse_range(r, length)) {
+    let (status, start, end) = match request.range.as_deref().map(|r| parse_range(r, length)) {
         None => ("200 OK", 0, length.saturating_sub(1)),
         Some(Some((start, end))) => ("206 Partial Content", start, end),
         Some(None) => {
-            return respond(&mut stream, "416 Range Not Satisfiable",
-                           &[("Content-Range", format!("bytes */{length}"))], b"");
+            respond(stream, "416 Range Not Satisfiable", connection,
+                    &[("Content-Range", format!("bytes */{length}"))], b"")?;
+            return Ok(0);
         }
     };
     let count = if length == 0 { 0 } else { end - start + 1 };
@@ -128,13 +184,14 @@ fn serve(stream: TcpStream, root: &Path, token: &str, shared: &Shared) -> std::i
     if status.starts_with("206") {
         headers.push(("Content-Range", format!("bytes {start}-{end}/{length}")));
     }
-    write_head(&mut stream, status, &headers)?;
+    write_head(stream, status, connection, &headers)?;
     if method == "GET" && count > 0 {
         file.seek(SeekFrom::Start(start))?;
-        // A player closing the connection mid-file is the normal end of a seek.
-        let _ = std::io::copy(&mut file.take(count), &mut stream);
+        // A player closing the connection mid-range is the normal end of a
+        // seek: the error ends this connection, and the next range has its own.
+        return std::io::copy(&mut file.take(count), stream);
     }
-    Ok(())
+    Ok(0)
 }
 
 /// `/<token>/shared/<id>/<name>` → a recording handed over with `share`;
@@ -165,8 +222,9 @@ fn parse_range(header: &str, length: u64) -> Option<(u64, u64)> {
     (start <= end && start < length).then_some((start, end))
 }
 
-fn write_head(stream: &mut TcpStream, status: &str, headers: &[(&str, String)]) -> std::io::Result<()> {
-    let mut head = format!("HTTP/1.1 {status}\r\nConnection: close\r\n");
+fn write_head(stream: &mut impl Write, status: &str, connection: &str, headers: &[(&str, String)])
+    -> std::io::Result<()> {
+    let mut head = format!("HTTP/1.1 {status}\r\nConnection: {connection}\r\n");
     for (name, value) in headers {
         head.push_str(&format!("{name}: {value}\r\n"));
     }
@@ -174,11 +232,11 @@ fn write_head(stream: &mut TcpStream, status: &str, headers: &[(&str, String)]) 
     stream.write_all(head.as_bytes())
 }
 
-fn respond(stream: &mut TcpStream, status: &str, headers: &[(&str, String)], body: &[u8])
-    -> std::io::Result<()> {
+fn respond(stream: &mut impl Write, status: &str, connection: &str, headers: &[(&str, String)],
+           body: &[u8]) -> std::io::Result<()> {
     let mut all = headers.to_vec();
     all.push(("Content-Length", body.len().to_string()));
-    write_head(stream, status, &all)?;
+    write_head(stream, status, connection, &all)?;
     stream.write_all(body)
 }
 
@@ -234,7 +292,7 @@ mod tests {
         let target = &url[url.find(address).unwrap() + address.len()..];
         let mut stream = TcpStream::connect(address).unwrap();
         let range = range.map(|r| format!("Range: {r}\r\n")).unwrap_or_default();
-        write!(stream, "GET {target} HTTP/1.1\r\nHost: x\r\n{range}\r\n").unwrap();
+        write!(stream, "GET {target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{range}\r\n").unwrap();
         let mut response = Vec::new();
         stream.read_to_end(&mut response).unwrap();
         let split = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
@@ -268,6 +326,55 @@ mod tests {
                              encode(&outside.path().join("secret.mp4").to_string_lossy()));
         assert!(get(&escape, None).0.starts_with("HTTP/1.1 404"));
 
+    }
+
+    /// Reads one response off a connection that stays open: head, then
+    /// exactly `Content-Length` bytes.
+    fn read_response(reader: &mut BufReader<TcpStream>) -> (String, Vec<u8>) {
+        let mut head = String::new();
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line.trim().is_empty() {
+                break;
+            }
+            head.push_str(&line);
+        }
+        let length: usize = head.lines()
+            .find_map(|l| l.strip_prefix("Content-Length: "))
+            .unwrap().trim().parse().unwrap();
+        let mut body = vec![0; length];
+        reader.read_exact(&mut body).unwrap();
+        (head, body)
+    }
+
+    #[test]
+    fn answers_a_players_ranges_on_one_connection() {
+        // Closing after every range made the Mac app stutter on a 110 Mbit/s
+        // take that Safari played smoothly from the same disk.
+        let footage = tempfile::tempdir().unwrap();
+        let take = footage.path().join("DJI_0001.MP4");
+        std::fs::write(&take, b"0123456789").unwrap();
+        let server = MediaServer::start(footage.path()).unwrap();
+        let url = server.share(&take);
+        let target = &url[url.find(&server.token).unwrap() - 1..];
+
+        let stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        let mut writer = stream.try_clone().unwrap();
+        let mut reader = BufReader::new(stream);
+        for (range, expected) in [("bytes=0-3", &b"0123"[..]), ("bytes=6-", b"6789"), ("bytes=2-2", b"2")] {
+            write!(writer, "GET {target} HTTP/1.1\r\nHost: x\r\nRange: {range}\r\n\r\n").unwrap();
+            let (head, body) = read_response(&mut reader);
+            assert!(head.starts_with("HTTP/1.1 206") && head.contains("Connection: keep-alive"), "{head}");
+            assert_eq!(body, expected, "{range}");
+        }
+        // Asked to close, it answers and closes.
+        write!(writer, "GET {target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").unwrap();
+        let (head, body) = read_response(&mut reader);
+        assert!(head.contains("Connection: close") && body == b"0123456789", "{head}");
+        let mut rest = Vec::new();
+        assert_eq!(reader.read_to_end(&mut rest).unwrap(), 0);
     }
 
     #[test]
