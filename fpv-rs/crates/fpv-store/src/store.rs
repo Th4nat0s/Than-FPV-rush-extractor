@@ -96,8 +96,8 @@ impl LibraryStore {
             transaction.execute(
                 r#"INSERT INTO sourceFile (id, sessionId, originalPath, importedPath,
                      sequenceNumber, width, height, frameRateNumerator, frameRateDenominator,
-                     frameCount, duration, videoCodec, audioCodec, creationDate, checksum)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                     frameCount, duration, videoCodec, audioCodec, creationDate, checksum, camera)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                    ON CONFLICT(id) DO UPDATE SET sessionId = excluded.sessionId,
                      originalPath = excluded.originalPath, importedPath = excluded.importedPath,
                      sequenceNumber = excluded.sequenceNumber, width = excluded.width,
@@ -105,12 +105,13 @@ impl LibraryStore {
                      frameRateDenominator = excluded.frameRateDenominator,
                      frameCount = excluded.frameCount, duration = excluded.duration,
                      videoCodec = excluded.videoCodec, audioCodec = excluded.audioCodec,
-                     creationDate = excluded.creationDate, checksum = excluded.checksum"#,
+                     creationDate = excluded.creationDate, checksum = excluded.checksum,
+                     camera = excluded.camera"#,
                 params![Id(file.id), Id(file.session_id), file.original_path, file.imported_path,
                         file.sequence_number, media.width, media.height,
                         media.frame_rate.numerator, media.frame_rate.denominator,
                         media.frame_count, media.duration, media.video_codec, media.audio_codec,
-                        media.creation_date.map(Date), file.checksum])?;
+                        media.creation_date.map(Date), file.checksum, media.camera])?;
         }
         transaction.commit()?;
         Ok(())
@@ -168,6 +169,25 @@ impl LibraryStore {
             params![Id(flight.id), Id(flight.session_id), flight.order_in_session, flight.title,
                     flight.rating])?;
         not_found_unless(changed, "flight", flight.id)
+    }
+
+    /// Action-cam files never read for their camera: probed before the
+    /// column existed. The DVR's MJPEG names none and is left out.
+    pub fn unidentified_cameras(&self) -> Result<Vec<SourceFile>> {
+        let db = self.db();
+        let mut statement = db.prepare(&format!(
+            "SELECT {SOURCE_FILE_COLUMNS} FROM sourceFile \
+             WHERE camera IS NULL AND videoCodec != 'mjpeg' ORDER BY importedPath"))?;
+        let rows = statement.query_map([], source_file)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Records the camera a file named, or that it named none — so it is not
+    /// read again.
+    pub fn set_camera(&self, file_id: Uuid, camera: Option<&str>) -> Result<()> {
+        let changed = self.db().execute("UPDATE sourceFile SET camera = ?2 WHERE id = ?1",
+                                        params![Id(file_id), camera.unwrap_or("")])?;
+        not_found_unless(changed, "source file", file_id)
     }
 
     /// Removes a session and, through the schema's cascades, its source files,
@@ -447,7 +467,7 @@ fn clip_params(clip: &Clip) -> impl rusqlite::Params + '_ {
 
 const SOURCE_FILE_COLUMNS: &str = "id, sessionId, originalPath, importedPath, sequenceNumber, \
     width, height, frameRateNumerator, frameRateDenominator, frameCount, duration, videoCodec, \
-    audioCodec, creationDate, checksum";
+    audioCodec, creationDate, checksum, camera";
 
 fn source_file(row: &Row) -> rusqlite::Result<SourceFile> {
     Ok(SourceFile {
@@ -465,6 +485,8 @@ fn source_file(row: &Row) -> rusqlite::Result<SourceFile> {
             video_codec: row.get(11)?,
             audio_codec: row.get(12)?,
             creation_date: row.get::<_, Option<Date>>(13)?.map(|d| d.0),
+            // '' is "read, and named nothing" (`set_camera`), which is no camera.
+            camera: row.get::<_, Option<String>>(15)?.filter(|c| !c.is_empty()),
         },
         checksum: row.get(14)?,
     })

@@ -19,7 +19,8 @@ struct Fixture {
 }
 
 /// A GoPro card: take 42 in two chapters (2 s + 1 s), take 43 (1 s), at
-/// 30 fps so frame arithmetic is easy to check by eye.
+/// 30 fps so frame arithmetic is easy to check by eye. Each names its camera
+/// as a HERO11 does, by its firmware code.
 fn gopro_card() -> Fixture {
     let root = tempfile::tempdir().unwrap();
     let card = root.path().join("card/DCIM/100GOPRO");
@@ -32,7 +33,9 @@ fn gopro_card() -> Fixture {
                    &format!("testsrc2=size=320x240:rate=30:duration={seconds}"),
                    "-f", "lavfi", "-i", &format!("sine=duration={seconds}"),
                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
-                   "-metadata", &format!("creation_time={taken}"), "-y"])
+                   "-metadata", &format!("creation_time={taken}"),
+                   "-metadata", "firmware=H22.01.01.10.00", "-movflags", "use_metadata_tags",
+                   "-y"])
             .arg(card.join(name))
             .status().expect("ffmpeg on PATH");
         assert!(status.success());
@@ -61,6 +64,30 @@ fn shows_action_cam_takes_as_flights_ready_to_play() {
     assert!((take.duration - 3.0).abs() < 0.05, "{}", take.duration);
     assert!(take.clips.iter().all(|c| c.thumbnail.as_deref().is_some_and(|p| Path::new(p).exists())));
     assert!(session.files.iter().all(|f| f.action_cam && f.codec == "h264"));
+}
+
+#[test]
+fn shows_what_recorded_each_flight_and_file() {
+    let (_fixture, session) = imported();
+    assert_eq!(session.flights[0].source, "GoPro HERO11");
+    assert!(session.files.iter().all(|f| f.source == "GoPro HERO11"));
+}
+
+#[test]
+fn reads_the_camera_of_takes_imported_before_it_was_kept_once() {
+    let (fixture, session) = imported();
+    let library = &fixture.library;
+    // As a build before the camera column left them.
+    for file in &session.files {
+        let mut stored = library.store.source_file(parse(&file.id).unwrap()).unwrap().unwrap();
+        stored.media.camera = None;
+        library.store.save_source_files(&[stored]).unwrap();
+    }
+    assert_eq!(library.snapshot().unwrap()[0].flights[0].source, "GoPro");
+
+    assert_eq!(library.identify_cameras().unwrap(), 3);
+    assert_eq!(library.snapshot().unwrap()[0].flights[0].source, "GoPro HERO11");
+    assert_eq!(library.identify_cameras().unwrap(), 0, "read once, not at every open");
 }
 
 #[test]
@@ -407,7 +434,9 @@ fn add_mismatched_take(card: &Path) {
             .args(["-v", "error", "-f", "lavfi", "-i",
                    &format!("testsrc2=size=320x240:rate={rate}:duration=1"),
                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                   "-metadata", &format!("creation_time={taken}"), "-y"])
+                   "-metadata", &format!("creation_time={taken}"),
+                   "-metadata", "firmware=H22.01.01.10.00", "-movflags", "use_metadata_tags",
+                   "-y"])
             .arg(card.join("DCIM/100GOPRO").join(name))
             .status().unwrap();
         assert!(status.success());

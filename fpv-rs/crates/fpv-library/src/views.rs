@@ -36,6 +36,8 @@ pub struct FileView {
     pub duration: f64,
     pub codec: String,
     pub action_cam: bool,
+    /// `DVR`, or the camera: "GoPro HERO11", "DJI"… (`fpv_import::source_name`).
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,6 +52,8 @@ pub struct FlightView {
     /// How many recordings it spans: the DVR's cuts and a GoPro's chapters.
     pub recordings: usize,
     pub action_cam: bool,
+    /// What recorded it, as on the Files tab: its first recording's.
+    pub source: String,
     /// `poweron`, `midflight` or `unknown`, from the first clip.
     pub entry: String,
     /// Changes whenever a boundary does: what cached strips are keyed on.
@@ -99,7 +103,12 @@ pub(crate) fn file_view(file: &SourceFile) -> FileView {
         duration: file.media.duration,
         codec: file.media.video_codec.clone(),
         action_cam: !file.media.needs_segmentation(),
+        source: source(file),
     }
+}
+
+fn source(file: &SourceFile) -> String {
+    fpv_import::source_name(&fpv_import::DiscoveredFile::new(&file.imported_path), &file.media)
 }
 
 pub(crate) fn last_frame(file: &SourceFile) -> i64 {
@@ -121,6 +130,7 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
         duration: timeline.duration(),
         recordings: parts.len(),
         action_cam: parts.iter().any(|(_, f)| !f.media.needs_segmentation()),
+        source: parts.first().map(|(_, f)| source(f)).unwrap_or_default(),
         entry: match clips.first().map(|c| c.entry) {
             Some(ClipEntry::Poweron) => "poweron",
             Some(ClipEntry::Midflight) => "midflight",

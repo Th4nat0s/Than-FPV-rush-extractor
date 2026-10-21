@@ -87,6 +87,25 @@ pub fn source_label(file: &DiscoveredFile, media: &MediaInfo) -> &'static str {
     }
 }
 
+/// What recorded a file, as the library shows it: `DVR` for the goggles'
+/// recordings; for an action cam, the model its tags name (`MediaInfo::camera`)
+/// or else the brand its file names give away, and `Action cam` when neither
+/// says.
+pub fn source_name(file: &DiscoveredFile, media: &MediaInfo) -> String {
+    if media.needs_segmentation() {
+        return "DVR".into();
+    }
+    if let Some(camera) = &media.camera {
+        return camera.clone();
+    }
+    match source_label(file, media) {
+        "GOPRO" => "GoPro",
+        "DJI" => "DJI",
+        "INSTA360" => "Insta360",
+        _ => "Action cam",
+    }.into()
+}
+
 /// A name a folder can carry on every desktop: no path separators, no colon,
 /// never empty.
 pub fn folder_name(name: &str) -> String {
@@ -107,6 +126,21 @@ mod tests {
     fn local(y: i32, m: u32, d: u32) -> Option<DateTime<Utc>> {
         let day = NaiveDate::from_ymd_opt(y, m, d)?.and_hms_opt(0, 0, 0)?;
         Some(Local.from_local_datetime(&day).earliest()?.to_utc())
+    }
+
+    #[test]
+    fn names_the_source_by_its_model_else_its_brand() {
+        let take = |codec: &str, camera: Option<&str>| MediaInfo {
+            camera: camera.map(String::from),
+            ..MediaInfo::new(1920, 1080, FrameRate::new(60, 1), 1.0, codec)
+        };
+        let name = |file: &str, media: &MediaInfo| source_name(&DiscoveredFile::new(file), media);
+        assert_eq!(name("PICT0030.AVI", &take("mjpeg", None)), "DVR");
+        assert_eq!(name("GH010042.MP4", &take("h264", Some("GoPro HERO11"))), "GoPro HERO11");
+        assert_eq!(name("GH010042.MP4", &take("h264", None)), "GoPro");
+        assert_eq!(name("DJI_0001.MP4", &take("hevc", None)), "DJI");
+        assert_eq!(name("VID_20261010_101500_00_001.mp4", &take("h264", None)), "Insta360");
+        assert_eq!(name("clip.mp4", &take("h264", None)), "Action cam");
     }
 
     #[test]

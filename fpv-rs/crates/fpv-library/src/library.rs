@@ -6,7 +6,7 @@ use fpv_core::{Clip, DetectionProfile, FigureTag, Flight, FlightTimeline, MediaI
 use fpv_detect::{DetectorSettings, DisarmedTemplate, FileDetector};
 use fpv_export::{ClipExporter, ExportError};
 use fpv_import::{FolderPattern, ImportEvent, LibraryImporter};
-use fpv_media::{FfmpegRunner, FrameReader, ThumbnailGenerator};
+use fpv_media::{FfmpegRunner, FrameReader, MediaProbe, ThumbnailGenerator};
 use fpv_pipeline::{SegmentationEvent, SegmentationReport, SegmentationService};
 use fpv_proxy::{ProxyCache, ProxyGenerator};
 use fpv_store::{LibraryStore, StoreError};
@@ -269,6 +269,32 @@ impl Library {
             let _ = std::fs::remove_dir(folder);
         }
         Ok(())
+    }
+
+    /// Reads the camera out of every action-cam take imported before the
+    /// library kept it, once: a take that names none is recorded as such. A
+    /// recording missing from disk is left for a later run. Returns how many
+    /// were named, so the UI refreshes only when something changed.
+    pub fn identify_cameras(&self) -> Result<usize> {
+        let ffmpeg = self.ffmpeg();
+        let probe = MediaProbe::new(&ffmpeg);
+        let mut named = 0;
+        for file in self.store.unidentified_cameras()? {
+            let path = Path::new(&file.imported_path);
+            if !path.is_file() {
+                continue;
+            }
+            let camera = match probe.probe(path) {
+                Ok(media) => media.camera,
+                Err(error) => {
+                    log::warn!("could not read the camera of {}: {error}", path.display());
+                    None
+                }
+            };
+            named += usize::from(camera.is_some());
+            self.store.set_camera(file.id, camera.as_deref())?;
+        }
+        Ok(named)
     }
 
     /// What the cache folder holds, by kind, in bytes.

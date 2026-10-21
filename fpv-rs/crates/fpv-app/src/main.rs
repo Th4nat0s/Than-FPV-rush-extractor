@@ -199,6 +199,13 @@ async fn filmstrip_frame(app: Shared<'_>, flight: String, index: usize, count: u
     blocking(&app, move |app| app.library().filmstrip_frame(&flight, index, count)).await
 }
 
+/// Reads the camera of takes imported before the library kept it; how many
+/// were named, so the UI refreshes only then.
+#[tauri::command]
+async fn identify_cameras(app: Shared<'_>) -> Reply<usize> {
+    blocking(&app, |app| app.library().identify_cameras()).await
+}
+
 /// How many hover-strip frames the library is missing: a file check each,
 /// so the UI starts a task only when there is work.
 #[tauri::command]
@@ -379,7 +386,7 @@ fn main() {
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
             segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
-            missing_strips, prepare_strips, cache_usage, clear_cache,
+            missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,
         ])
         .run(tauri::generate_context!())

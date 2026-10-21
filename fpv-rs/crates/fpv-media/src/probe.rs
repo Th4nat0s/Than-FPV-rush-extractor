@@ -80,8 +80,56 @@ impl<'a> MediaProbe<'a> {
                 .and_then(|tags| tags.get("creation_time"))
                 .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
                 .map(|date| date.with_timezone(&Utc)),
+            camera: output.format.tags.as_ref().and_then(camera_name),
         })
     }
+}
+
+/// The camera's make and model from a container's tags, where the camera
+/// wrote any — the DVR's AVI never does. Tried in order: the QuickTime
+/// make/model keys (Apple's `mdta`, the `©mak`/`©mod` atoms); GoPro's
+/// firmware string, whose prefix names the generation (`H22.01.01.10.00` is a
+/// HERO11); an `encoder` that is a camera's name (`DJI…`, `Insta360…`) rather
+/// than a muxer's (`Lavf…`). Anything else is `None`, and the brand then comes
+/// from the file name.
+pub fn camera_name(tags: &HashMap<String, String>) -> Option<String> {
+    let tag = |key: &str| tags.iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(key))
+        .map(|(_, value)| value.trim())
+        .filter(|value| !value.is_empty());
+    let make = tag("com.apple.quicktime.make").or_else(|| tag("make"));
+    if let Some(model) = tag("com.apple.quicktime.model").or_else(|| tag("model")) {
+        return Some(match make {
+            Some(make) if !model.to_lowercase().starts_with(&make.to_lowercase()) =>
+                format!("{make} {model}"),
+            _ => model.to_string(),
+        });
+    }
+    if let Some(model) = tag("firmware").and_then(gopro_generation) {
+        return Some(model);
+    }
+    let encoder = tag("encoder")?;
+    let named = encoder.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '-');
+    for brand in ["DJI", "Insta360"] {
+        if let Some(model) = encoder.strip_prefix(brand).map(str::trim_start)
+            && named && !model.is_empty()
+        {
+            return Some(format!("{brand} {model}"));
+        }
+    }
+    None
+}
+
+/// GoPro's firmware strings start with the camera's code: `HD5`…`HD9` for the
+/// HERO5 to HERO9, then `H21` for the HERO10 and one a year since.
+fn gopro_generation(firmware: &str) -> Option<String> {
+    let code = firmware.split('.').next()?;
+    let generation = match code {
+        "HD4" => 4, "HD5" => 5, "HD6" => 6, "HD7" => 7, "HD8" => 8, "HD9" => 9,
+        "H21" => 10, "H22" => 11, "H23" => 12, "H24" => 13,
+        _ => return None,
+    };
+    Some(format!("GoPro HERO{generation}"))
 }
 
 #[cfg(test)]
@@ -169,5 +217,50 @@ mod tests {
                         "tags": { "creation_time": "2026-08-23T10:15:00.000000Z" } } }"#;
         let date = probe(json).unwrap().creation_date.unwrap();
         assert_eq!(date.to_rfc3339(), "2026-08-23T10:15:00+00:00");
+    }
+
+    fn tags(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    #[test]
+    fn names_the_camera_from_its_make_and_model_tags() {
+        assert_eq!(camera_name(&tags(&[("com.apple.quicktime.make", "Insta360"),
+                                       ("com.apple.quicktime.model", "X3")])).as_deref(),
+                   Some("Insta360 X3"));
+        // A model that already carries the make is not prefixed twice.
+        assert_eq!(camera_name(&tags(&[("make", "DJI"), ("model", "DJI Osmo Action 4")])).as_deref(),
+                   Some("DJI Osmo Action 4"));
+    }
+
+    #[test]
+    fn names_a_gopro_from_its_firmware_code() {
+        assert_eq!(camera_name(&tags(&[("firmware", "H22.01.01.10.00")])).as_deref(),
+                   Some("GoPro HERO11"));
+        assert_eq!(camera_name(&tags(&[("firmware", "HD9.01.01.72.00")])).as_deref(),
+                   Some("GoPro HERO9"));
+        // A code nobody has mapped yet: the file name's brand will do.
+        assert_eq!(camera_name(&tags(&[("firmware", "H99.01.00")])), None);
+    }
+
+    #[test]
+    fn takes_an_encoder_for_a_camera_only_when_it_names_one() {
+        assert_eq!(camera_name(&tags(&[("encoder", "DJI OsmoAction4")])).as_deref(),
+                   Some("DJI OsmoAction4"));
+        assert_eq!(camera_name(&tags(&[("encoder", "DJIMini3Pro")])).as_deref(),
+                   Some("DJI Mini3Pro"));
+        // A muxer, a handler-like string, a bare brand: not a camera.
+        for encoder in ["Lavf61.7.100", "DJI.AVC", "DJI", "  "] {
+            assert_eq!(camera_name(&tags(&[("encoder", encoder)])), None, "{encoder}");
+        }
+    }
+
+    #[test]
+    fn reads_the_camera_through_a_probe_and_none_from_the_dvr() {
+        assert_eq!(probe(PICT0030).unwrap().camera, None);
+        let json = r#"{ "streams": [ { "codec_name": "h264", "codec_type": "video",
+            "width": 1920, "height": 1080, "r_frame_rate": "60/1" } ],
+            "format": { "duration": "1.0", "tags": { "firmware": "H21.01.01.62.00" } } }"#;
+        assert_eq!(probe(json).unwrap().camera.as_deref(), Some("GoPro HERO10"));
     }
 }

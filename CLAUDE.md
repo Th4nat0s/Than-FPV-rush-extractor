@@ -960,6 +960,17 @@ frame-exact boundary editor. Layout:
   pointer may make the same frame at once, and a half-written JPEG must never be shown (tested
   with eight racing writers against the real ffmpeg). Verified in the app: 168 frames for 7
   flights in 6 s at open, again after a re-segment, and hovering then made nothing.
+- **Source badge** (2026-10-21, the pilot's request): every card and Files row says what
+  recorded it — `DVR` (goggles icon), or the camera (camera icon). The model is read from
+  the container's tags at probe time (`fpv_media::camera_name`): QuickTime `make`/`model`,
+  GoPro's `firmware` code (`HD5`…`HD9` → HERO5–9, `H21` → HERO10, one a year since),
+  an `encoder` that names a camera (`DJI…`, `Insta360…`, never `Lavf…`). Failing that, the brand
+  the file name gives away (`fpv_import::source_name`: GoPro, DJI, Insta360, else
+  "Action cam"). Stored in `sourceFile.camera` (schema `v4`); takes imported before are read
+  once at launch (`Library::identify_cameras`), `''` recording "read, named nothing". **No
+  real camera file has been through it**: the tag names come from the formats' documentation,
+  not from a pilot's card, so a real Osmo or GoPro may name itself elsewhere — check with
+  `ffprobe -show_format` before trusting the model.
 - **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
   *Keep the Videos* as the main button and *Also Trash the Videos* beside it
   (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the

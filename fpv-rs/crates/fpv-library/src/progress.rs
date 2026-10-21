@@ -150,7 +150,7 @@ mod tests {
         assert_eq!((step.line.as_str(), step.done, step.total), ("3 recording(s) → 1 session(s)", 0, 3));
         let step = progress.step(ImportEvent::Copying(PathBuf::from("/card/PICT0003.AVI")));
         assert_eq!((step.line.as_str(), step.done), ("Copying PICT0003.AVI…", 0));
-        let step = progress.step(ImportEvent::Imported(recording("PICT0003.AVI")));
+        let step = progress.step(ImportEvent::Imported(Box::new(recording("PICT0003.AVI"))));
         assert_eq!(step.done, 1);
         assert!(step.line.starts_with("Imported PICT0003.AVI — "), "{}", step.line);
         assert!(step.line.ends_with(", 372.7 s"), "{}", step.line);

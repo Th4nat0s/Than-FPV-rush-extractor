@@ -17,6 +17,10 @@ pub struct MediaInfo {
     /// `None` for the analog DVR: the AVIs carry no creation date, and the file
     /// mtime is meaningless because the goggles have no clock.
     pub creation_date: Option<DateTime<Utc>>,
+    /// The camera's make and model where the file names it ("GoPro HERO11
+    /// Black"); `None` for the DVR and for cameras that write nothing usable.
+    #[serde(default)]
+    pub camera: Option<String>,
 }
 
 impl MediaInfo {
@@ -26,6 +30,7 @@ impl MediaInfo {
         Self {
             width, height, frame_rate, frame_count: None, duration,
             video_codec: video_codec.into(), audio_codec: None, creation_date: None,
+            camera: None,
         }
     }
 

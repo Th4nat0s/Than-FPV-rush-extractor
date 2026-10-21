@@ -39,6 +39,12 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("v3", r#"
         ALTER TABLE "session" ADD COLUMN "detectionProfile" TEXT NOT NULL DEFAULT 'standard';
     "#),
+    // The camera a file names in its tags (2026-10-21). NULL for files probed
+    // before: the library reads them again once (`identify_cameras`), and ''
+    // records that a file was read and named nothing.
+    ("v4", r#"
+        ALTER TABLE "sourceFile" ADD COLUMN "camera" TEXT;
+    "#),
 ];
 
 /// Applies every migration not yet in the ledger, up to and including

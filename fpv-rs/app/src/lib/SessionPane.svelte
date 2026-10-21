@@ -167,7 +167,7 @@
           {#each session.files as file (file.id)}
             <tr>
               <td>{file.name}</td>
-              <td>{file.actionCam ? `Action cam (${file.codec})` : "DVR"}</td>
+              <td>{file.actionCam ? `${file.source} (${file.codec})` : file.source}</td>
               <td class="mono">{file.width}×{file.height}</td>
               <!-- Per file and non-standard by design (CLAUDE.md 2). -->
               <td class="mono">{file.fps.toFixed(3)} fps</td>

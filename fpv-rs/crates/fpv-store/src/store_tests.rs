@@ -330,3 +330,37 @@ fn keeps_a_sessions_detection_profile_and_defaults_old_ones_to_standard() {
     let read = store.sessions().unwrap().into_iter().find(|s| s.id == alps.id).unwrap();
     assert_eq!(read.detection_profile, DetectionProfile::Textured);
 }
+
+#[test]
+fn keeps_the_camera_a_file_names() {
+    let store = LibraryStore::in_memory().unwrap();
+    let session = Session::new("Alpes", None);
+    store.save_session(&session).unwrap();
+    let take = SourceFile::new(session.id, "/card/GH010042.MP4", "/library/GH010042.MP4", None,
+        MediaInfo { camera: Some("GoPro HERO11".into()),
+                    ..MediaInfo::new(1920, 1080, FrameRate::new(60, 1), 10.0, "h264") });
+    store.save_source_files(std::slice::from_ref(&take)).unwrap();
+    assert_eq!(store.source_file(take.id).unwrap().unwrap().media.camera.as_deref(),
+               Some("GoPro HERO11"));
+}
+
+#[test]
+fn lists_action_cam_files_never_read_for_their_camera_once() {
+    // Files imported before the camera column: NULL. The DVR names no camera
+    // and is never listed; a take that named none is not read again.
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, dvr) = session_with_one_file(&store, "PICT0030.AVI", 30);
+    let take = SourceFile::new(session.id, "/card/DJI_0001.MP4", "/library/DJI_0001.MP4", None,
+                               MediaInfo::new(3840, 2160, FrameRate::new(60, 1), 10.0, "hevc"));
+    store.save_source_files(std::slice::from_ref(&take)).unwrap();
+    let listed: Vec<_> = store.unidentified_cameras().unwrap().iter().map(|f| f.id).collect();
+    assert_eq!(listed, [take.id]);
+    assert!(!listed.contains(&dvr.id));
+
+    store.set_camera(take.id, None).unwrap();
+    assert!(store.unidentified_cameras().unwrap().is_empty());
+    assert_eq!(store.source_file(take.id).unwrap().unwrap().media.camera, None);
+    store.set_camera(take.id, Some("DJI Osmo Action 4")).unwrap();
+    assert_eq!(store.source_file(take.id).unwrap().unwrap().media.camera.as_deref(),
+               Some("DJI Osmo Action 4"));
+}

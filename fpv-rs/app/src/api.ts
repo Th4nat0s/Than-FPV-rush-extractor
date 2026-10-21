@@ -14,6 +14,8 @@ export interface FileView {
   duration: number;
   codec: string;
   actionCam: boolean;
+  /** "DVR", or the camera: "GoPro HERO11", "DJI"… */
+  source: string;
 }
 
 export interface ClipView {
@@ -39,6 +41,8 @@ export interface FlightView {
   clips: ClipView[];
   recordings: number;
   actionCam: boolean;
+  /** What recorded it, as on the Files tab. */
+  source: string;
   entry: "poweron" | "midflight" | "unknown";
   cacheKey: string;
 }
@@ -162,6 +166,7 @@ export const api = {
   cacheUsage: () => invoke<CacheUsage>("cache_usage"),
   clearCache: () => invoke<CacheUsage>("clear_cache"),
   missingStrips: (count: number) => invoke<number>("missing_strips", { count }),
+  identifyCameras: () => invoke<number>("identify_cameras"),
   prepareStrips: (task: string, count: number, first: string | null) =>
     invoke<StripsPrepared>("prepare_strips", { task, count, first }),
   previewFrame: (file: string, frame: number) => invoke<Thumbnail>("preview_frame", { file, frame }),

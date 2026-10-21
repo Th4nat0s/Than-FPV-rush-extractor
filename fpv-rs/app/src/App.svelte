@@ -42,6 +42,8 @@
     api.info().then((loaded) => (info = loaded));
     // Strips missing since the last run — never made, or the cache emptied.
     refresh().then(() => prepareStrips(selectedId));
+    // Takes imported before the library kept their camera: read once.
+    api.identifyCameras().then((named) => { if (named) refresh(); }).catch(() => {});
     // Removable media, polled: cheap, and the same on every desktop.
     const poll = async () => { cards = await api.cards().catch(() => []); };
     poll();

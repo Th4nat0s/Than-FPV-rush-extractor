@@ -31,7 +31,7 @@ pub enum ImportError {
 pub enum ImportEvent {
     Discovered { count: usize, sessions: usize },
     Copying(PathBuf),
-    Imported(SourceFile),
+    Imported(Box<SourceFile>),
     Skipped(PathBuf),
     Failed(PathBuf, String),
     /// An action-cam take saved as a flight, `parts` chapters long.
@@ -222,7 +222,7 @@ impl<'a> LibraryImporter<'a> {
                             file.sequence_number.or(file.gopro.map(|g| g.order_key())), media);
                         record.checksum = checksum;
                         report.imported.push(record.clone());
-                        progress(ImportEvent::Imported(record.clone()));
+                        progress(ImportEvent::Imported(Box::new(record.clone())));
                         saved.push((record, file.gopro));
                     }
                     Err(error) => fail(&mut report, &mut progress, &file.path, error.to_string()),
