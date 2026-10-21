@@ -71,6 +71,9 @@ fn shows_what_recorded_each_flight_and_file() {
     let (_fixture, session) = imported();
     assert_eq!(session.flights[0].source, "GoPro HERO11");
     assert!(session.files.iter().all(|f| f.source == "GoPro HERO11"));
+    // Both chapters are 320x240 H.264 at 30 fps: said once.
+    assert_eq!(session.flights[0].format, "240p · H.264 · 30 fps");
+    assert_eq!(session.files[0].format, "240p · H.264 · 30 fps");
 }
 
 #[test]

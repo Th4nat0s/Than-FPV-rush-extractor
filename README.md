@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 209 tests
+cd fpv-rs && cargo test --workspace     # 210 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -156,7 +156,8 @@ Interference from another pilot's transmitter is rejected clip by clip.
 ### 3. Browse
 
 A grid of flight cards: poster, duration, badges (what recorded
-it — *DVR*, or the camera: *GoPro HERO11*, *DJI*… — and *spans N recordings*).
+it — *DVR*, or the camera: *GoPro HERO11*, *DJI*… —, its format —
+*4K · HEVC · 59.94 fps*, *480p · MJPEG · 29.89 fps* — and *spans N recordings*).
 The camera's model comes from the file's own tags where it writes one, else its
 brand from the file name.
 

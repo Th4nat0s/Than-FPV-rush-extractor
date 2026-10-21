@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use fpv_core::{Clip, FigureTag, Flight, FlightTimeline, Session, SourceFile,
+use fpv_core::{Clip, FigureTag, Flight, FlightTimeline, MediaInfo, Session, SourceFile,
                uuid_string};
 use serde::Serialize;
 use uuid::Uuid;
@@ -38,6 +38,8 @@ pub struct FileView {
     pub action_cam: bool,
     /// `DVR`, or the camera: "GoPro HERO11", "DJI"… (`fpv_import::source_name`).
     pub source: String,
+    /// "4K · HEVC · 59.94 fps" (`format_label`).
+    pub format: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +56,9 @@ pub struct FlightView {
     pub action_cam: bool,
     /// What recorded it, as on the Files tab: its first recording's.
     pub source: String,
+    /// Its recordings' `format_label`, each once: two for a DVR flight whose
+    /// parts were captured at different rates.
+    pub format: String,
     /// Changes whenever a boundary does: what cached strips are keyed on.
     pub cache_key: String,
 }
@@ -102,7 +107,34 @@ pub(crate) fn file_view(file: &SourceFile) -> FileView {
         codec: file.media.video_codec.clone(),
         action_cam: !file.media.needs_segmentation(),
         source: source(file),
+        format: format_label(&file.media),
     }
+}
+
+/// What a recording is, the way a pilot says it: "4K · HEVC · 59.94 fps",
+/// "480p · MJPEG · 29.89 fps". The rate keeps two decimals because they
+/// matter — 59.94 is not 60, and the DVR records its own odd rate (CLAUDE.md 2).
+pub(crate) fn format_label(media: &MediaInfo) -> String {
+    let (width, height) = (media.width, media.height);
+    let size = if width >= 5000 {
+        format!("{:.1}K", width as f64 / 1000.0)
+    } else if width >= 3800 {
+        "4K".into()
+    } else if width >= 2600 {
+        "2.7K".into()
+    } else {
+        format!("{height}p")
+    };
+    let codec = match media.video_codec.as_str() {
+        "mjpeg" => "MJPEG".into(),
+        "h264" => "H.264".into(),
+        "hevc" => "HEVC".into(),
+        "prores" => "ProRes".into(),
+        other => other.to_uppercase(),
+    };
+    let rate = format!("{:.2}", media.frame_rate.value());
+    let rate = rate.trim_end_matches('0').trim_end_matches('.');
+    format!("{size} · {codec} · {rate} fps")
 }
 
 fn source(file: &SourceFile) -> String {
@@ -129,6 +161,16 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
         recordings: parts.len(),
         action_cam: parts.iter().any(|(_, f)| !f.media.needs_segmentation()),
         source: parts.first().map(|(_, f)| source(f)).unwrap_or_default(),
+        format: {
+            let mut labels: Vec<String> = Vec::new();
+            for (_, file) in &parts {
+                let label = format_label(&file.media);
+                if !labels.contains(&label) {
+                    labels.push(label);
+                }
+            }
+            labels.join(" / ")
+        },
         cache_key: Flight::cache_key(flight.id, clips),
         clips: parts.iter().map(|(clip, file)| ClipView {
             id: uuid_string(clip.id),
@@ -172,4 +214,27 @@ pub(crate) fn tag_view(tag: &FigureTag, timeline: &FlightTimeline) -> Option<Tag
         end: *range.end(),
         marker: tag.is_marker(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use fpv_core::FrameRate;
+
+    use super::*;
+
+    fn label(width: i64, height: i64, rate: FrameRate, codec: &str) -> String {
+        format_label(&MediaInfo::new(width, height, rate, 1.0, codec))
+    }
+
+    #[test]
+    fn says_what_a_recording_is_the_way_a_pilot_does() {
+        // The pilot's Osmo Nano take, and the DVR's own rate from PICT0030.
+        assert_eq!(label(3840, 2160, FrameRate::new(60000, 1001), "hevc"), "4K · HEVC · 59.94 fps");
+        assert_eq!(label(640, 480, FrameRate::new(1_000_000, 33459), "mjpeg"), "480p · MJPEG · 29.89 fps");
+        assert_eq!(label(1920, 1080, FrameRate::new(60, 1), "h264"), "1080p · H.264 · 60 fps");
+        assert_eq!(label(1280, 720, FrameRate::new(30000, 1001), "h264"), "720p · H.264 · 29.97 fps");
+        assert_eq!(label(2704, 1520, FrameRate::new(25, 1), "h264"), "2.7K · H.264 · 25 fps");
+        assert_eq!(label(5312, 2988, FrameRate::new(24000, 1001), "hevc"), "5.3K · HEVC · 23.98 fps");
+        assert_eq!(label(1920, 1080, FrameRate::new(24, 1), "av1"), "1080p · AV1 · 24 fps");
+    }
 }

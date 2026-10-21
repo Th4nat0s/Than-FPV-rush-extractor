@@ -984,6 +984,12 @@ frame-exact boundary editor. Layout:
   the HEVC — the probe reads the first video stream, so it is never taken for a DVR. The
   GoPro firmware codes and the make/model keys are from documentation, not from a real card
   yet: check a new brand with `ffprobe -show_format` before trusting it.
+- **Format badge** (2026-10-21, the pilot's request): cards and the Files tab say
+  "4K · HEVC · 59.94 fps" (`views::format_label`, in Rust like every other number shown).
+  Size by width for the camera classes (5.3K, 4K, 2.7K), else the height (`1080p`, `480p`);
+  the rate keeps two decimals because 59.94 is not 60 and the DVR's own rates are odd. A DVR
+  flight whose parts differ shows each once, ` / ` between. The Files tab's Rate column
+  became Format.
 - **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
   *Keep the Videos* as the main button and *Also Trash the Videos* beside it
   (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the

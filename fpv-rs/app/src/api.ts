@@ -16,6 +16,8 @@ export interface FileView {
   actionCam: boolean;
   /** "DVR", or the camera: "GoPro HERO11", "DJI"… */
   source: string;
+  /** "4K · HEVC · 59.94 fps" */
+  format: string;
 }
 
 export interface ClipView {
@@ -43,6 +45,8 @@ export interface FlightView {
   actionCam: boolean;
   /** What recorded it, as on the Files tab. */
   source: string;
+  /** "4K · HEVC · 59.94 fps"; one per distinct recording, " / " between. */
+  format: string;
   cacheKey: string;
 }
 

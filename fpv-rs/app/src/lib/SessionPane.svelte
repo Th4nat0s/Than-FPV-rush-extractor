@@ -162,15 +162,15 @@
   <div class="content">
     {#if tab === "files"}
       <table>
-        <thead><tr><th>File</th><th>Source</th><th>Size</th><th>Rate</th><th>Duration</th><th></th></tr></thead>
+        <thead><tr><th>File</th><th>Source</th><th>Format</th><th>Size</th><th>Duration</th><th></th></tr></thead>
         <tbody>
           {#each session.files as file (file.id)}
             <tr>
               <td>{file.name}</td>
-              <td>{file.actionCam ? `${file.source} (${file.codec})` : file.source}</td>
+              <td>{file.source}</td>
+              <!-- The rate is per file and non-standard by design (CLAUDE.md 2). -->
+              <td>{file.format}</td>
               <td class="mono">{file.width}×{file.height}</td>
-              <!-- Per file and non-standard by design (CLAUDE.md 2). -->
-              <td class="mono">{file.fps.toFixed(3)} fps</td>
               <td class="mono">{clock(file.duration)}</td>
               <td class="actions">
                 <button class="plain small" title="Show in the file manager" aria-label="Show {file.name} in the file manager"
