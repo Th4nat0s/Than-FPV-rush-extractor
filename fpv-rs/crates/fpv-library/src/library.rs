@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
-use fpv_core::{Clip, DetectionProfile, FigureTag, Flight, FlightTimeline, MediaInfo, Session, uuid_string};
+use fpv_core::{Clip, DetectionProfile, DetectionRun, FigureTag, Flight, FlightTimeline, MediaInfo, REDUCED_ALGORITHM,
+               Session, SourceFile, uuid_string};
 use fpv_detect::{DetectorSettings, FileDetector};
 use fpv_export::{ClipExporter, ExportError};
 use fpv_import::{FolderPattern, ImportEvent, LibraryImporter};
@@ -13,6 +14,7 @@ use fpv_store::{LibraryStore, StoreError};
 use uuid::Uuid;
 
 use crate::Config;
+use crate::reduce::{MARGIN_SECONDS, into_piece, kept_ranges};
 use crate::views::{self, SessionView, TagView, file_name};
 
 #[derive(Debug, thiserror::Error)]
@@ -138,6 +140,45 @@ pub struct BulkExport {
     pub written: Vec<PathBuf>,
     /// (flight, reason)
     pub failed: Vec<(String, String)>,
+}
+
+/// What reducing a session's DVR recordings to their flights would do.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReducePreview {
+    /// Recordings that would be cut down to their flights.
+    pub recordings: usize,
+    /// Of those, recordings without a single flight: they go whole.
+    pub emptied: usize,
+    /// DVR recordings never segmented, left alone: nothing says where their
+    /// flights are.
+    pub unsegmented: usize,
+    pub bytes_now: u64,
+    /// Estimated from the frames kept: MJPEG frames are near enough alike in size.
+    pub bytes_after: u64,
+    /// Figure tags that lie wholly in the snow, lost with it.
+    pub figures_lost: usize,
+}
+
+/// What a reduction did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReduceSummary {
+    pub recordings: usize,
+    pub pieces: usize,
+    /// Bytes no longer in the import folder — in the trash until it is emptied.
+    pub bytes_freed: u64,
+    /// [recording, reason]: left as it was.
+    pub failed: Vec<(String, String)>,
+}
+
+/// One DVR recording's reduction, planned before anything is touched.
+struct ReducePlan {
+    file: SourceFile,
+    ranges: Vec<(i64, i64)>,
+    frames: i64,
+    clips: Vec<Clip>,
+    tags: Vec<FigureTag>,
 }
 
 /// A folder of the import folder, as "Load from destination folder" lists it.
@@ -348,7 +389,8 @@ impl Library {
             .map(|session| Ok(views::session_view(
                 session, self.store.source_files(session.id)?, self.store.flights(session.id)?,
                 self.store.flight_labels_in_session(session.id)?,
-                &self.store.tags_in_session(session.id)?)))
+                &self.store.tags_in_session(session.id)?,
+                &self.store.reduced_files(session.id)?)))
             .collect()
     }
 
@@ -498,6 +540,183 @@ impl Library {
             }
         }
         Ok(summary)
+    }
+
+    /// The session's DVR recordings a reduction would cut, and how. Skipped:
+    /// action-cam takes, recordings already reduced, recordings never
+    /// segmented (counted apart), and recordings whose flights fill them.
+    fn reduce_plans(&self, session: Uuid) -> Result<(Vec<ReducePlan>, usize)> {
+        let reduced = self.store.reduced_files(session)?;
+        let clips: Vec<Clip> = self.store.flights(session)?.into_iter().flat_map(|(_, clips)| clips).collect();
+        let mut plans = vec![];
+        let mut unsegmented = 0;
+        for file in self.store.source_files(session)? {
+            if !file.media.needs_segmentation() || reduced.contains(&file.id) {
+                continue;
+            }
+            if self.store.detection_runs(file.id)?.is_empty() {
+                unsegmented += 1;
+                continue;
+            }
+            let rate = file.media.frame_rate;
+            let frames = views::last_frame(&file) + 1;
+            let own: Vec<Clip> = clips.iter().filter(|c| c.source_file_id == file.id).cloned().collect();
+            let spans: Vec<(i64, i64)> = own.iter().map(|c| (c.start_frame, c.end_frame)).collect();
+            let ranges = kept_ranges(&spans, rate.frame_index(MARGIN_SECONDS), frames);
+            if ranges == [(0, frames)] {
+                continue; // flights wall to wall: nothing to gain
+            }
+            let tags = self.store.tags_of_source_file(file.id)?;
+            plans.push(ReducePlan { file, ranges, frames, clips: own, tags });
+        }
+        Ok((plans, unsegmented))
+    }
+
+    /// What "Reduce…" would do to a session, for its confirmation.
+    pub fn reduce_preview(&self, session: &str) -> Result<ReducePreview> {
+        let session = self.session(session)?;
+        let (plans, unsegmented) = self.reduce_plans(session.id)?;
+        let mut preview = ReducePreview { unsegmented, ..Default::default() };
+        for plan in &plans {
+            let size = std::fs::metadata(&plan.file.imported_path).map(|m| m.len()).unwrap_or(0);
+            let kept: i64 = plan.ranges.iter().map(|(a, b)| b - a).sum();
+            preview.recordings += 1;
+            preview.emptied += usize::from(plan.ranges.is_empty());
+            preview.bytes_now += size;
+            preview.bytes_after += (size as f64 * kept as f64 / plan.frames.max(1) as f64) as u64;
+            preview.figures_lost += plan.tags.iter()
+                .filter(|t| !plan.ranges.iter().any(|&r| into_piece(t.start_frame, t.end_frame, r).is_some()))
+                .count();
+        }
+        Ok(preview)
+    }
+
+    /// "Reduce…": cuts each segmented DVR recording of the session down to its
+    /// flights, each widened by `MARGIN_SECONDS`, losslessly (MJPEG is
+    /// all-intra), and moves the recording to the trash. A recording is done
+    /// whole or not at all: its pieces are cut beside it under hidden names
+    /// and checked frame for frame, the library swaps to them in one
+    /// transaction, and only then does the recording go. Its flights keep
+    /// their titles, likes and tags; figure tags move with their frames, the
+    /// ones in the snow go with it. A reduced piece is never segmented again.
+    pub fn reduce_session(&self, session: &str, mut progress: impl FnMut(usize, usize, String))
+        -> Result<ReduceSummary> {
+        let session = self.session(session)?;
+        let (plans, _) = self.reduce_plans(session.id)?;
+        let mut summary = ReduceSummary::default();
+        let total = plans.len();
+        for (index, plan) in plans.into_iter().enumerate() {
+            let name = file_name(&plan.file.imported_path);
+            progress(index, total, format!("Reducing {name} ({}/{total})…", index + 1));
+            match self.reduce_recording(&plan) {
+                Ok((pieces, freed)) => {
+                    summary.recordings += 1;
+                    summary.pieces += pieces;
+                    summary.bytes_freed += freed;
+                }
+                Err(error) => summary.failed.push((name, error.to_string())),
+            }
+        }
+        progress(total, total, format!("{} recording(s) reduced", summary.recordings));
+        Ok(summary)
+    }
+
+    fn reduce_recording(&self, plan: &ReducePlan) -> Result<(usize, u64)> {
+        let original = Path::new(&plan.file.imported_path);
+        let folder = original.parent().unwrap_or(Path::new("."));
+        let stem = original.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let extension = original.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or("avi".into());
+        let ffmpeg = self.ffmpeg();
+        let exporter = ClipExporter::new(&ffmpeg);
+        let probe = MediaProbe::new(&ffmpeg);
+        let mut cut: Vec<(PathBuf, PathBuf, SourceFile)> = vec![];
+        let clean = |cut: &[(PathBuf, PathBuf, SourceFile)]| for (partial, _, _) in cut {
+            let _ = std::fs::remove_file(partial);
+        };
+        for (n, &(start, end)) in plan.ranges.iter().enumerate() {
+            let destination = free_name(folder, &format!("{stem}-{}", n + 1), &extension);
+            let partial = folder.join(format!(".{}.reducing.{extension}",
+                                              destination.file_name().unwrap().to_string_lossy()));
+            let range = Clip::new(Uuid::nil(), plan.file.id, start, end);
+            let checked = exporter.export_clip(&range, &plan.file, &partial)
+                .map_err(|e| LibraryError::Invalid(e.to_string()))
+                .and_then(|_| probe.probe(&partial).map_err(|e| LibraryError::Invalid(e.to_string())))
+                .and_then(|media| {
+                    // A piece must be exactly its frames, at exactly the
+                    // recording's rate, or every clip and tag moved onto it
+                    // would sit off its footage.
+                    if media.frame_count != Some(end - start) || media.frame_rate != plan.file.media.frame_rate {
+                        Err(LibraryError::Invalid(format!(
+                            "the piece of frames {start}-{end} came out {:?} frames at {}",
+                            media.frame_count, media.frame_rate)))
+                    } else {
+                        Ok(media)
+                    }
+                });
+            match checked {
+                Ok(media) => {
+                    let mut piece = SourceFile::new(plan.file.session_id, plan.file.original_path.clone(),
+                                                    destination.to_string_lossy(), plan.file.sequence_number,
+                                                    MediaInfo { camera: None, ..media });
+                    // The checksum of the recording it was cut from, on its
+                    // first piece: importing the same card again must not
+                    // bring the snow back as a new recording.
+                    if n == 0 {
+                        piece.checksum = plan.file.checksum.clone();
+                    }
+                    cut.push((partial, destination, piece));
+                }
+                Err(error) => {
+                    let _ = std::fs::remove_file(&partial);
+                    clean(&cut);
+                    return Err(error);
+                }
+            }
+        }
+        // Every piece is whole: they take their names, then the library swaps.
+        let mut placed: Vec<PathBuf> = vec![];
+        for (partial, destination, _) in &cut {
+            if let Err(error) = std::fs::rename(partial, destination) {
+                for path in &placed {
+                    let _ = std::fs::remove_file(path);
+                }
+                clean(&cut);
+                return Err(error.into());
+            }
+            placed.push(destination.clone());
+        }
+        let piece_of = |start: i64, end: i64| plan.ranges.iter().enumerate()
+            .find_map(|(i, &range)| into_piece(start, end, range).map(|(a, b)| (i, a, b)));
+        let clips: Vec<Clip> = plan.clips.iter().filter_map(|clip| {
+            let (i, start, end) = piece_of(clip.start_frame, clip.end_frame)?;
+            Some(Clip { source_file_id: cut[i].2.id, start_frame: start, end_frame: end, ..clip.clone() })
+        }).collect();
+        let tags: Vec<FigureTag> = plan.tags.iter().filter_map(|tag| {
+            let (i, start, end) = piece_of(tag.start_frame, tag.end_frame)?;
+            Some(FigureTag { source_file_id: cut[i].2.id, start_frame: start, end_frame: end, ..tag.clone() })
+        }).collect();
+        let runs: Vec<DetectionRun> = cut.iter().zip(&plan.ranges).map(|((_, _, piece), &(start, end))| {
+            DetectionRun::new(piece.id, REDUCED_ALGORITHM, std::collections::BTreeMap::from([
+                ("marginSeconds".to_owned(), MARGIN_SECONDS),
+                ("fromFrame".to_owned(), start as f64),
+                ("toFrame".to_owned(), end as f64),
+            ]))
+        }).collect();
+        let pieces: Vec<SourceFile> = cut.iter().map(|(_, _, piece)| piece.clone()).collect();
+        if let Err(error) = self.store.apply_reduction(plan.file.id, &pieces, &clips, &tags, &runs) {
+            for path in &placed {
+                let _ = std::fs::remove_file(path);
+            }
+            return Err(error.into());
+        }
+        let before = std::fs::metadata(original).map(|m| m.len()).unwrap_or(0);
+        let after: u64 = placed.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
+        if let Err(error) = trash::delete(original) {
+            // The library already holds the pieces; the recording only takes room.
+            log::warn!("could not move {} to the trash: {error}", original.display());
+            return Ok((pieces.len(), 0));
+        }
+        Ok((pieces.len(), before.saturating_sub(after)))
     }
 
     /// Runs the detector over a session's DVR recordings and files the flights.

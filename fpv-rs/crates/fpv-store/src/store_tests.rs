@@ -406,3 +406,47 @@ fn drops_a_flights_labels_with_the_flight() {
     assert!(store.flight_labels_in_session(session.id).unwrap().is_empty());
     assert!(store.flight_label_names().unwrap().is_empty());
 }
+
+/// PICT0032 with a flight at frames 1000-2000 and the snow around it; the
+/// piece kept is frames 900-2100, renumbered from 0.
+fn reduction(store: &LibraryStore) -> (Session, SourceFile, Clip, [FigureTag; 2], SourceFile) {
+    let (session, file) = session_with_one_file(store, "PICT0032.AVI", 32);
+    let (_, clip) = one_clip(store, &file, 1000, 2000);
+    let inside = tag(file.id, 1500, 1600, "split-S");
+    let snow = tag(file.id, 50, 60, "nothing");
+    store.save_tag(&inside).unwrap();
+    store.save_tag(&snow).unwrap();
+    let piece = SourceFile::new(session.id, file.original_path.clone(), "/library/PICT0032-1.AVI",
+                                Some(32), media(48.0));
+    (session, file, clip, [inside, snow], piece)
+}
+
+#[test]
+fn swaps_a_recording_for_its_pieces_moving_clips_and_tags() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file, clip, [inside, _], piece) = reduction(&store);
+    let moved_clip = Clip { source_file_id: piece.id, start_frame: 100, end_frame: 1100, ..clip.clone() };
+    let moved_tag = FigureTag { source_file_id: piece.id, start_frame: 600, end_frame: 700, ..inside.clone() };
+    let run = DetectionRun::new(piece.id, REDUCED_ALGORITHM, BTreeMap::new());
+    store.apply_reduction(file.id, std::slice::from_ref(&piece), std::slice::from_ref(&moved_clip),
+                          std::slice::from_ref(&moved_tag), &[run]).unwrap();
+
+    assert_eq!(store.source_files(session.id).unwrap(), std::slice::from_ref(&piece));
+    assert_eq!(store.flights(session.id).unwrap()[0].1, [moved_clip]);
+    // The tag in the flight moved with it; the one in the snow went with the recording.
+    assert_eq!(store.tags_in_session(session.id).unwrap(), [moved_tag]);
+    assert_eq!(store.reduced_files(session.id).unwrap(), HashSet::from([piece.id]));
+}
+
+#[test]
+fn leaves_everything_as_it_was_when_a_reduction_fails_halfway() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file, clip, tags, piece) = reduction(&store);
+    // A clip the library does not hold: the transaction must not half-apply.
+    let stray = Clip::new(clip.flight_id, piece.id, 0, 10);
+    assert!(store.apply_reduction(file.id, std::slice::from_ref(&piece), &[stray], &[], &[]).is_err());
+    assert_eq!(store.source_files(session.id).unwrap(), [file]);
+    assert_eq!(store.flights(session.id).unwrap()[0].1, [clip]);
+    assert_eq!(store.tags_in_session(session.id).unwrap().len(), tags.len());
+    assert!(store.reduced_files(session.id).unwrap().is_empty());
+}

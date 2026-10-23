@@ -4,7 +4,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
 use fpv_core::{Clip, ClipEntry, ClipExit, ClipKind, DetectionProfile, DetectionRun, FigureTag, Flight, FrameRate,
-               MediaInfo, Session, SourceFile};
+               MediaInfo, REDUCED_ALGORITHM, Session, SourceFile};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
@@ -92,29 +92,53 @@ impl LibraryStore {
         let mut db = self.db();
         let transaction = db.transaction()?;
         for file in files {
-            let media = &file.media;
-            transaction.execute(
-                r#"INSERT INTO sourceFile (id, sessionId, originalPath, importedPath,
-                     sequenceNumber, width, height, frameRateNumerator, frameRateDenominator,
-                     frameCount, duration, videoCodec, audioCodec, creationDate, checksum, camera)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
-                   ON CONFLICT(id) DO UPDATE SET sessionId = excluded.sessionId,
-                     originalPath = excluded.originalPath, importedPath = excluded.importedPath,
-                     sequenceNumber = excluded.sequenceNumber, width = excluded.width,
-                     height = excluded.height, frameRateNumerator = excluded.frameRateNumerator,
-                     frameRateDenominator = excluded.frameRateDenominator,
-                     frameCount = excluded.frameCount, duration = excluded.duration,
-                     videoCodec = excluded.videoCodec, audioCodec = excluded.audioCodec,
-                     creationDate = excluded.creationDate, checksum = excluded.checksum,
-                     camera = excluded.camera"#,
-                params![Id(file.id), Id(file.session_id), file.original_path, file.imported_path,
-                        file.sequence_number, media.width, media.height,
-                        media.frame_rate.numerator, media.frame_rate.denominator,
-                        media.frame_count, media.duration, media.video_codec, media.audio_codec,
-                        media.creation_date.map(Date), file.checksum, media.camera])?;
+            upsert_source_file(&transaction, file)?;
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// Swaps a DVR recording for the pieces it was cut down to, in one
+    /// transaction: the pieces arrive, the clips and figure tags move onto
+    /// them, each piece gets its run, and the recording's row goes — taking
+    /// with it, by cascade, the tags that fell in the snow. A failure leaves
+    /// the library as it was.
+    pub fn apply_reduction(&self, original: Uuid, pieces: &[SourceFile], clips: &[Clip],
+                           tags: &[FigureTag], runs: &[DetectionRun]) -> Result<()> {
+        let mut db = self.db();
+        let transaction = db.transaction()?;
+        for piece in pieces {
+            upsert_source_file(&transaction, piece)?;
+        }
+        for clip in clips {
+            let changed = transaction.execute(
+                r#"UPDATE clip SET flightId = ?2, sourceFileId = ?3, startFrame = ?4, endFrame = ?5,
+                     kind = ?6, entry = ?7, exit = ?8, confidence = ?9, craftName = ?10,
+                     thumbnailPath = ?11 WHERE id = ?1"#,
+                clip_params(clip))?;
+            not_found_unless(changed, "clip", clip.id)?;
+        }
+        for tag in tags {
+            upsert_tag(&transaction, tag)?;
+        }
+        for run in runs {
+            upsert_run(&transaction, run)?;
+        }
+        transaction.execute("DELETE FROM sourceFile WHERE id = ?", [Id(original)])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// The session's recordings already cut down to their flights.
+    pub fn reduced_files(&self, session_id: Uuid) -> Result<HashSet<Uuid>> {
+        let db = self.db();
+        let mut statement = db.prepare(
+            "SELECT DISTINCT detectionRun.sourceFileId FROM detectionRun
+             JOIN sourceFile ON sourceFile.id = detectionRun.sourceFileId
+             WHERE sourceFile.sessionId = ?1 AND detectionRun.algorithmVersion = ?2")?;
+        let rows = statement.query_map(params![Id(session_id), REDUCED_ALGORITHM],
+                                       |row| Ok(row.get::<_, Id>(0)?.0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Replaces a source file's clips with the result of a fresh detection run.
@@ -136,16 +160,7 @@ impl LibraryStore {
         for clip in clips {
             upsert_clip(&transaction, clip)?;
         }
-        let parameters = serde_json::to_string(&run.parameters)
-            .expect("a map of strings to finite numbers always encodes");
-        transaction.execute(
-            r#"INSERT INTO detectionRun (id, sourceFileId, algorithmVersion, parameters, ranAt)
-               VALUES (?1, ?2, ?3, ?4, ?5)
-               ON CONFLICT(id) DO UPDATE SET sourceFileId = excluded.sourceFileId,
-                 algorithmVersion = excluded.algorithmVersion,
-                 parameters = excluded.parameters, ranAt = excluded.ranAt"#,
-            params![Id(run.id), Id(run.source_file_id), run.algorithm_version, parameters,
-                    Date(run.ran_at)])?;
+        upsert_run(&transaction, run)?;
         transaction.commit()?;
         Ok(())
     }
@@ -200,14 +215,7 @@ impl LibraryStore {
 
     /// Adds a figure tag, or replaces the one with the same ID.
     pub fn save_tag(&self, tag: &FigureTag) -> Result<()> {
-        self.db().execute(
-            r#"INSERT INTO figureTag (id, sourceFileId, startFrame, endFrame, label, note, createdAt)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-               ON CONFLICT(id) DO UPDATE SET sourceFileId = excluded.sourceFileId,
-                 startFrame = excluded.startFrame, endFrame = excluded.endFrame,
-                 label = excluded.label, note = excluded.note, createdAt = excluded.createdAt"#,
-            params![Id(tag.id), Id(tag.source_file_id), tag.start_frame, tag.end_frame, tag.label,
-                    tag.note, Date(tag.created_at)])?;
+        upsert_tag(&self.db(), tag)?;
         Ok(())
     }
 
@@ -504,6 +512,56 @@ fn upsert_clip(db: &Connection, clip: &Clip) -> rusqlite::Result<usize> {
              exit = excluded.exit, confidence = excluded.confidence,
              craftName = excluded.craftName, thumbnailPath = excluded.thumbnailPath"#,
         clip_params(clip))
+}
+
+fn upsert_source_file(connection: &Connection, file: &SourceFile) -> rusqlite::Result<()> {
+    let media = &file.media;
+    connection.execute(
+        r#"INSERT INTO sourceFile (id, sessionId, originalPath, importedPath,
+             sequenceNumber, width, height, frameRateNumerator, frameRateDenominator,
+             frameCount, duration, videoCodec, audioCodec, creationDate, checksum, camera)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+           ON CONFLICT(id) DO UPDATE SET sessionId = excluded.sessionId,
+             originalPath = excluded.originalPath, importedPath = excluded.importedPath,
+             sequenceNumber = excluded.sequenceNumber, width = excluded.width,
+             height = excluded.height, frameRateNumerator = excluded.frameRateNumerator,
+             frameRateDenominator = excluded.frameRateDenominator,
+             frameCount = excluded.frameCount, duration = excluded.duration,
+             videoCodec = excluded.videoCodec, audioCodec = excluded.audioCodec,
+             creationDate = excluded.creationDate, checksum = excluded.checksum,
+             camera = excluded.camera"#,
+        params![Id(file.id), Id(file.session_id), file.original_path, file.imported_path,
+                file.sequence_number, media.width, media.height,
+                media.frame_rate.numerator, media.frame_rate.denominator,
+                media.frame_count, media.duration, media.video_codec, media.audio_codec,
+                media.creation_date.map(Date), file.checksum, media.camera])?;
+    Ok(())
+}
+
+fn upsert_run(connection: &Connection, run: &DetectionRun) -> rusqlite::Result<()> {
+    let parameters = serde_json::to_string(&run.parameters)
+        .expect("a map of strings to finite numbers always encodes");
+    connection.execute(
+        r#"INSERT INTO detectionRun (id, sourceFileId, algorithmVersion, parameters, ranAt)
+           VALUES (?1, ?2, ?3, ?4, ?5)
+           ON CONFLICT(id) DO UPDATE SET sourceFileId = excluded.sourceFileId,
+             algorithmVersion = excluded.algorithmVersion,
+             parameters = excluded.parameters, ranAt = excluded.ranAt"#,
+        params![Id(run.id), Id(run.source_file_id), run.algorithm_version, parameters,
+                Date(run.ran_at)])?;
+    Ok(())
+}
+
+fn upsert_tag(connection: &Connection, tag: &FigureTag) -> rusqlite::Result<()> {
+    connection.execute(
+        r#"INSERT INTO figureTag (id, sourceFileId, startFrame, endFrame, label, note, createdAt)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+           ON CONFLICT(id) DO UPDATE SET sourceFileId = excluded.sourceFileId,
+             startFrame = excluded.startFrame, endFrame = excluded.endFrame,
+             label = excluded.label, note = excluded.note, createdAt = excluded.createdAt"#,
+        params![Id(tag.id), Id(tag.source_file_id), tag.start_frame, tag.end_frame, tag.label,
+                tag.note, Date(tag.created_at)])?;
+    Ok(())
 }
 
 fn clip_params(clip: &Clip) -> impl rusqlite::Params + '_ {

@@ -1,7 +1,7 @@
 // What a session's menu and its pane both do: segment it, write its labels.
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { api, message, type SessionView } from "../api";
+import { api, bytes, message, type SessionView } from "../api";
 import { track } from "./tasks.svelte";
 import { confirmResegment } from "./confirm.svelte";
 
@@ -31,6 +31,20 @@ export async function loadImportFolder(folders: string[]): Promise<string> {
                       : "Nothing new in the import folder.";
   } catch (e) {
     return `Cannot load the import folder: ${message(e)}`;
+  }
+}
+
+/** Cuts the session's DVR recordings down to their flights, as a task;
+ * resolves to what happened. */
+export async function reduce(session: SessionView): Promise<string> {
+  try {
+    const s = await track(`Reduce “${session.name}”`, (id) => api.reduceSession(id, session.id), {
+      key: `reduce:${session.id}`, summary: (s) => `${s.recordings} reduced, ${bytes(s.bytesFreed)} freed`,
+    });
+    const failed = s.failed.length ? ` ${s.failed.length} could not be: ${s.failed.map(([f, why]) => `${f} (${why})`).join("; ")}.` : "";
+    return `${s.recordings} recording(s) cut down to ${s.pieces} piece(s); ${bytes(s.bytesFreed)} moved to the trash.${failed}`;
+  } catch (e) {
+    return `Cannot reduce: ${message(e)}`;
   }
 }
 

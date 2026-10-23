@@ -2,7 +2,7 @@
 //! computed here, through each file's own rate, so the UI never does frame
 //! arithmetic — the one place it could quietly assume 30 fps (CLAUDE.md 2).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use fpv_core::{Clip, FigureTag, Flight, FlightTimeline, MediaInfo, Session, SourceFile,
@@ -19,8 +19,12 @@ pub struct SessionView {
     pub date: Option<String>,
     pub files: Vec<FileView>,
     pub flights: Vec<FlightView>,
-    /// Whether segmentation has anything to do here.
+    /// Whether segmentation has anything to do here: DVR recordings not yet
+    /// reduced to their flights.
     pub segmentable: bool,
+    /// Whether "Reduce…" has anything to offer: such recordings, and flights
+    /// found in them.
+    pub reducible: bool,
     /// `standard` or `textured`: the detector thresholds for its DVR footage.
     pub detection_profile: String,
 }
@@ -200,13 +204,18 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
 
 pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
                            flights: Vec<(Flight, Vec<Clip>)>,
-                           mut labels: HashMap<Uuid, Vec<String>>, tags: &[FigureTag]) -> SessionView {
+                           mut labels: HashMap<Uuid, Vec<String>>, tags: &[FigureTag],
+                           reduced: &HashSet<Uuid>) -> SessionView {
+    let segmentable = files.iter().any(|f| f.media.needs_segmentation() && !reduced.contains(&f.id));
     let by_id: HashMap<Uuid, SourceFile> = files.iter().map(|f| (f.id, f.clone())).collect();
     SessionView {
         id: uuid_string(session.id),
         name: session.name.clone(),
         date: session.date.map(|d| d.to_rfc3339()),
-        segmentable: files.iter().any(|f| f.media.needs_segmentation()),
+        segmentable,
+        reducible: segmentable && flights.iter().flat_map(|(_, clips)| clips)
+            .any(|clip| by_id.get(&clip.source_file_id)
+                .is_some_and(|f| f.media.needs_segmentation() && !reduced.contains(&f.id))),
         detection_profile: session.detection_profile.as_str().into(),
         files: files.iter().map(file_view).collect(),
         flights: flights.iter()

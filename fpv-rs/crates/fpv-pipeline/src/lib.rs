@@ -56,10 +56,13 @@ impl<'a> SegmentationService<'a> {
         let mut report = SegmentationReport::default();
         // Only what the detector is for. An action-cam take is a whole-file
         // flight from import; running the detector on it would replace that
-        // flight with whatever it imagined in a clean H.264 picture.
+        // flight with whatever it imagined in a clean H.264 picture. A DVR
+        // recording reduced to its flights has no snow left to find, and its
+        // flights carry the pilot's titles, likes and tags.
+        let reduced = self.store.reduced_files(session)?;
         let (mut files, whole): (Vec<SourceFile>, Vec<SourceFile>) =
             self.store.source_files(session)?.into_iter()
-                .partition(|file| file.media.needs_segmentation());
+                .partition(|file| file.media.needs_segmentation() && !reduced.contains(&file.id));
         report.whole_file = whole.len();
         // Card order, because a flight continuing into the next file only makes
         // sense along it.

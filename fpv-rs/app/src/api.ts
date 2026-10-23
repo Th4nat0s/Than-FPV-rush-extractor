@@ -61,6 +61,8 @@ export interface SessionView {
   files: FileView[];
   flights: FlightView[];
   segmentable: boolean;
+  /** "Reduce…" has DVR recordings with flights to cut down to. */
+  reducible: boolean;
   /** The detector thresholds for its DVR footage. */
   detectionProfile: "standard" | "textured";
 }
@@ -112,6 +114,25 @@ export interface FolderView {
   recordings: number;
   /** Recordings the library does not know: 0 is a folder already imported. */
   new: number;
+}
+
+export interface ReducePreview {
+  recordings: number;
+  /** Recordings without a flight: they go whole. */
+  emptied: number;
+  /** DVR recordings never segmented, left alone. */
+  unsegmented: number;
+  bytesNow: number;
+  bytesAfter: number;
+  /** Figure tags lying wholly in the snow. */
+  figuresLost: number;
+}
+
+export interface ReduceSummary {
+  recordings: number;
+  pieces: number;
+  bytesFreed: number;
+  failed: [string, string][];
 }
 
 export interface Progress {
@@ -172,6 +193,8 @@ export const api = {
   loadImportFolder: (task: string, folders: string[]) =>
     invoke<ImportSummary>("load_import_folder", { task, folders }),
   segment: (task: string, session: string) => invoke<string>("segment", { task, session }),
+  reducePreview: (session: string) => invoke<ReducePreview>("reduce_preview", { session }),
+  reduceSession: (task: string, session: string) => invoke<ReduceSummary>("reduce_session", { task, session }),
   setDetectionProfile: (session: string, profile: string) =>
     invoke<void>("set_detection_profile", { session, profile }),
   renameSession: (id: string, name: string) => invoke<void>("rename_session", { id, name }),
@@ -213,7 +236,8 @@ export const api = {
   flightLabelNames: () => invoke<string[]>("flight_label_names"),
 };
 
-export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress",
+export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress"
+                                  | "reduce-progress",
                            handler: (progress: Progress) => void): Promise<UnlistenFn> {
   return listen<Progress>(event, (message) => handler(message.payload));
 }

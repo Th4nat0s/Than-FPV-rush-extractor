@@ -818,3 +818,99 @@ fn plays_the_dvr_through_a_proxy_and_action_cams_directly() {
     // Never seen, but a flight mixing the two would need the proxy's join.
     assert!(!plays_directly([&gopro, &dvr]));
 }
+
+/// A DVR card: one 40 s MJPEG recording at 25 fps, imported, never segmented.
+fn dvr_card() -> (Fixture, SessionView) {
+    let root = tempfile::tempdir().unwrap();
+    let card = root.path().join("card");
+    std::fs::create_dir_all(&card).unwrap();
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=40",
+               "-f", "lavfi", "-i", "sine=duration=40", "-c:v", "mjpeg", "-q:v", "5",
+               "-c:a", "pcm_s16le", "-shortest", "-y"])
+        .arg(card.join("PICT0032.AVI")).status().expect("ffmpeg on PATH");
+    assert!(status.success());
+    let library = open(root.path());
+    library.import(&card, "Letz Kwad", Some("2026-08-23"), false, |_| {}).unwrap();
+    let session = library.snapshot().unwrap().remove(0);
+    (Fixture { card, library, _root: root }, session)
+}
+
+/// Flights as a segmentation would leave them, at 25 fps: A 10-20 s and B
+/// 21-24 s, close enough for their margins to merge; C 35-36 s on its own.
+fn flights_in(fixture: &Fixture, session: &SessionView) -> Uuid {
+    let file = parse(&session.files[0].id).unwrap();
+    let flights = [(250, 500), (525, 600), (875, 900)].map(|_| Flight::new(parse(&session.id).unwrap(), 0));
+    let flights: Vec<Flight> = flights.into_iter().enumerate()
+        .map(|(i, f)| Flight { order_in_session: i as i64 + 1, ..f }).collect();
+    let clips: Vec<Clip> = [(250, 500), (525, 600), (875, 900)].iter().zip(&flights)
+        .map(|(&(start, end), flight)| Clip::new(flight.id, file, start, end)).collect();
+    fixture.library.store.replace_clips(file, &clips, &flights,
+        &fpv_core::DetectionRun::new(file, "test-1", Default::default())).unwrap();
+    file
+}
+
+#[test]
+fn reduces_a_dvr_recording_to_its_flights_and_keeps_everything_on_them() {
+    let (fixture, session) = dvr_card();
+    let library = &fixture.library;
+    let recording = library.recording_path(&session.files[0].id).unwrap();
+
+    // Never segmented: nothing says where its flights are, so nothing is cut.
+    assert_eq!(library.reduce_preview(&session.id).unwrap(),
+               ReducePreview { unsegmented: 1, ..Default::default() });
+    assert_eq!(library.reduce_session(&session.id, |_, _, _| {}).unwrap().recordings, 0);
+    assert!(recording.is_file());
+    assert!(!session.reducible);
+
+    flights_in(&fixture, &session);
+    let before = library.snapshot().unwrap().remove(0);
+    assert!(before.reducible);
+    let (a, c) = (&before.flights[0].id, &before.flights[2].id);
+    library.set_flight_title(a, "Rock gap").unwrap();
+    library.add_flight_label(c, "gates").unwrap();
+    library.add_tag(a, "split-S", 2.0, 2.4).unwrap();
+    // A figure tag in the snow between the two pieces (725-750), beyond both margins.
+    let snow = FigureTag::new(parse(&before.files[0].id).unwrap(), 730, 740, "nothing");
+    library.store.save_tag(&snow).unwrap();
+
+    let preview = library.reduce_preview(&session.id).unwrap();
+    assert_eq!((preview.recordings, preview.emptied, preview.unsegmented, preview.figures_lost), (1, 0, 0, 1));
+    // 850 frames kept of 1000.
+    assert_eq!(preview.bytes_after, (preview.bytes_now as f64 * 0.85) as u64, "{preview:?}");
+
+    let summary = library.reduce_session(&session.id, |_, _, _| {}).unwrap();
+    assert_eq!((summary.recordings, summary.pieces, summary.failed.len()), (1, 2, 0));
+    assert!(!recording.exists(), "the recording went to the trash");
+
+    let after = library.snapshot().unwrap().remove(0);
+    let names: Vec<_> = after.files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["PICT0032-1.AVI", "PICT0032-2.AVI"]);
+    // 5 s margins at 25 fps: frames 125-725 (A and B merged) and 750-1000.
+    let frames = |name: &str| {
+        let out = Command::new("ffprobe").args(["-v", "error", "-count_frames", "-select_streams", "v",
+            "-show_entries", "stream=nb_read_frames,r_frame_rate", "-of", "csv=p=0"])
+            .arg(recording.with_file_name(name)).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    assert_eq!(frames("PICT0032-1.AVI"), "25/1,600");
+    assert_eq!(frames("PICT0032-2.AVI"), "25/1,250");
+
+    // The same flights, as long as before, with what the pilot put on them.
+    assert_eq!(after.flights.iter().map(|f| f.duration).collect::<Vec<_>>(),
+               before.flights.iter().map(|f| f.duration).collect::<Vec<_>>());
+    assert_eq!(after.flights[0].title.as_deref(), Some("Rock gap"));
+    assert_eq!(after.flights[2].labels, ["gates"]);
+    let figures: Vec<_> = after.flights.iter().flat_map(|f| &f.figures).collect();
+    assert_eq!(figures.len(), 1);
+    assert!((figures[0].start - 2.0).abs() < 0.05, "{:?}", figures[0]);
+    // Cut losslessly, A still exports, frame for frame.
+    let out = fixture._root.path().join("a.avi");
+    library.export(&after.flights[0].id, &out, ExportMode::Lossless).unwrap();
+    let probe = MediaProbe::new(&library.ffmpeg()).probe(&out).unwrap();
+    assert_eq!(probe.frame_count, Some(250));
+
+    // Reduced once: never cut again, and segmentation leaves it be.
+    assert_eq!(library.reduce_preview(&session.id).unwrap(), ReducePreview::default());
+    assert!(!after.segmentable && !after.reducible);
+}

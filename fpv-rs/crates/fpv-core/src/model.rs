@@ -232,6 +232,12 @@ impl FigureTag {
 
 /// The parameters and algorithm version that produced a clip set, so results stay
 /// reproducible and re-runnable after the detector changes.
+/// The run recorded for a piece of a reduced DVR recording: cut down to its
+/// flights, the snow between them gone. Segmentation leaves such a piece
+/// alone — there is nothing left to find, and redoing it would drop the
+/// pilot's titles, likes and tags for nothing.
+pub const REDUCED_ALGORITHM: &str = "reduced-1";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DetectionRun {
     pub id: Uuid,

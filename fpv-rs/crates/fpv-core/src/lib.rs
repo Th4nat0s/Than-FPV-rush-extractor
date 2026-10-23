@@ -7,7 +7,7 @@ mod timeline;
 
 pub use frame_rate::FrameRate;
 pub use media_info::MediaInfo;
-pub use model::{
+pub use model::{REDUCED_ALGORITHM, 
     Clip, ClipEntry, ClipExit, ClipKind, DetectionProfile, DetectionRun, FigureTag, Flight, Session, SourceFile,
     uuid_string,
 };

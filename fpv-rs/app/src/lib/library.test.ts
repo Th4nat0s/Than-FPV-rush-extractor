@@ -12,7 +12,7 @@ const flight = (id: string, order: number, extra: Partial<FlightView> = {}): Fli
 });
 
 const session = (id: string, date: string | null, flights: FlightView[]): SessionView => ({
-  id, name: id, date, files: [], flights, segmentable: true, detectionProfile: "standard",
+  id, name: id, date, files: [], flights, segmentable: true, reducible: false, detectionProfile: "standard",
 });
 
 // Two sessions, the later one first in the snapshot.

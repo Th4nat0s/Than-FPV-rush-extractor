@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 222 tests
+cd fpv-rs && cargo test --workspace     # 232 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -179,6 +179,10 @@ brand from the file name.
   whether to keep its recordings in the import folder or move them to the trash.
 - **Tags** — "freestyle", "gates" — label a whole flight, added in the player; the
   card shows them and All flights filters on them.
+- **Reduce…**, in a session's menu, frees space: each DVR recording is cut down to its
+  flights, 5 s kept on either side, losslessly, and the original goes to the trash —
+  about a third of a card is snow. It cannot be undone: a flight the detector missed is
+  lost, and the session can no longer be re-segmented. Titles, likes, tags and figures stay.
 - **Open Folder**, in a session's menu, shows its recordings in the file manager —
   each folder they sit in (one per source when DVR and GoPro footage share a session).
 

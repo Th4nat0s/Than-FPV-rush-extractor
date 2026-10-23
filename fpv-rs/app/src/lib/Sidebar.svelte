@@ -6,10 +6,11 @@
   import FilterPanel from "./FilterPanel.svelte";
   import ProfileDialog from "./ProfileDialog.svelte";
   import LoadFolderDialog from "./LoadFolderDialog.svelte";
+  import ReduceDialog from "./ReduceDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
   import { figures, placed, type View } from "./library";
   import { runningTask } from "./tasks.svelte";
-  import { exportLabels, loadImportFolder, segment } from "./sessions";
+  import { exportLabels, loadImportFolder, reduce, segment } from "./sessions";
 
   let { sessions, cards, root, ffmpegOk, error, onimportcard, onimportfolder,
         onsettings, onchange, onerror }: {
@@ -67,6 +68,15 @@
   let importMenu = $state<{ x: number; y: number } | null>(null);
 
   let choosing = $state(false);
+  let reducing = $state<SessionView | null>(null);
+
+  async function runReduce(session: SessionView) {
+    reducing = null;
+    // The task bar shows it; the summary comes when it ends.
+    const done = await reduce(session);
+    noticeTitle = `Reduce “${session.name}”`;
+    notice = done;
+  }
 
   async function load(folders: string[]) {
     choosing = false;
@@ -198,6 +208,11 @@
       <button class="plain" role="menuitem" disabled={!session.flights.length}
               onclick={() => act(writeLabels)}>Export Labels…</button>
     {/if}
+    {#if session.reducible}
+      <button class="plain" role="menuitem" disabled={!ffmpegOk || !!runningTask(`segment:${session.id}`) || !!runningTask(`reduce:${session.id}`)}
+              title="Cut the DVR recordings down to their flights, to free space"
+              onclick={() => act((s) => (reducing = s))}>Reduce…</button>
+    {/if}
     <hr />
     <button class="plain" role="menuitem" onclick={() => act(startRename)}>Rename</button>
     <button class="plain danger" role="menuitem" onclick={() => act((s) => (removing = s))}>Remove from Library…</button>
@@ -212,6 +227,11 @@
             title="Add what the import folder holds and the library does not — where it is, without copying">
       Load from Destination Folder…</button>
   </div>
+{/if}
+
+{#if reducing}
+  {@const target = reducing}
+  <ReduceDialog session={target} onreduce={() => runReduce(target)} onclose={() => (reducing = null)} />
 {/if}
 
 {#if choosing}

@@ -84,6 +84,23 @@ on explicit export.
 Rationale: a 32 GB card must not become 64 GB; and detection thresholds will need tuning, so
 re-running segmentation must be cheap and reversible.
 
+**One deliberate exception, asked for by name: "Reduce…"** (2026-10-23, the pilot's request,
+behind a confirmation that says it cannot be undone). It cuts a session's segmented DVR
+recordings down to their flights — each clip widened by 5 s (`reduce::MARGIN_SECONDS`), ranges
+that touch merged — losslessly with `-c copy` (MJPEG is all-intra), into pieces beside the
+recording (`PICT0032-1.AVI`…), and moves the recording to the trash. Per recording, all or
+nothing: pieces are cut under hidden names and checked frame for frame (count and rate), the
+library swaps to them in one transaction (`LibraryStore::apply_reduction`: pieces in, clips and
+figure tags moved onto them, the recording's row out, taking the tags in the snow by cascade),
+and only then does the recording go. Flights keep their titles, likes, labels and figures; the
+first piece keeps the recording's checksum so re-importing the card does not bring the snow
+back. A piece carries a `reduced-1` `DetectionRun` (`REDUCED_ALGORITHM`) and segmentation skips
+it — re-segmenting would only lose the pilot's work. Never touched: action-cam takes, pieces,
+and **recordings never segmented** (no flights is not "no flight in it"). On the pilot's
+Test (2) copy of PICT0031+0032: 829 MB → 508 MB, 7 flights of identical durations, figures at
+the same times. Doing it on real footage first exposed the rounding bug in cut boundaries
+(§6, "Cut boundaries are truncated").
+
 ### 3.3 Data model (sketch)
 
 ```

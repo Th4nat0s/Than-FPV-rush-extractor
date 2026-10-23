@@ -6,12 +6,13 @@ mod cards;
 mod config;
 mod library;
 mod progress;
+pub mod reduce;
 mod tools;
 mod views;
 
 pub use cards::{Card, detect_cards, recordings_folder};
 pub use config::{APP_DIRECTORY, Config};
-pub use library::{BulkExport, CacheUsage, ExportMode, FolderView, ImportSummary, Library, LibraryError, Playback, Segment, StripFrame, StripsPrepared,
+pub use library::{BulkExport, CacheUsage, ExportMode, FolderView, ImportSummary, ReducePreview, ReduceSummary, Library, LibraryError, Playback, Segment, StripFrame, StripsPrepared,
                   Thumbnail};
 pub use progress::{ImportProgress, SegmentProgress, Step, strip_line};
 pub use tools::{ffmpeg_available, tool_directory};

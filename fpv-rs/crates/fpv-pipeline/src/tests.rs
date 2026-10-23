@@ -162,6 +162,24 @@ fn leaves_action_cam_takes_alone() {
 }
 
 #[test]
+fn leaves_a_dvr_recording_reduced_to_its_flights_alone() {
+    let session = Session::new("Letz Kwad", None);
+    let piece = source(&session, "PICT0032-1.AVI", 32, FrameRate::new(250_000, 10009), "mjpeg");
+    let fixture = Fixture::new(std::slice::from_ref(&piece), session);
+    let flight = Flight { title: Some("Rock gap".into()), ..Flight::new(fixture.session.id, 1) };
+    fixture.store.replace_clips(piece.id, &[Clip::new(flight.id, piece.id, 0, 1200)], std::slice::from_ref(&flight),
+                                &DetectionRun::new(piece.id, fpv_core::REDUCED_ALGORITHM, BTreeMap::new()))
+        .unwrap();
+    // The detector would cut it in two; it is never asked.
+    let report = fixture.segment(&[("PICT0032-1.AVI", vec![clip(0.0, 10.0, ClipExit::SignalLoss, true, false),
+                                                          clip(20.0, 40.0, ClipExit::Eof, false, true)])]);
+    assert_eq!(report.whole_file, 1);
+    let flights = fixture.store.flights(fixture.session.id).unwrap();
+    assert_eq!(flights.len(), 1);
+    assert_eq!(flights[0].0.title.as_deref(), Some("Rock gap"));
+}
+
+#[test]
 fn numbers_action_cam_takes_after_a_re_segmentation_that_finds_more_flights() {
     // The DVR file now yields three flights. Numbered from 1, they would
     // collide with the take at 2 unless it moves after them.

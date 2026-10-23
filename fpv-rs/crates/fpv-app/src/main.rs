@@ -12,7 +12,7 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FolderView, ImportProgress, ImportSummary, Library, LibraryError,
+use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
                   Playback, SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
@@ -181,6 +181,23 @@ async fn segment(handle: AppHandle, app: Shared<'_>, task: String, session: Stri
         let failed = if report.failed.is_empty() { String::new() }
                      else { format!(" — {} file(s) failed", report.failed.len()) };
         Ok(format!("{} flight(s), {} clip(s){failed}", report.flights, report.clips))
+    }).await
+}
+
+/// What reducing a session to its flights would do, for its confirmation.
+#[tauri::command]
+async fn reduce_preview(app: Shared<'_>, session: String) -> Reply<ReducePreview> {
+    blocking(&app, move |app| app.library().reduce_preview(&session)).await
+}
+
+/// Cuts a session's DVR recordings down to their flights; progress as events.
+#[tauri::command]
+async fn reduce_session(handle: AppHandle, app: Shared<'_>, task: String, session: String)
+    -> Reply<ReduceSummary> {
+    blocking(&app, move |app| {
+        app.library().reduce_session(&session, |done, total, line| {
+            let _ = handle.emit("reduce-progress", Progress { task: task.clone(), line, done, total });
+        })
     }).await
 }
 
@@ -435,7 +452,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder, import_folder_contents,
-            segment, set_detection_profile, rename_session, delete_session,
+            segment, reduce_preview, reduce_session, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,
