@@ -141,17 +141,29 @@ impl<'a> ProxyGenerator<'a> {
             arguments.extend(["-hwaccel".into(), HWACCEL.into()]);
         }
         arguments.extend([
+            // Before -i, unlike the exporter. Its stream copy cannot cut
+            // between index entries and landed early on these AVIs; a
+            // transcode seeks to the entry before and decodes up to the exact
+            // frame. After -i, ffmpeg decoded the whole file up to the flight
+            // instead. Measured on the reference card (2026-10-23): the same
+            // frames and samples to the bit, PICT0032 @7:33 10.1 s → 2.2 s,
+            // @9:40 10.9 s → 0.7 s, PICT0031 @5:10 7.3 s → 1.9 s. The proxy's
+            // clock still matches FlightTimeline's (tests/real_proxy.rs).
+            "-ss".into(), seconds_argument(start),
             "-i".into(), file.imported_path.clone(),
-            // After -i, as in the exporter: input-side seeking lands early on
-            // these AVIs, and the proxy's clock has to match FlightTimeline's
-            // or every figure tag would sit off its figure.
-            "-ss".into(), seconds_argument(start), "-t".into(), seconds_argument(duration),
+            "-t".into(), seconds_argument(duration),
             // DVR footage stays 640x480 square pixels as recorded: no scale, no
             // SAR — conforming resamples every frame and softens the OSD's
             // 1-pixel outlines. yuv420p because MJPEG decodes to yuvj422p,
             // which hardware decoders do not play.
             "-vf".into(), filter,
-            "-c:v".into(), "libx264".into(), "-preset".into(), "veryfast".into(),
+            // superfast where nothing is scaled — the DVR: on 2 min of
+            // PICT0032, 4.0 s against veryfast's 5.5 s for the same size
+            // (ultrafast 3.1 s but 60% larger, against the cache's budget).
+            // A scaled 4K take is decode-bound, and there veryfast measured
+            // faster (9.7 s against superfast's 10.4 s).
+            "-c:v".into(), "libx264".into(), "-preset".into(),
+            if height > MAX_PROXY_HEIGHT { "veryfast" } else { "superfast" }.into(),
             "-crf".into(), "20".into(), "-pix_fmt".into(), "yuv420p".into(),
         ]);
         arguments.extend(match audio {
@@ -219,9 +231,12 @@ mod tests {
             assert!(cut.windows(2).any(|w| w == ["-vf", "fps=1000000/40839"]));
             // Never scaled, never given a SAR.
             assert!(!has(cut, "scale") && !has(cut, "setsar"));
+            // Seeking before the input: decoding up to the flight took most
+            // of the time for flights late in a recording.
             let input = cut.iter().position(|a| a == "-i").unwrap();
             let seek = cut.iter().position(|a| a == "-ss").unwrap();
-            assert!(input < seek && cut[input + 1] == file.imported_path);
+            assert!(seek < input && cut[input + 1] == file.imported_path);
+            assert!(cut.windows(2).any(|w| w == ["-preset", "superfast"]));
             let at: f64 = cut[seek + 1].parse().unwrap();
             assert!((at - file.media.frame_rate.seconds(clip.start_frame)).abs() < 0.001);
         }

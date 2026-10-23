@@ -388,6 +388,15 @@ Tauri app's (§10).
   `fpvlib proxy-cache --sweep`).
 - **Two surfaces, deliberately.** The player scrubs the proxy; the boundary editor decodes the
   source frame. Tag frames convert through the source file's rate, never the proxy's.
+- **The proxy seeks before `-i`** (2026-10-23), unlike the exporter: a stream copy cannot cut
+  between index entries and landed early, but a transcode seeks to the entry before and decodes
+  up to the exact frame — while `-ss` after `-i` decoded the whole recording up to the flight.
+  Measured on the reference card: frames and samples identical to the bit at five positions,
+  flight 1 still 61.013 s of video at `1000000/40839` and 61.014 s of audio, and the seven
+  flights of PICT0030–0032 in 21.8 s instead of 55.2 s (the last of PICT0032 13.7 s → 4.3 s).
+  The DVR, never scaled, also encodes with `superfast` (2 min of PICT0032: 4.0 s against 5.5 s,
+  same size); scaled 4K takes keep `veryfast`, which measured faster there.
+  `tests/real_proxy.rs` holds the clock: a flight at frame 150 opens on frame 150.
 
 **Phase 4 — Digital systems.** HDZero / Walksnail support, `.osd` sidecar parsing.
 
