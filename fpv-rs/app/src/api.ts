@@ -170,6 +170,8 @@ export const api = {
     invoke<Thumbnail>("filmstrip_frame", { flight, index, count }),
   /** Shows the recording in the system file manager. */
   revealFile: (file: string) => invoke<void>("reveal_file", { file }),
+  /** Opens each folder the session's recordings sit in. */
+  revealSession: (session: string) => invoke<void>("reveal_session", { session }),
   cacheUsage: () => invoke<CacheUsage>("cache_usage"),
   clearCache: () => invoke<CacheUsage>("clear_cache"),
   missingStrips: (count: number) => invoke<number>("missing_strips", { count }),

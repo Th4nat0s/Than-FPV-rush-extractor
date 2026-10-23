@@ -540,6 +540,27 @@ fn keeps_a_sessions_detection_profile() {
 }
 
 #[test]
+fn opens_each_folder_of_a_session_once() {
+    // The day's GoPro card, then a DJI card under the same session: two
+    // folders by source, each shown by one of its recordings.
+    let (fixture, session) = imported();
+    let dji = fixture._root.path().join("dji");
+    std::fs::create_dir_all(&dji).unwrap();
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=1",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-metadata", "creation_time=2026-08-23T10:10:00Z", "-y"])
+        .arg(dji.join("DJI_0001.MP4")).status().expect("ffmpeg on PATH");
+    assert!(status.success());
+    fixture.library.import(&dji, "Letz Kwad", Some("2026-08-23"), false, |_| {}).unwrap();
+
+    let shown = fixture.library.session_folders(&session.id).unwrap();
+    assert_eq!(shown.len(), 2, "{shown:?}");
+    let folders: Vec<_> = shown.iter().map(|p| p.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned()).collect();
+    assert!(folders.iter().any(|f| f.ends_with("GOPRO")) && folders.iter().any(|f| f.ends_with("DJI")), "{folders:?}");
+    assert!(shown.iter().all(|p| p.is_file()));
+}
+
+#[test]
 fn finds_where_a_recording_was_copied_to() {
     let (fixture, session) = imported();
     let file = &session.files[0];

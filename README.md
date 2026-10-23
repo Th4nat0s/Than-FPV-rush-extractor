@@ -158,7 +158,7 @@ Interference from another pilot's transmitter is rejected clip by clip.
 The sidebar switches between **Sessions** (one session's flights), **All flights** (every
 session's) and **Figures** (one card per tagged figure; a click plays the flight from that
 moment). All flights and Figures filter in the sidebar — by tag or figure, by session, liked
-only — and every grid sorts (newest, oldest, longest) and pages. A session's Files, detection
+only — and every grid sorts (newest, oldest, longest) and pages. A session's folder, detection
 profile, labels export, re-segment, rename and removal are in its menu: ⋯ or right-click.
 
 A grid of flight cards: poster, duration, badges (what recorded
@@ -175,8 +175,8 @@ brand from the file name.
   whether to keep its recordings in the import folder or move them to the trash.
 - **Tags** — "freestyle", "gates" — label a whole flight, added in the player; the
   card shows them and All flights filters on them.
-- **Files…**, in a session's menu, lists the raw recordings with their real, per-file
-  frame rates.
+- **Open Folder**, in a session's menu, shows its recordings in the file manager —
+  each folder they sit in (one per source when DVR and GoPro footage share a session).
 
 ### 4. Play and tag figures
 

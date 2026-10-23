@@ -588,6 +588,21 @@ impl Library {
         Ok(PathBuf::from(file.imported_path))
     }
 
+    /// One recording per folder the session's recordings sit in, to show in
+    /// the file manager: a session holding DVR and GoPro footage has a folder
+    /// per source (`{source}` in the folder pattern), and each is opened.
+    pub fn session_folders(&self, session: &str) -> Result<Vec<PathBuf>> {
+        let session = self.session(session)?;
+        let mut shown: Vec<PathBuf> = Vec::new();
+        for file in self.store.source_files(session.id)? {
+            let path = PathBuf::from(file.imported_path);
+            if !shown.iter().any(|known| known.parent() == path.parent()) {
+                shown.push(path);
+            }
+        }
+        Ok(shown)
+    }
+
     /// The source frame under a boundary, for the editor — decoded from the
     /// recording itself, never the proxy, whose frames are resampled.
     pub fn preview_frame(&self, file: &str, frame: i64) -> Result<Thumbnail> {

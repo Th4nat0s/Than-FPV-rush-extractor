@@ -4,7 +4,6 @@
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
   import FilterPanel from "./FilterPanel.svelte";
-  import FilesDialog from "./FilesDialog.svelte";
   import ProfileDialog from "./ProfileDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
   import { figures, placed, type View } from "./library";
@@ -58,7 +57,6 @@
 
   // A session's menu, from its ⋯ or a right-click, where the pointer is.
   let menu = $state<{ session: SessionView; x: number; y: number } | null>(null);
-  let filesOf = $state<SessionView | null>(null);
   let profileOf = $state<SessionView | null>(null);
   let notice = $state<string | null>(null);
   let inputs: Record<string, HTMLInputElement> = {};
@@ -155,7 +153,7 @@
         <li class="caption none">No sessions yet.</li>
       {/each}
     </ul>
-    {#if sessions.length}<p class="caption hint">Right-click a session for its files, detection profile and more.</p>{/if}
+    {#if sessions.length}<p class="caption hint">Right-click a session to open its folder, change its detection profile and more.</p>{/if}
   {:else}
     <FilterPanel {sessions} />
   {/if}
@@ -168,8 +166,7 @@
   <div class="popup" role="menu" aria-label="{session.name}" style:left="{menu.x}px" style:top="{menu.y}px">
     <span class="caption heading">{session.name}{day(session.date) ? ` · ${day(session.date)}` : ""}</span>
     <button class="plain" role="menuitem" disabled={!session.files.length}
-            onclick={() => act((s) => api.revealFile(s.files[0].id).catch((e) => onerror(message(e))))}>Open Folder</button>
-    <button class="plain" role="menuitem" onclick={() => act((s) => (filesOf = s))}>Files…</button>
+            onclick={() => act((s) => api.revealSession(s.id).catch((e) => onerror(message(e))))}>Open Folder</button>
     {#if session.segmentable}
       <button class="plain" role="menuitem" onclick={() => act((s) => (profileOf = s))}>Detection Profile…</button>
       <button class="plain" role="menuitem" disabled={!ffmpegOk || !!runningTask(`segment:${session.id}`)}
@@ -183,9 +180,6 @@
   </div>
 {/if}
 
-{#if filesOf}
-  <FilesDialog session={filesOf} onclose={() => (filesOf = null)} />
-{/if}
 {#if profileOf}
   <ProfileDialog session={profileOf} {onchange} onclose={() => (profileOf = null)} />
 {/if}

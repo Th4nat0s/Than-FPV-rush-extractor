@@ -985,7 +985,7 @@ frame-exact boundary editor. Layout:
   the HEVC — the probe reads the first video stream, so it is never taken for a DVR. The
   GoPro firmware codes and the make/model keys are from documentation, not from a real card
   yet: check a new brand with `ffprobe -show_format` before trusting it.
-- **Format badge** (2026-10-21, the pilot's request): cards and the Files tab say
+- **Format badge** (2026-10-21, the pilot's request): cards (and the Files tab, until it was dropped) say
   "4K · HEVC · 59.94 fps" (`views::format_label`, in Rust like every other number shown).
   Size by width for the camera classes (5.3K, 4K, 2.7K), else the height (`1080p`, `480p`);
   the rate keeps two decimals because 59.94 is not 60 and the DVR's own rates are odd. A DVR
@@ -1000,7 +1000,7 @@ frame-exact boundary editor. Layout:
   session; liked only — and every grid sorts (newest, oldest, longest) and pages (12/24/48/96,
   the size kept in `localStorage`); only the page on screen makes its posters. All of it is
   computed in the window from the snapshot (`lib/library.ts`, `lib/browse.svelte.ts`, both
-  tested): the library is already there, so no view asks Rust for more. A session's Files,
+  tested): the library is already there, so no view asks Rust for more. A session's folder,
   detection profile, labels export, re-segment, rename and removal moved to its **menu** (⋯ or
   right-click) — the pilot's call over keeping them in the header. **Flight tags**
   ("freestyle", "gates") are free labels on a whole flight, beside the figure tags that mark a
@@ -1025,8 +1025,11 @@ frame-exact boundary editor. Layout:
   a different file at that path is a failure, never overwritten (both tested). Taking back
   needs the same folder, i.e. the same session name and date under the same pattern;
   otherwise the card is copied afresh, as before.
-- **Show in the file manager** (2026-10-20): a folder button on each row of the Files tab.
-  `reveal_file` takes the recording's ID, never a path from the web view, and calls
+- **Show in the file manager** (2026-10-20): a folder button on each row of the Files tab,
+  then (2026-10-23, the pilot's call) **Open Folder** in a session's menu, the Files list
+  dropped: `reveal_session` opens each folder the session's recordings sit in — one per
+  source under `{source}` — with one recording selected (`Library::session_folders`, tested
+  on a GoPro and a DJI card in one session). `reveal_file` takes the recording's ID, never a path from the web view, and calls
   `tauri_plugin_opener::reveal_item_in_dir` as a plain function — no plugin registered, no
   web-side permission. On Linux that is D-Bus only (`org.freedesktop.FileManager1.ShowItems`,
   then the OpenURI portal): verified against a stand-in service on a private session bus,

@@ -255,6 +255,22 @@ async fn reveal_file(app: Shared<'_>, file: String) -> Reply<()> {
         .map_err(|error| error.to_string())?
 }
 
+/// Shows a session's recordings in the file manager: each folder they sit in,
+/// with one of them selected.
+#[tauri::command]
+async fn reveal_session(app: Shared<'_>, session: String) -> Reply<()> {
+    let paths = blocking(&app, move |app| app.library().session_folders(&session)).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        for path in paths {
+            tauri_plugin_opener::reveal_item_in_dir(&path)
+                .map_err(|error| format!("cannot show {}: {error}", path.display()))?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn preview_frame(app: Shared<'_>, file: String, frame: i64) -> Reply<Thumbnail> {
     blocking(&app, move |app| app.library().preview_frame(&file, frame)).await
@@ -400,7 +416,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
             segment, set_detection_profile, rename_session, delete_session,
-            set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
+            set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,
             add_flight_label, remove_flight_label, flight_label_names,
