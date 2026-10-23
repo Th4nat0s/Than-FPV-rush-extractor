@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 210 tests
+cd fpv-rs && cargo test --workspace     # 215 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -144,16 +144,22 @@ Interference from another pilot's transmitter is rejected clip by clip.
 
 - The DVR cuts recordings on a size limit, sometimes mid-flight: consecutive files
   whose tail and head carry the same feed are stitched into **one flight**.
-- **Detection profile**, per session, next to the Segment button. *Standard* is
+- **Detection profile**, per session, in its menu (⋯ or right-click). *Standard* is
   the tuned default. *Textured terrain* is for footage whose clean picture the
   standard thresholds read as snow — rock faces, alpine slopes, a softer camera
   chain — which shows as one flight shattered into many short ones; it also
-  absorbs dropouts under 1 s. Change it, then Re-segment.
+  absorbs dropouts under 1 s. Save and Re-segment applies it.
 - Re-segmenting is cheap and safe: each file's clips are replaced in one
   transaction, every run records its algorithm version and parameters, and
   action-cam takes are left alone.
 
 ### 3. Browse
+
+The sidebar switches between **Sessions** (one session's flights), **All flights** (every
+session's) and **Figures** (one card per tagged figure; a click plays the flight from that
+moment). All flights and Figures filter in the sidebar — by tag or figure, by session, liked
+only — and every grid sorts (newest, oldest, longest) and pages. A session's Files, detection
+profile, labels export, re-segment, rename and removal are in its menu: ⋯ or right-click.
 
 A grid of flight cards: poster, duration, badges (what recorded
 it — *DVR*, or the camera: *GoPro HERO11*, *DJI*… —, its format —
@@ -165,9 +171,12 @@ brand from the file name.
   extracted once ever.
 - **The heart** likes a flight; **Liked** filters the grid.
 - **Titles and session names edit in place.**
-- **Deleting a session** removes its flights and moves the imported copies to the
-  trash, behind a confirmation.
-- **Files** lists the raw recordings with their real, per-file frame rates.
+- **Removing a session** (its menu) removes its flights from the library and asks
+  whether to keep its recordings in the import folder or move them to the trash.
+- **Tags** — "freestyle", "gates" — label a whole flight, added in the player; the
+  card shows them and All flights filters on them.
+- **Files…**, in a session's menu, lists the raw recordings with their real, per-file
+  frame rates.
 
 ### 4. Play and tag figures
 
@@ -186,7 +195,8 @@ in the recording's own frames, so they survive re-segmentation.
 ⋯ → **Edit boundaries…** opens one block per clip, with the source frame under
 the boundary, a whole-file slider, and ±1 frame / ±¼ s / ±1 s steps through the
 file's own rate. The detector samples at 4 Hz, so its boundaries sit on a 0.25 s
-grid — your correction is what makes them frame-exact. **Export Labels…** writes
+grid — your correction is what makes them frame-exact. **Export Labels…**, in the
+session's menu, writes
 the session's clips in the harness's `labels.csv` format, so corrections feed back
 as ground truth.
 

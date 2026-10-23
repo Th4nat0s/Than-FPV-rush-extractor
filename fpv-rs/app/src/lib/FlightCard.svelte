@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { api, clock, flightName, media, message, type FlightView } from "../api";
+  import { api, clock, day, flightName, media, message, type FlightView, type SessionView } from "../api";
   import { batch } from "./tasks.svelte";
   import { STRIP } from "./strips";
   import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
 
-  let { flight, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
+  let { flight, session = null, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
         onplay, onedit, onexport, onchange }: {
     flight: FlightView;
+    /** Named under the title where flights of several sessions are listed. */
+    session?: SessionView | null;
     exporting: boolean;
     ffmpegOk: boolean;
     /** In selection mode a click ticks the card instead of playing it. */
@@ -126,6 +128,9 @@
       <div class="placeholder"><Icon name="film" size={36} /></div>
     {/if}
     {#if hover !== null}<div class="playhead" style:left="{hover * 100}%"></div>{/if}
+    {#if flight.figures.length && hover === null}
+      <span class="figures">{flight.figures.length} figure{flight.figures.length === 1 ? "" : "s"}</span>
+    {/if}
     {#if selecting}
       <span class="tick" class:on={selected} aria-hidden="true">{selected ? "✓" : ""}</span>
     {/if}
@@ -152,9 +157,17 @@
       {/if}
     </div>
   </div>
+  {#if session}
+    <span class="caption session">{session.name}{day(session.date) ? ` · ${day(session.date)}` : ""}</span>
+  {/if}
   {#if badges.length}
     <div class="badges caption">
       {#each badges as [icon, text]}<span class="row"><Icon name={icon} size={12} />{text}</span>{/each}
+    </div>
+  {/if}
+  {#if flight.labels.length}
+    <div class="labels">
+      {#each flight.labels as label (label)}<span class="label">{label}</span>{/each}
     </div>
   {/if}
 </article>
@@ -199,6 +212,13 @@
   .icon { display: flex; align-items: center; color: var(--muted); }
   .icon:hover:not(:disabled) { color: var(--accent); }
   .badges { display: flex; gap: 12px; flex-wrap: wrap; }
+  .session { margin-top: -4px; }
+  .figures {
+    position: absolute; left: 6px; bottom: 6px; pointer-events: none;
+    padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 12px;
+  }
+  .labels { display: flex; gap: 4px; flex-wrap: wrap; }
+  .label { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--hover); border: 1px solid var(--line); }
   .badges .row { gap: 4px; }
   .menu { position: relative; }
   .popup {

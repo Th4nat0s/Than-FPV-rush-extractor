@@ -48,6 +48,10 @@ export interface FlightView {
   /** "4K · HEVC · 59.94 fps"; one per distinct recording, " / " between. */
   format: string;
   cacheKey: string;
+  /** Free tags on the whole flight: "freestyle", "gates". */
+  labels: string[];
+  /** Its figure tags on the flight's clock, in time order. */
+  figures: TagView[];
 }
 
 export interface SessionView {
@@ -187,6 +191,9 @@ export const api = {
     invoke<TagView>("add_tag", { flight, label, start, end }),
   deleteTag: (id: string) => invoke<void>("delete_tag", { id }),
   tagLabels: () => invoke<string[]>("tag_labels"),
+  addFlightLabel: (flight: string, label: string) => invoke<void>("add_flight_label", { flight, label }),
+  removeFlightLabel: (flight: string, label: string) => invoke<void>("remove_flight_label", { flight, label }),
+  flightLabelNames: () => invoke<string[]>("flight_label_names"),
 };
 
 export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress",

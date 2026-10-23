@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { api, clock, flightName, message, type FlightView, type TagView } from "../api";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
@@ -11,7 +11,12 @@
   // one-segment case. Either way the player's time is a file's, and the
   // flight's clock comes from playlist.ts; a tag marked on it goes back to
   // source frames in Rust (FlightTimeline), never stored on a file's clock.
-  let { flight, onclose }: { flight: FlightView; onclose: () => void } = $props();
+  let { flight, at = 0, onclose }: {
+    flight: FlightView;
+    /** Where on the flight's clock to start: a figure opened from the Figures tab. */
+    at?: number;
+    onclose: () => void;
+  } = $props();
 
   let video: HTMLVideoElement | undefined = $state();
   let segments = $state<Segment[]>([]);
@@ -29,9 +34,37 @@
   let label = $state("");
   let markIn = $state<number | null>(null);
   let now = $state(0);
+  // The flight's own tags — "freestyle", "gates" — beside its figures.
+  // Edited here, then sent back with the next refresh of the library.
+  let labels = $state<string[]>(untrack(() => [...flight.labels]));
+  let labelNames = $state<string[]>([]);
+  let newLabel = $state("");
 
   async function reload() {
-    [tags, suggestions] = await Promise.all([api.flightTags(flight.id), api.tagLabels()]);
+    [tags, suggestions, labelNames] = await Promise.all(
+      [api.flightTags(flight.id), api.tagLabels(), api.flightLabelNames()]);
+  }
+
+  async function addLabel() {
+    const name = newLabel.trim();
+    if (!name) return;
+    try {
+      await api.addFlightLabel(flight.id, name);
+      if (!labels.some((l) => l.toLowerCase() === name.toLowerCase())) labels = [...labels, name];
+      newLabel = "";
+      labelNames = await api.flightLabelNames();
+    } catch (e) {
+      failure = message(e);
+    }
+  }
+
+  async function removeLabel(name: string) {
+    try {
+      await api.removeFlightLabel(flight.id, name);
+      labels = labels.filter((l) => l !== name);
+    } catch (e) {
+      failure = message(e);
+    }
   }
 
   onMount(async () => {
@@ -41,9 +74,11 @@
       if (playback.kind === "direct") {
         direct = true;
         segments = playback.segments;
-        pending = segments[0]?.start ?? 0;
+        const start = locate(segments, at);
+        index = start.index;
+        pending = start.time;
       } else {
-        await openProxy(0);
+        await openProxy(at);
       }
     } catch (e) {
       failure = message(e);
@@ -168,6 +203,21 @@
     </div>
 
     <aside>
+      <h3>Tags</h3>
+      <div class="labels">
+        {#each labels as name (name)}
+          <span class="label">{name}<button class="plain" aria-label="Remove the tag {name}"
+                                             onclick={() => removeLabel(name)}><Icon name="close" size={10} /></button></span>
+        {/each}
+        <input type="text" class="label-input" placeholder={labels.length ? "Add a tag…" : "Tag the flight: freestyle, gates…"}
+               list="flight-labels" bind:value={newLabel} aria-label="Add a tag to the flight"
+               onkeydown={(e) => e.key === "Enter" && addLabel()} />
+        <datalist id="flight-labels">
+          {#each labelNames.filter((n) => !labels.some((l) => l.toLowerCase() === n.toLowerCase())) as name}
+            <option value={name}></option>
+          {/each}
+        </datalist>
+      </div>
       <h3>Figures</h3>
       <ul>
         {#each tags as tag (tag.id)}
@@ -230,6 +280,13 @@
   .player .empty h2 { color: #eee; }
   aside { width: 280px; display: flex; flex-direction: column; gap: 8px; }
   h3 { margin: 0; font-size: 14px; }
+  .labels { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
+  .label {
+    display: inline-flex; align-items: center; gap: 2px; font-size: 12px; padding: 1px 2px 1px 8px;
+    border-radius: 999px; background: var(--selected); border: 1px solid var(--accent);
+  }
+  .label button { padding: 2px 4px; line-height: 0; }
+  .label-input { flex: 1; min-width: 120px; font-size: 12px; }
   ul { list-style: none; margin: 0; padding: 0; flex: 1; overflow: auto; }
   li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
   .jump { flex: 1; display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 6px 4px; }

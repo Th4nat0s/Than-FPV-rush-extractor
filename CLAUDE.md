@@ -97,6 +97,7 @@ Flight       id, sessionID, orderInSession    -- one flight, one or more Clips
 DetectionRun id, sourceFileID, algorithmVersion, parameters (JSON), ranAt
 FigureTag    id, sourceFileID, startFrame, endFrame, label, note?, createdAt
                                           -- source frames in the file's own rate
+FlightLabel  flightID, label              -- free tags on a whole flight (v5)
 ```
 
 **`FigureTag` hangs off `SourceFile`, not `Clip`** (2026-09-16). `replaceClips` deletes a file's
@@ -990,6 +991,23 @@ frame-exact boundary editor. Layout:
   the rate keeps two decimals because 59.94 is not 60 and the DVR's own rates are odd. A DVR
   flight whose parts differ shows each once, ` / ` between. The Files tab's Rate column
   became Format.
+- **Library tabs, filters and pages** (2026-10-23, the pilot's design from Claude Design,
+  "Proposal — library tabs, filters, pagination"). The sidebar switches between **Sessions**,
+  **All flights** and **Figures**, each with its count. All flights lists every session's
+  flights; Figures gives every figure tag a card (the hover-strip frame nearest its moment, a
+  click plays the flight from it). Both filter in the sidebar — tags or figures picked from
+  what the library holds, with counts and suggestions, any or all of them for tags; one
+  session; liked only — and every grid sorts (newest, oldest, longest) and pages (12/24/48/96,
+  the size kept in `localStorage`); only the page on screen makes its posters. All of it is
+  computed in the window from the snapshot (`lib/library.ts`, `lib/browse.svelte.ts`, both
+  tested): the library is already there, so no view asks Rust for more. A session's Files,
+  detection profile, labels export, re-segment, rename and removal moved to its **menu** (⋯ or
+  right-click) — the pilot's call over keeping them in the header. **Flight tags**
+  ("freestyle", "gates") are free labels on a whole flight, beside the figure tags that mark a
+  moment: table `flightLabel` (schema `v5`), one label per flight whatever its case, the
+  spelling first used naming it in suggestions; edited in the player. In the code they are
+  *labels* (`FlightView.labels`, `add_flight_label`), because *tags* already means figures
+  there. Like a flight's title and like, they are lost when a re-segment remakes the flight.
 - **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
   *Keep the Videos* as the main button and *Also Trash the Videos* beside it
   (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the

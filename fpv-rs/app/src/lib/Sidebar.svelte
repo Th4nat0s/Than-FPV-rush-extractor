@@ -1,16 +1,22 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { api, day, message, type Card, type SessionView } from "../api";
   import Icon from "./Icon.svelte";
   import Modal from "./Modal.svelte";
+  import FilterPanel from "./FilterPanel.svelte";
+  import FilesDialog from "./FilesDialog.svelte";
+  import ProfileDialog from "./ProfileDialog.svelte";
+  import { browse, openSession, show } from "./browse.svelte";
+  import { figures, placed, type View } from "./library";
+  import { runningTask } from "./tasks.svelte";
+  import { exportLabels, segment } from "./sessions";
 
-  let { sessions, cards, selectedId, ffmpegOk, error, onselect, onimportcard, onimportfolder,
+  let { sessions, cards, ffmpegOk, error, onimportcard, onimportfolder,
         onsettings, onchange, onerror }: {
     sessions: SessionView[];
     cards: Card[];
-    selectedId: string | null;
     ffmpegOk: boolean;
     error: string | null;
-    onselect: (id: string) => void;
     onimportcard: (card: Card) => void;
     onimportfolder: () => void;
     onsettings: () => void;
@@ -44,6 +50,51 @@
   // default, and the one that loses nothing) or moved to the trash.
   let removing = $state<SessionView | null>(null);
 
+  let tabs = $derived([
+    { view: "sessions", label: "Sessions", count: sessions.length },
+    { view: "flights", label: "All flights", count: placed(sessions).length },
+    { view: "figures", label: "Figures", count: figures(sessions).length },
+  ] as { view: View; label: string; count: number }[]);
+
+  // A session's menu, from its ⋯ or a right-click, where the pointer is.
+  let menu = $state<{ session: SessionView; x: number; y: number } | null>(null);
+  let filesOf = $state<SessionView | null>(null);
+  let profileOf = $state<SessionView | null>(null);
+  let notice = $state<string | null>(null);
+  let inputs: Record<string, HTMLInputElement> = {};
+
+  function openMenu(event: MouseEvent, session: SessionView) {
+    event.preventDefault();
+    const at = event.type === "contextmenu"
+      ? { x: event.clientX, y: event.clientY }
+      : (({ right, bottom }) => ({ x: right - 4, y: bottom }))((event.currentTarget as HTMLElement).getBoundingClientRect());
+    menu = { session, ...at };
+  }
+
+  function act(action: (session: SessionView) => void) {
+    const session = menu!.session;
+    menu = null;
+    action(session);
+  }
+
+  async function startRename(session: SessionView) {
+    openSession(session.id);
+    await tick();
+    inputs[session.id]?.focus();
+    inputs[session.id]?.select();
+  }
+
+  async function writeLabels(session: SessionView) {
+    const done = await exportLabels(session);
+    if (done) notice = done;
+  }
+
+  function resegment(session: SessionView) {
+    openSession(session.id);
+    // Progress shows in the task bar and the session's footer.
+    segment(session).then((line) => line.startsWith("Segmentation failed") && onerror(line));
+  }
+
   async function remove(session: SessionView, keepRecordings: boolean) {
     removing = null;
     try {
@@ -75,26 +126,75 @@
     </button>
   {/each}
 
-  <h3>Sessions</h3>
-  <ul>
-    {#each sessions as session (session.id)}
-      <li class:selected={session.id === selectedId}>
-        <div class="session" role="button" tabindex="0"
-             onclick={() => onselect(session.id)}
-             onkeydown={(e) => e.key === "Enter" && e.target === e.currentTarget && onselect(session.id)}>
-          <input class="inline name" value={session.name} aria-label="Session name"
-                 onfocus={() => onselect(session.id)}
-                 onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-                 onblur={(e) => rename(session, e.currentTarget)} />
-          <span class="caption">{subtitle(session)}</span>
-        </div>
-        <button class="plain delete" title="Delete session" onclick={() => (removing = session)}>✕</button>
-      </li>
-    {:else}
-      <li class="caption none">No sessions yet.</li>
+  <div class="tabs" role="tablist" aria-label="Library view">
+    {#each tabs as tab (tab.view)}
+      <button role="tab" aria-selected={browse.view === tab.view} class:on={browse.view === tab.view}
+              onclick={() => show(() => (browse.view = tab.view))}>
+        {tab.label}<span class="count mono">{tab.count}</span></button>
     {/each}
-  </ul>
+  </div>
+
+  {#if browse.view === "sessions"}
+    <h3>Sessions</h3>
+    <ul>
+      {#each sessions as session (session.id)}
+        <li class:selected={session.id === browse.session} oncontextmenu={(e) => openMenu(e, session)}>
+          <div class="session" role="button" tabindex="0"
+               onclick={() => openSession(session.id)}
+               onkeydown={(e) => e.key === "Enter" && e.target === e.currentTarget && openSession(session.id)}>
+            <input class="inline name" value={session.name} aria-label="Session name" bind:this={inputs[session.id]}
+                   onfocus={() => openSession(session.id)}
+                   onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+                   onblur={(e) => rename(session, e.currentTarget)} />
+            <span class="caption">{subtitle(session)}</span>
+          </div>
+          <button class="plain more" aria-label="Actions for {session.name}" aria-haspopup="menu"
+                  onclick={(e) => openMenu(e, session)}>⋯</button>
+        </li>
+      {:else}
+        <li class="caption none">No sessions yet.</li>
+      {/each}
+    </ul>
+    {#if sessions.length}<p class="caption hint">Right-click a session for its files, detection profile and more.</p>{/if}
+  {:else}
+    <FilterPanel {sessions} />
+  {/if}
 </aside>
+
+{#if menu}
+  {@const session = menu.session}
+  <button class="backdrop" aria-label="Close the menu" onclick={() => (menu = null)}
+          oncontextmenu={(e) => { e.preventDefault(); menu = null; }}></button>
+  <div class="popup" role="menu" aria-label="{session.name}" style:left="{menu.x}px" style:top="{menu.y}px">
+    <span class="caption heading">{session.name}{day(session.date) ? ` · ${day(session.date)}` : ""}</span>
+    <button class="plain" role="menuitem" disabled={!session.files.length}
+            onclick={() => act((s) => api.revealFile(s.files[0].id).catch((e) => onerror(message(e))))}>Open Folder</button>
+    <button class="plain" role="menuitem" onclick={() => act((s) => (filesOf = s))}>Files…</button>
+    {#if session.segmentable}
+      <button class="plain" role="menuitem" onclick={() => act((s) => (profileOf = s))}>Detection Profile…</button>
+      <button class="plain" role="menuitem" disabled={!ffmpegOk || !!runningTask(`segment:${session.id}`)}
+              onclick={() => act(resegment)}>{session.flights.some((f) => !f.actionCam) ? "Re-segment" : "Segment"}</button>
+      <button class="plain" role="menuitem" disabled={!session.flights.length}
+              onclick={() => act(writeLabels)}>Export Labels…</button>
+    {/if}
+    <hr />
+    <button class="plain" role="menuitem" onclick={() => act(startRename)}>Rename</button>
+    <button class="plain danger" role="menuitem" onclick={() => act((s) => (removing = s))}>Remove from Library…</button>
+  </div>
+{/if}
+
+{#if filesOf}
+  <FilesDialog session={filesOf} onclose={() => (filesOf = null)} />
+{/if}
+{#if profileOf}
+  <ProfileDialog session={profileOf} {onchange} onclose={() => (profileOf = null)} />
+{/if}
+{#if notice}
+  <Modal title="Export Labels" onclose={() => (notice = null)}>
+    <p>{notice}</p>
+    {#snippet footer()}<button class="primary" onclick={() => (notice = null)}>OK</button>{/snippet}
+  </Modal>
+{/if}
 
 {#if removing}
   {@const session = removing}
@@ -136,8 +236,25 @@
   li.selected { background: var(--selected); }
   .session { flex: 1; min-width: 0; padding: 6px 8px; display: flex; flex-direction: column; cursor: pointer; }
   .name { font-weight: 500; }
-  .delete { visibility: hidden; color: var(--muted); }
-  li:hover .delete { visibility: visible; }
+  .more { color: var(--muted); font-size: 16px; line-height: 1; padding: 4px 8px; }
+  .hint { margin: 10px 8px 0; }
+  .tabs { display: flex; gap: 2px; padding: 2px; margin: 14px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+  .tabs button {
+    flex: 1; min-width: 0; border: none; background: transparent; color: var(--muted); font-size: 12px;
+    padding: 4px; display: flex; flex-direction: column; align-items: center; white-space: nowrap;
+  }
+  .tabs button.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+  .count { font-size: 11px; font-weight: 500; color: var(--muted); }
+  .backdrop { position: fixed; inset: 0; z-index: 20; background: transparent; border: none; padding: 0; cursor: default; }
+  .popup {
+    position: fixed; z-index: 21; min-width: 220px; display: flex; flex-direction: column; padding: 4px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  }
+  .popup .heading { padding: 4px 10px 6px; white-space: nowrap; }
+  .popup button { text-align: left; padding: 6px 10px; border-radius: 4px; }
+  .popup button:hover:not(:disabled) { background: var(--hover); }
+  .popup hr { border: none; border-top: 1px solid var(--line); margin: 4px 6px; width: auto; }
   .none { padding: 6px 8px; }
   .notice { margin: 6px; padding: 8px 10px; border-radius: var(--radius); font-size: 12px; }
   .warn { background: rgba(183, 121, 31, 0.15); color: var(--warn); }
