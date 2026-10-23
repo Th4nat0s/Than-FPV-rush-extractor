@@ -78,7 +78,7 @@
 
 <div class="window">
 <div class="layout">
-  <Sidebar {sessions} {cards} {ffmpegOk} {error}
+  <Sidebar {sessions} {cards} root={info.root} {ffmpegOk} {error}
            onimportcard={(card) => (importing = { folder: card.folder, name: card.name })}
            onimportfolder={pickFolder}
            onsettings={() => (settingsOpen = true)}

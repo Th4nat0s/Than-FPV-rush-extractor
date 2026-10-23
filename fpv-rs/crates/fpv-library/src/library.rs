@@ -140,6 +140,20 @@ pub struct BulkExport {
     pub failed: Vec<(String, String)>,
 }
 
+/// A folder of the import folder, as "Load from destination folder" lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderView {
+    pub name: String,
+    /// The session it loads into, read from its name.
+    pub session: String,
+    /// `YYYY-MM-DD`, when its name starts with one.
+    pub date: Option<String>,
+    pub recordings: usize,
+    /// Recordings the library does not know: 0 is a folder already imported.
+    pub new: usize,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSummary {
@@ -394,22 +408,58 @@ impl Library {
         Ok(summary)
     }
 
-    /// "Load from destination folder": registers every recording in the
-    /// import folder the library does not know, where it is — no copy. Each
-    /// folder is a session, read back from its name (`session_of_folder`):
-    /// the folders of one session and day (one per source) join one session,
-    /// and a session of that name and day already in the library is joined.
-    /// Folders holding nothing new create nothing.
-    pub fn load_import_folder(&self, mut progress: impl FnMut(ImportEvent)) -> Result<ImportSummary> {
+    /// The import folder's folders, for "Load from destination folder" to
+    /// choose from: the session each would load into, its recordings, and how
+    /// many of them the library does not know yet — none: already imported.
+    /// Nothing is probed: a listing reads names only.
+    pub fn import_folder_contents(&self) -> Result<Vec<FolderView>> {
         let ffmpeg = self.ffmpeg();
-        let importer = LibraryImporter::new(&ffmpeg, &self.store).posters_in(self.posters());
+        let importer = LibraryImporter::new(&ffmpeg, &self.store);
+        let known = self.store.imported_paths()?;
+        self.session_folders_on_disk()?.into_iter().map(|folder| {
+            let files = importer.discover(&folder)?;
+            let name = file_name(&folder.to_string_lossy());
+            let (day, session) = fpv_import::session_of_folder(&name);
+            Ok(FolderView {
+                session, date: day.map(|d| d.format("%Y-%m-%d").to_string()),
+                recordings: files.len(),
+                new: files.iter().filter(|f| !known.contains(f.path.to_string_lossy().as_ref())).count(),
+                name,
+            })
+        }).collect()
+    }
+
+    /// The folders directly in the import folder, hidden ones left out, by name.
+    fn session_folders_on_disk(&self) -> Result<Vec<PathBuf>> {
         let mut folders: Vec<PathBuf> = std::fs::read_dir(&self.root)?
             .filter_map(|entry| entry.ok().map(|e| e.path()))
             .filter(|path| path.is_dir()
                 && !path.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
             .collect();
         folders.sort();
+        Ok(folders)
+    }
+
+    /// "Load from destination folder": registers the recordings of the chosen
+    /// folders of the import folder that the library does not know, where they
+    /// are — no copy. Folders are named, never given as paths: only the import
+    /// folder's own are reachable. Each folder is a session, read back from
+    /// its name (`session_of_folder`): the folders of one session and day (one
+    /// per source) join one session, and a session of that name and day
+    /// already in the library is joined. Folders holding nothing new create
+    /// nothing.
+    pub fn load_import_folders(&self, chosen: &[String], mut progress: impl FnMut(ImportEvent))
+        -> Result<ImportSummary> {
+        let ffmpeg = self.ffmpeg();
+        let importer = LibraryImporter::new(&ffmpeg, &self.store).posters_in(self.posters());
+        let folders = self.session_folders_on_disk()?;
+        for name in chosen {
+            if !folders.iter().any(|f| file_name(&f.to_string_lossy()) == *name) {
+                return Err(LibraryError::NotFound(format!("folder {name} in the import folder")));
+            }
+        }
         let found: Vec<(PathBuf, Vec<_>)> = folders.into_iter()
+            .filter(|folder| chosen.contains(&file_name(&folder.to_string_lossy())))
             .map(|folder| Ok((folder.clone(), importer.discover(&folder)?)))
             .collect::<std::io::Result<_>>()?;
         let count = found.iter().map(|(_, files)| files.len()).sum();

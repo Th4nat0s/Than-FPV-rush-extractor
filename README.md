@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 220 tests
+cd fpv-rs && cargo test --workspace     # 222 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -113,8 +113,9 @@ moved into the config folder on first launch.
 
 Insert a card (auto-detected; the sidebar shows *Import "NAME"*) or use **Import
 Folder…** for footage already on disk. The arrow beside it offers **Load from
-Destination Folder**: what the import folder already holds and the library does not
-is added where it is, without copying — a session removed with its videos kept comes
+Destination Folder…**: pick folders of the import folder (those already in the library
+are greyed) and what they hold that the library does not is added where it is,
+without copying — a session removed with its videos kept comes
 back, named and dated from its folder. The dialog asks for a session name and the
 **flying date** — the DVR has no clock, so for DVR footage the date can only come
 from you.

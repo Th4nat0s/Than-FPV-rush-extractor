@@ -12,7 +12,7 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, ImportProgress, ImportSummary, Library, LibraryError,
+use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FolderView, ImportProgress, ImportSummary, Library, LibraryError,
                   Playback, SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
@@ -148,13 +148,20 @@ async fn import_card(handle: AppHandle, app: Shared<'_>, task: String, folder: P
     }).await
 }
 
-/// "Load from destination folder": what the import folder holds that the
-/// library does not, registered where it is; progress as import events.
+/// The import folder's folders, each with what it holds that is new.
 #[tauri::command]
-async fn load_import_folder(handle: AppHandle, app: Shared<'_>, task: String) -> Reply<ImportSummary> {
+async fn import_folder_contents(app: Shared<'_>) -> Reply<Vec<FolderView>> {
+    blocking(&app, |app| app.library().import_folder_contents()).await
+}
+
+/// "Load from destination folder": the chosen folders' recordings the library
+/// does not know, registered where they are; progress as import events.
+#[tauri::command]
+async fn load_import_folder(handle: AppHandle, app: Shared<'_>, task: String, folders: Vec<String>)
+    -> Reply<ImportSummary> {
     blocking(&app, move |app| {
         let mut progress = ImportProgress::default();
-        app.library().load_import_folder(|event| {
+        app.library().load_import_folders(&folders, |event| {
             let Step { line, done, total } = progress.step(event);
             let _ = handle.emit("import-progress", Progress { task: task.clone(), line, done, total });
         })
@@ -427,7 +434,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder,
+            info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder, import_folder_contents,
             segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,

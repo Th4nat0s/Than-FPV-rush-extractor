@@ -5,15 +5,18 @@
   import Modal from "./Modal.svelte";
   import FilterPanel from "./FilterPanel.svelte";
   import ProfileDialog from "./ProfileDialog.svelte";
+  import LoadFolderDialog from "./LoadFolderDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
   import { figures, placed, type View } from "./library";
   import { runningTask } from "./tasks.svelte";
   import { exportLabels, loadImportFolder, segment } from "./sessions";
 
-  let { sessions, cards, ffmpegOk, error, onimportcard, onimportfolder,
+  let { sessions, cards, root, ffmpegOk, error, onimportcard, onimportfolder,
         onsettings, onchange, onerror }: {
     sessions: SessionView[];
     cards: Card[];
+    /** The import folder, where Load from Destination Folder looks. */
+    root: string;
     ffmpegOk: boolean;
     error: string | null;
     onimportcard: (card: Card) => void;
@@ -63,9 +66,12 @@
   // The arrow beside Import Folder…: the other way recordings come in.
   let importMenu = $state<{ x: number; y: number } | null>(null);
 
-  async function loadFolder() {
-    importMenu = null;
-    const done = await loadImportFolder();
+  let choosing = $state(false);
+
+  async function load(folders: string[]) {
+    choosing = false;
+    // The task bar shows the loading; the summary comes when it ends.
+    const done = await loadImportFolder(folders);
     noticeTitle = "Load from Destination Folder";
     notice = done;
   }
@@ -202,10 +208,14 @@
   <button class="backdrop" aria-label="Close the menu" onclick={() => (importMenu = null)}></button>
   <div class="popup" role="menu" aria-label="Import" style:left="{importMenu.x}px" style:top="{importMenu.y}px">
     <button class="plain" role="menuitem" onclick={() => { importMenu = null; onimportfolder(); }}>Import Folder…</button>
-    <button class="plain" role="menuitem" onclick={loadFolder}
+    <button class="plain" role="menuitem" onclick={() => { importMenu = null; choosing = true; }}
             title="Add what the import folder holds and the library does not — where it is, without copying">
-      Load from Destination Folder</button>
+      Load from Destination Folder…</button>
   </div>
+{/if}
+
+{#if choosing}
+  <LoadFolderDialog {root} onload={load} onclose={() => (choosing = false)} />
 {/if}
 
 {#if profileOf}

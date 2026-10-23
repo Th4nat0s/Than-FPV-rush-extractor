@@ -102,6 +102,18 @@ export interface ImportSummary {
   kept: string[];
 }
 
+/** A folder of the import folder, as Load from Destination Folder lists it. */
+export interface FolderView {
+  name: string;
+  /** The session it loads into, read from its name. */
+  session: string;
+  /** YYYY-MM-DD, when its name starts with one. */
+  date: string | null;
+  recordings: number;
+  /** Recordings the library does not know: 0 is a folder already imported. */
+  new: number;
+}
+
 export interface Progress {
   /** The tasks.svelte.ts ID of the task reporting. */
   task: string;
@@ -156,7 +168,9 @@ export const api = {
   cards: () => invoke<Card[]>("cards"),
   importCard: (task: string, folder: string, name: string, date: string | null, deleteOriginals: boolean) =>
     invoke<ImportSummary>("import_card", { task, folder, name, date, deleteOriginals }),
-  loadImportFolder: (task: string) => invoke<ImportSummary>("load_import_folder", { task }),
+  importFolderContents: () => invoke<FolderView[]>("import_folder_contents"),
+  loadImportFolder: (task: string, folders: string[]) =>
+    invoke<ImportSummary>("load_import_folder", { task, folders }),
   segment: (task: string, session: string) => invoke<string>("segment", { task, session }),
   setDetectionProfile: (session: string, profile: string) =>
     invoke<void>("set_detection_profile", { session, profile }),

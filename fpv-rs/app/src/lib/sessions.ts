@@ -18,11 +18,13 @@ export async function segment(session: SessionView): Promise<string | null> {
   }
 }
 
-/** Registers what the import folder holds and the library does not, where it
- * is; resolves to what happened. A task, so the bar shows it. */
-export async function loadImportFolder(): Promise<string> {
+/** Registers what the chosen folders of the import folder hold and the
+ * library does not, where it is; resolves to what happened. A task, so the
+ * bar shows it. */
+export async function loadImportFolder(folders: string[]): Promise<string> {
   try {
-    const s = await track("Load from the import folder", (id) => api.loadImportFolder(id), {
+    const s = await track(folders.length === 1 ? `Load “${folders[0]}”` : `Load ${folders.length} folders`,
+                          (id) => api.loadImportFolder(id, folders), {
       key: "import", summary: (s) => `${s.imported} loaded, ${s.skipped} already in library, ${s.failed} failed`,
     });
     return s.imported ? `Loaded ${s.imported} recording(s)${s.flights ? `, ${s.flights} action-cam take(s)` : ""}.`

@@ -1033,7 +1033,12 @@ frame-exact boundary editor. Layout:
   Letz Kwad" recurs every week). Known paths and known content are skipped, action-cam takes
   become flights, DVR recordings wait for a segmentation; a folder with nothing new creates
   nothing. For a session removed with its videos kept, or a library rebuilt over an existing
-  import folder. Verified in the app on a leftover `Test (1)` folder.
+  import folder. Verified in the app on a leftover `Test (1)` folder. **It asks which
+  folders** (2026-10-23, the pilot's request): a dialog lists the import folder's folders
+  (`Library::import_folder_contents` — names and known paths only, nothing probed), each with
+  the session it would load into and its new recordings; a folder already wholly in the
+  library is greyed and cannot be picked. `load_import_folders` takes folder *names*, never
+  paths: one not directly in the import folder (`..`, an absolute path) is refused (tested).
 - **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
   *Keep the Videos* as the main button and *Also Trash the Videos* beside it
   (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the

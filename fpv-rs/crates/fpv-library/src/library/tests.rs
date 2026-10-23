@@ -230,6 +230,44 @@ fn take_in(folder: &Path, name: &str, seconds: u32) {
     assert!(status.success());
 }
 
+/// Every folder of the import folder, as a viewer ticking them all would.
+fn everything(library: &Library) -> Vec<String> {
+    library.import_folder_contents().unwrap().into_iter().map(|f| f.name).collect()
+}
+
+#[test]
+fn lists_the_import_folders_and_what_each_holds_that_is_new() {
+    let (fixture, session) = imported();
+    let library = &fixture.library;
+    take_in(&library.root.join("2026-09-01 Bench"), "DJI_0002.MP4", 2);
+    let contents = library.import_folder_contents().unwrap();
+    assert_eq!(contents, [
+        FolderView { name: "2026-08-23 Letz Kwad GOPRO".into(), session: "Letz Kwad".into(),
+                     date: Some("2026-08-23".into()), recordings: 3, new: 0 },
+        FolderView { name: "2026-09-01 Bench".into(), session: "Bench".into(),
+                     date: Some("2026-09-01".into()), recordings: 1, new: 1 },
+    ]);
+    // Removed with its videos kept: its folder is new again.
+    library.delete_session(&session.id, true).unwrap();
+    assert_eq!(library.import_folder_contents().unwrap()[0].new, 3);
+}
+
+#[test]
+fn loads_only_the_folders_chosen_and_none_outside_the_import_folder() {
+    let (fixture, _) = imported();
+    let library = &fixture.library;
+    take_in(&library.root.join("2026-09-01 Bench"), "DJI_0002.MP4", 2);
+    take_in(&library.root.join("2026-09-02 Roof"), "DJI_0003.MP4", 3);
+    let summary = library.load_import_folders(&["2026-09-02 Roof".into()], |_| {}).unwrap();
+    assert_eq!(summary.imported, 1);
+    let names: Vec<_> = library.snapshot().unwrap().into_iter().map(|s| s.name).collect();
+    assert!(names.contains(&"Roof".to_string()) && !names.contains(&"Bench".to_string()), "{names:?}");
+    for outside in ["..", "../library", "/tmp", "2026-09-03 Nowhere"] {
+        assert!(matches!(library.load_import_folders(&[outside.into()], |_| {}), Err(LibraryError::NotFound(_))),
+                "{outside}");
+    }
+}
+
 #[test]
 fn loads_recordings_left_in_the_import_folder_where_they_are() {
     // A session removed with its videos kept: loading the import folder brings
@@ -240,7 +278,7 @@ fn loads_recordings_left_in_the_import_folder_where_they_are() {
     let written = std::fs::metadata(&take).unwrap().modified().unwrap();
     library.delete_session(&session.id, true).unwrap();
     let mut copied = 0;
-    let summary = library.load_import_folder(|event| {
+    let summary = library.load_import_folders(&everything(library), |event| {
         if matches!(event, ImportEvent::Copying(_)) { copied += 1; }
     }).unwrap();
     assert_eq!((summary.imported, summary.skipped, summary.failed, summary.flights), (3, 0, 0, 2));
@@ -256,7 +294,7 @@ fn loads_recordings_left_in_the_import_folder_where_they_are() {
     assert!(paths.contains(&take), "registered where it is: {paths:?}");
 
     // Nothing new: nothing happens.
-    let summary = library.load_import_folder(|_| {}).unwrap();
+    let summary = library.load_import_folders(&everything(library), |_| {}).unwrap();
     assert_eq!((summary.imported, summary.skipped), (0, 3));
     assert_eq!(library.snapshot().unwrap().len(), 1);
 }
@@ -269,7 +307,7 @@ fn files_a_loaded_folder_into_its_session_and_day_or_a_new_one() {
     take_in(&library.root.join("2026-08-23 Letz Kwad DJI"), "DJI_0001.MP4", 1);
     // A folder dropped in by hand: a session of its own, dated from its name.
     take_in(&library.root.join("2026-09-01 Bench"), "DJI_0002.MP4", 2);
-    let summary = library.load_import_folder(|_| {}).unwrap();
+    let summary = library.load_import_folders(&everything(library), |_| {}).unwrap();
     assert_eq!((summary.imported, summary.skipped, summary.flights), (2, 3, 2));
 
     let sessions = library.snapshot().unwrap();
