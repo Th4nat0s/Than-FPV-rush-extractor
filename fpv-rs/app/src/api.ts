@@ -18,6 +18,8 @@ export interface FileView {
   source: string;
   /** "4K · HEVC · 59.94 fps" */
   format: string;
+  /** A piece of a DVR recording cut down to its flights. */
+  reduced: boolean;
 }
 
 export interface ClipView {
@@ -47,6 +49,8 @@ export interface FlightView {
   source: string;
   /** "4K · HEVC · 59.94 fps"; one per distinct recording, " / " between. */
   format: string;
+  /** Its DVR footage was cut down to its flights. */
+  reduced: boolean;
   cacheKey: string;
   /** Free tags on the whole flight: "freestyle", "gates". */
   labels: string[];

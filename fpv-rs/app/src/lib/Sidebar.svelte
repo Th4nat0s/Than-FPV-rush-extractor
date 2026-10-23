@@ -199,7 +199,11 @@
             {#if session.files.length}
               {@const sources = sessionSources(session)}
               <span class="caption sources">
-                {#if sources.dvr}<span class="row"><Icon name="goggles" size={12} />DVR</span>{/if}
+                {#if sources.dvr}
+                  <span class="row" title={sources.reduced === "none" ? undefined : "Cut down to its flights with Reduce…"}>
+                    <Icon name="goggles" size={12} />DVR{sources.reduced === "all" ? " · reduced"
+                      : sources.reduced === "some" ? " · partly reduced" : ""}</span>
+                {/if}
                 {#each sources.cameras as camera (camera)}<span class="row"><Icon name="camera" size={12} />{camera}</span>{/each}
               </span>
             {/if}

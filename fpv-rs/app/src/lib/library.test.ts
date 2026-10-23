@@ -8,7 +8,7 @@ const tag = (label: string, start: number, end = start): TagView =>
 
 const flight = (id: string, order: number, extra: Partial<FlightView> = {}): FlightView => ({
   id, order, title: null, liked: false, duration: 60, clips: [], recordings: 1, actionCam: false,
-  source: "DVR", format: "480p · MJPEG · 29.89 fps", cacheKey: id, labels: [], figures: [], ...extra,
+  source: "DVR", format: "480p · MJPEG · 29.89 fps", cacheKey: id, labels: [], figures: [], reduced: false, ...extra,
 });
 
 const session = (id: string, date: string | null, flights: FlightView[]): SessionView => ({
@@ -138,17 +138,25 @@ describe("pageOf", () => {
 });
 
 describe("sessionSources", () => {
-  const file = (source: string, actionCam: boolean) => ({ source, actionCam }) as FileView;
+  const file = (source: string, actionCam: boolean, reduced = false) => ({ source, actionCam, reduced }) as FileView;
   const with_ = (files: FileView[]) => ({ ...session("s", null, []), files });
 
   it("says DVR once, and each camera once, in the order the files came", () => {
-    expect(sessionSources(with_([file("DVR", false), file("DVR", false)]))).toEqual({ dvr: true, cameras: [] });
+    expect(sessionSources(with_([file("DVR", false), file("DVR", false)])))
+      .toEqual({ dvr: true, reduced: "none", cameras: [] });
     expect(sessionSources(with_([file("GoPro HERO11", true), file("DVR", false), file("DJI Osmo Nano", true),
                                  file("GoPro HERO11", true)])))
-      .toEqual({ dvr: true, cameras: ["GoPro HERO11", "DJI Osmo Nano"] });
+      .toEqual({ dvr: true, reduced: "none", cameras: ["GoPro HERO11", "DJI Osmo Nano"] });
   });
 
   it("has nothing to say about a session without files", () => {
-    expect(sessionSources(with_([]))).toEqual({ dvr: false, cameras: [] });
+    expect(sessionSources(with_([]))).toEqual({ dvr: false, reduced: "none", cameras: [] });
+  });
+
+  it("says how much of its DVR footage was reduced to its flights", () => {
+    const reduced = (files: FileView[]) => sessionSources(with_(files)).reduced;
+    expect(reduced([file("DVR", false, true), file("DVR", false, true), file("GoPro", true)])).toBe("all");
+    expect(reduced([file("DVR", false, true), file("DVR", false)])).toBe("some");
+    expect(reduced([file("DVR", false), file("GoPro", true)])).toBe("none");
   });
 });

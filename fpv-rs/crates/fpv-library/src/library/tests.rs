@@ -913,4 +913,7 @@ fn reduces_a_dvr_recording_to_its_flights_and_keeps_everything_on_them() {
     // Reduced once: never cut again, and segmentation leaves it be.
     assert_eq!(library.reduce_preview(&session.id).unwrap(), ReducePreview::default());
     assert!(!after.segmentable && !after.reducible);
+    // And it says so, on its recordings and its flights.
+    assert!(!before.files.iter().any(|f| f.reduced) && !before.flights.iter().any(|f| f.reduced));
+    assert!(after.files.iter().all(|f| f.reduced) && after.flights.iter().all(|f| f.reduced));
 }

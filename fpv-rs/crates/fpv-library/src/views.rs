@@ -44,6 +44,8 @@ pub struct FileView {
     pub source: String,
     /// "4K · HEVC · 59.94 fps" (`format_label`).
     pub format: String,
+    /// A piece of a DVR recording cut down to its flights ("Reduce…").
+    pub reduced: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,6 +65,8 @@ pub struct FlightView {
     /// Its recordings' `format_label`, each once: two for a DVR flight whose
     /// parts were captured at different rates.
     pub format: String,
+    /// Its DVR footage was cut down to its flights: the snow around it is gone.
+    pub reduced: bool,
     /// Changes whenever a boundary does: what cached strips are keyed on.
     pub cache_key: String,
     /// The pilot's free labels on the whole flight: "freestyle", "gates".
@@ -116,6 +120,7 @@ pub(crate) fn file_view(file: &SourceFile) -> FileView {
         action_cam: !file.media.needs_segmentation(),
         source: source(file),
         format: format_label(&file.media),
+        reduced: false,
     }
 }
 
@@ -163,6 +168,7 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
     let mut figures: Vec<TagView> = tags.iter().filter_map(|tag| tag_view(tag, &timeline)).collect();
     figures.sort_by(|a, b| a.start.total_cmp(&b.start));
     FlightView {
+        reduced: false,
         labels,
         figures,
         id: uuid_string(flight.id),
@@ -217,10 +223,14 @@ pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
             .any(|clip| by_id.get(&clip.source_file_id)
                 .is_some_and(|f| f.media.needs_segmentation() && !reduced.contains(&f.id))),
         detection_profile: session.detection_profile.as_str().into(),
-        files: files.iter().map(file_view).collect(),
+        files: files.iter()
+            .map(|f| FileView { reduced: reduced.contains(&f.id), ..file_view(f) })
+            .collect(),
         flights: flights.iter()
-            .map(|(flight, clips)| flight_view(flight, clips, &by_id,
-                                               labels.remove(&flight.id).unwrap_or_default(), tags))
+            .map(|(flight, clips)| FlightView {
+                reduced: clips.iter().any(|c| reduced.contains(&c.source_file_id)),
+                ..flight_view(flight, clips, &by_id, labels.remove(&flight.id).unwrap_or_default(), tags)
+            })
             .collect(),
     }
 }

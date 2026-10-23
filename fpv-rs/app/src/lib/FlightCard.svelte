@@ -92,7 +92,7 @@
   });
 
   let badges = $derived(([
-    [flight.actionCam ? "camera" : "goggles", flight.source],
+    [flight.actionCam ? "camera" : "goggles", flight.reduced ? `${flight.source} · reduced` : flight.source],
     ["film", flight.format],
     flight.recordings > 1 ? ["link", `${flight.recordings} ${flight.actionCam ? "chapters" : "recordings"}`] : null,
   ] as ([IconName, string] | null)[]).filter((badge) => badge !== null));

@@ -159,12 +159,16 @@ export function pageOf(index: number, size: number): number {
   return Math.floor(Math.max(0, index) / size) + 1;
 }
 
-/** What recorded a session, each once: the DVR first, then its cameras in
- * the order its files came — for the sidebar's badges. */
-export function sessionSources(session: SessionView): { dvr: boolean; cameras: string[] } {
+/** What recorded a session, each once: the DVR first — and how much of it
+ * was reduced to its flights — then its cameras in the order its files came,
+ * for the sidebar's badges. */
+export function sessionSources(session: SessionView):
+  { dvr: boolean; reduced: "none" | "some" | "all"; cameras: string[] } {
   const cameras: string[] = [];
   for (const file of session.files) {
     if (file.actionCam && !cameras.some((c) => sameLabel(c, file.source))) cameras.push(file.source);
   }
-  return { dvr: session.files.some((file) => !file.actionCam), cameras };
+  const dvr = session.files.filter((file) => !file.actionCam);
+  const cut = dvr.filter((file) => file.reduced).length;
+  return { dvr: dvr.length > 0, reduced: !cut ? "none" : cut === dvr.length ? "all" : "some", cameras };
 }

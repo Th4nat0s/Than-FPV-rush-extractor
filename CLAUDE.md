@@ -1028,7 +1028,10 @@ frame-exact boundary editor. Layout:
   yet: check a new brand with `ffprobe -show_format` before trusting it.
 - **The sidebar says what recorded each session** (2026-10-23, the pilot's request): under
   its line, `DVR` (goggles) and each camera once (`sessionSources`, from the files' own
-  source names), so a session mixing DVR and GoPro footage shows both.
+  source names), so a session mixing DVR and GoPro footage shows both. A reduced recording
+  says so (2026-10-23): `FileView.reduced` / `FlightView.reduced` from the `reduced-1` runs,
+  "DVR · reduced" on the cards, and in the sidebar "DVR · reduced" or "· partly reduced" when
+  only some of a session's DVR recordings were.
 - **Format badge** (2026-10-21, the pilot's request): cards (and the Files tab, until it was dropped) say
   "4K · HEVC · 59.94 fps" (`views::format_label`, in Rust like every other number shown).
   Size by width for the camera classes (5.3K, 4K, 2.7K), else the height (`1080p`, `480p`);
