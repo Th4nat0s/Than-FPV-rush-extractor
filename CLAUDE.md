@@ -1043,7 +1043,7 @@ frame-exact boundary editor. Layout:
   what the library holds, with counts and suggestions, any or all of them for tags; one
   session; liked only — and every grid sorts (newest, oldest, longest) and pages (12/24/48/96,
   the size kept in `localStorage`); only the page on screen makes its posters. The sidebar's
-  sessions and the Load-from-folder dialog's folders page too (15 and 10, `CompactPager`,
+  sessions and the Load-from-folder dialog's folders page too (10 each, `CompactPager`,
   2026-10-23): the sidebar's page follows the session opened from elsewhere (`pageOf`), but
   only when that session changes — a library refresh, which every ending task causes, must not
   pull the viewer back from the page they turned to. All of it is

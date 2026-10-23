@@ -62,7 +62,7 @@
 
   // Sessions a page at a time; the page follows the session opened, from
   // wherever it was opened.
-  const SESSIONS_PER_PAGE = 15;
+  const SESSIONS_PER_PAGE = 10;
   let sessionPage = $state(1);
   let shownSessions = $derived(paginate(sessions, sessionPage, SESSIONS_PER_PAGE));
   // Only when the session opened changes: a refresh of the library (any task
