@@ -35,9 +35,15 @@ pub fn write_concat_list(pieces: &[PathBuf], list: &Path) -> std::io::Result<()>
     std::fs::write(list, lines.join("\n"))
 }
 
-/// `-ss`/`-t` as the cutters write them: four decimals, never negative.
+/// `-ss`/`-t` as the cutters write them: to the microsecond, never negative,
+/// and **truncated, never rounded up**. A cut keeps the frames whose time is
+/// below its end, so a duration rounded up lets in the frame starting right
+/// at it: 1597 frames at 24.486 fps last 65.219883 s, which four decimals
+/// made 65.2199, and the cut came out 1598 frames (measured, 2026-10-23).
+/// Truncated, a boundary sits at most a microsecond early — far less than a
+/// frame — so the last frame wanted stays in and the next one stays out.
 pub fn seconds_argument(seconds: f64) -> String {
-    format!("{:.4}", seconds.max(0.0))
+    format!("{:.6}", (seconds.max(0.0) * 1e6).floor() / 1e6)
 }
 
 /// A scratch folder beside `destination`, removed when dropped — on success,
@@ -72,6 +78,18 @@ fn rand_suffix() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn never_rounds_a_cut_boundary_up() {
+        // 1597 frames at 1000000/40839 fps last 65.219883 s: never past it
+        // (65.2199 let the next frame in), at most a couple of µs before.
+        let exact = 1597.0 * 40839.0 / 1_000_000.0;
+        let written: f64 = seconds_argument(exact).parse().unwrap();
+        assert!(written <= exact && exact - written < 2e-6, "{written}");
+        assert_eq!(seconds_argument(0.9999999), "0.999999");
+        assert_eq!(seconds_argument(12.0), "12.000000");
+        assert_eq!(seconds_argument(-0.5), "0.000000");
+    }
 
     #[test]
     fn quotes_apostrophes_for_the_concat_demuxer() {

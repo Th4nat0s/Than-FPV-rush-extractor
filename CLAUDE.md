@@ -351,6 +351,13 @@ Two things the exporter had to learn from real footage:
   Output-side seeking is exact and costs nothing, because `-c copy` decodes nothing either way —
   both forms run in 0.06 s. (The thumbnail generator keeps the input-side seek: there a frame is
   actually decoded, so seek speed matters and a frame of imprecision does not.)
+- **Cut boundaries are truncated, never rounded up** (2026-10-23). `seconds_argument` wrote
+  four decimals rounded to nearest, and a cut keeps the frames below its end: 1597 frames of
+  PICT0031 (24.486 fps) last 65.219883 s, written 65.2199, and the next frame came in — a
+  lossless export one frame long whenever the rounding went up. Now microseconds, truncated:
+  a boundary sits at most a µs early, so the last frame wanted stays in and the next stays out.
+  Found by the reduction's frame check; `fpv-export/tests/real_export.rs` cuts at that rate
+  through the real ffmpeg. The proxy's reference numbers are unchanged (61.013 s / 61.014 s).
 - **A flight spanning two files may not be losslessly concatenable.** The two recordings have
   different frame rates, and stream-copying them into one file plays the second part at the
   wrong speed. Usually the gap is hundredths of a frame per second and harmless, but PICT0030
