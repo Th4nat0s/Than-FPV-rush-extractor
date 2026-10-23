@@ -1008,6 +1008,12 @@ frame-exact boundary editor. Layout:
   spelling first used naming it in suggestions; edited in the player. In the code they are
   *labels* (`FlightView.labels`, `add_flight_label`), because *tags* already means figures
   there. Like a flight's title and like, they are lost when a re-segment remakes the flight.
+  **A re-segment asks first** (2026-10-23, the pilot's request): it remakes every DVR flight
+  of the session, so the confirmation names what goes — titles, likes and tags counted
+  (`resegmentLosses`), hand-corrected boundaries — and what stays (figures, action-cam takes).
+  Asked in `segment()` (`lib/sessions.ts`, through `confirm.svelte.ts`), the one path the
+  header, the session menu and the detection profile all take; a first segmentation asks
+  nothing.
 - **Deleting a session can keep its videos** (2026-10-20): the sidebar's ✕ asks, with
   *Keep the Videos* as the main button and *Also Trash the Videos* beside it
   (`Library::delete_session(id, keep_recordings)`). Either way the library rows go and the

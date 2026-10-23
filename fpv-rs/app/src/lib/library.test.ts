@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FlightView, SessionView, TagView } from "../api";
-import { counted, figures, filterFigures, filterFlights, pageNumbers, paginate, placed, sortFigures,
-         sortFlights } from "./library";
+import { counted, figures, filterFigures, filterFlights, pageNumbers, paginate, placed, resegmentLosses,
+         sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
   ({ id: `${label}@${start}`, label, note: null, start, end, marker: start === end });
@@ -114,5 +114,18 @@ describe("pageNumbers", () => {
     expect(pageNumbers(1, 3)).toEqual([1, 2, 3]);
     expect(pageNumbers(5, 10)).toEqual([1, null, 4, 5, 6, null, 10]);
     expect(pageNumbers(2, 10)).toEqual([1, 2, 3, null, 10]);
+  });
+});
+
+describe("resegmentLosses", () => {
+  it("counts the DVR flights whose title, like or tags a re-segment would drop", () => {
+    const mixed = session("mixed", null, [
+      flight("d1", 1, { title: "Rock gap", liked: true }),
+      flight("d2", 2, { labels: ["gates"] }),
+      flight("d3", 3),
+      // An action-cam take is never segmented: nothing of it is lost.
+      flight("t1", 4, { actionCam: true, title: "Osmo", liked: true, labels: ["cinematic"] }),
+    ]);
+    expect(resegmentLosses(mixed)).toEqual({ flights: 3, titled: 1, liked: 1, tagged: 1 });
   });
 });

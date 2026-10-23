@@ -139,3 +139,17 @@ export function pageNumbers(page: number, pages: number): (number | null)[] {
   }
   return numbers;
 }
+
+/** What a re-segment of a session throws away: its DVR flights are remade,
+ * so their titles, likes, tags and hand-corrected boundaries go with them.
+ * Figure tags live in the recordings and stay; action-cam takes are not
+ * segmented and stay as they are. */
+export function resegmentLosses(session: SessionView) {
+  const flights = session.flights.filter((flight) => !flight.actionCam);
+  return {
+    flights: flights.length,
+    titled: flights.filter((flight) => flight.title).length,
+    liked: flights.filter((flight) => flight.liked).length,
+    tagged: flights.filter((flight) => flight.labels.length).length,
+  };
+}

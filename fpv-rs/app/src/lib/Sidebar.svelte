@@ -92,7 +92,7 @@
   function resegment(session: SessionView) {
     openSession(session.id);
     // Progress shows in the task bar and the session's footer.
-    segment(session).then((line) => line.startsWith("Segmentation failed") && onerror(line));
+    segment(session).then((line) => line?.startsWith("Segmentation failed") && onerror(line));
   }
 
   async function remove(session: SessionView, keepRecordings: boolean) {

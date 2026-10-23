@@ -25,7 +25,7 @@
 
   async function run() {
     status = null;
-    status = await segment(session);
+    status = await segment(session); // null: the viewer kept the flights
   }
 </script>
 

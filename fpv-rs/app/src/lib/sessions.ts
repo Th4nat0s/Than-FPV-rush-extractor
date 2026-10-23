@@ -3,9 +3,13 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { api, message, type SessionView } from "../api";
 import { track } from "./tasks.svelte";
+import { confirmResegment } from "./confirm.svelte";
 
-/** Segments the session as a task; resolves to the line to show. */
-export async function segment(session: SessionView): Promise<string> {
+/** Segments the session as a task; resolves to the line to show, or null if
+ * the viewer kept the flights. A first segmentation asks nothing; a re-segment
+ * remakes the DVR flights, so it asks first. */
+export async function segment(session: SessionView): Promise<string | null> {
+  if (session.flights.some((flight) => !flight.actionCam) && !(await confirmResegment(session))) return null;
   try {
     return await track(`Segment “${session.name}”`, (id) => api.segment(id, session.id),
                        { key: `segment:${session.id}`, summary: (s) => s });

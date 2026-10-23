@@ -11,6 +11,7 @@
   import ImportDialog from "./lib/ImportDialog.svelte";
   import SettingsDialog from "./lib/SettingsDialog.svelte";
   import TaskBar from "./lib/TaskBar.svelte";
+  import ResegmentConfirm from "./lib/ResegmentConfirm.svelte";
   import { onTaskEnd } from "./lib/tasks.svelte";
   import { prepareStrips } from "./lib/strips";
 
@@ -116,6 +117,7 @@
 </div>
 <TaskBar />
 </div>
+<ResegmentConfirm />
 
 {#if importing}
   <ImportDialog folder={importing.folder} suggestedName={importing.name}
