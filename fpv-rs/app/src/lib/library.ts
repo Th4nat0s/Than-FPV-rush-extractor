@@ -153,3 +153,8 @@ export function resegmentLosses(session: SessionView) {
     tagged: flights.filter((flight) => flight.labels.length).length,
   };
 }
+
+/** The 1-based page holding the item at `index`. */
+export function pageOf(index: number, size: number): number {
+  return Math.floor(Math.max(0, index) / size) + 1;
+}

@@ -8,7 +8,8 @@
   import LoadFolderDialog from "./LoadFolderDialog.svelte";
   import ReduceDialog from "./ReduceDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
-  import { figures, placed, type View } from "./library";
+  import { figures, pageOf, paginate, placed, type View } from "./library";
+  import CompactPager from "./CompactPager.svelte";
   import { runningTask } from "./tasks.svelte";
   import { exportLabels, loadImportFolder, reduce, segment } from "./sessions";
 
@@ -58,6 +59,22 @@
     { view: "flights", label: "All flights", count: placed(sessions).length },
     { view: "figures", label: "Figures", count: figures(sessions).length },
   ] as { view: View; label: string; count: number }[]);
+
+  // Sessions a page at a time; the page follows the session opened, from
+  // wherever it was opened.
+  const SESSIONS_PER_PAGE = 15;
+  let sessionPage = $state(1);
+  let shownSessions = $derived(paginate(sessions, sessionPage, SESSIONS_PER_PAGE));
+  // Only when the session opened changes: a refresh of the library (any task
+  // ending) must not pull the viewer back from the page they turned to.
+  let followed: string | null = null;
+  $effect(() => {
+    const index = sessions.findIndex((s) => s.id === browse.session);
+    if (index >= 0 && browse.session !== followed) {
+      followed = browse.session;
+      sessionPage = pageOf(index, SESSIONS_PER_PAGE);
+    }
+  });
 
   // A session's menu, from its ⋯ or a right-click, where the pointer is.
   let menu = $state<{ session: SessionView; x: number; y: number } | null>(null);
@@ -169,7 +186,7 @@
   {#if browse.view === "sessions"}
     <h3>Sessions</h3>
     <ul>
-      {#each sessions as session (session.id)}
+      {#each shownSessions.items as session (session.id)}
         <li class:selected={session.id === browse.session} oncontextmenu={(e) => openMenu(e, session)}>
           <div class="session" role="button" tabindex="0"
                onclick={() => openSession(session.id)}
@@ -187,6 +204,7 @@
         <li class="caption none">No sessions yet.</li>
       {/each}
     </ul>
+    <div class="pages"><CompactPager shown={shownSessions} label="Sessions" onpage={(page) => (sessionPage = page)} /></div>
     {#if sessions.length}<p class="caption hint">Right-click a session to open its folder, change its detection profile and more.</p>{/if}
   {:else}
     <FilterPanel {sessions} />
@@ -271,9 +289,12 @@
     background: var(--sidebar);
     border-right: 1px solid var(--line);
     overflow-y: auto;
+    /* Nothing scrolls sideways: a horizontal bar would sit over the pager. */
+    overflow-x: hidden;
     padding: 12px 10px;
   }
-  .top { padding: 0 6px 10px; }
+  /* Name, Import Folder… with its arrow, and the gear: tight enough to fit 270 px. */
+  .top { padding: 0 2px 10px; gap: 4px; }
   .top strong, .top button { white-space: nowrap; }
   h3 {
     font-size: 11px;
@@ -293,6 +314,8 @@
   .split .arrow { border-radius: 0 6px 6px 0; border-left: none; padding: 2px 5px; line-height: 0; }
   .more { color: var(--muted); font-size: 16px; line-height: 1; padding: 4px 8px; }
   .hint { margin: 10px 8px 0; }
+  /* Always in reach, however long the page of sessions. */
+  .pages { position: sticky; bottom: -12px; background: var(--sidebar); }
   .tabs { display: flex; gap: 2px; padding: 2px; margin: 14px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
   .tabs button {
     flex: 1; min-width: 0; border: none; background: transparent; color: var(--muted); font-size: 12px;

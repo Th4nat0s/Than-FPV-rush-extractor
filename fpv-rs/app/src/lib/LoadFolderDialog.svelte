@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { api, message, type FolderView } from "../api";
   import Modal from "./Modal.svelte";
+  import CompactPager from "./CompactPager.svelte";
+  import { paginate } from "./library";
 
   // The import folder's folders, to load one or more in place. A folder the
   // library already holds whole is shown, greyed, and cannot be picked.
@@ -15,6 +17,10 @@
   let problem = $state<string | null>(null);
   let picked = $state<string[]>([]);
   let loadable = $derived((folders ?? []).filter((f) => f.new > 0));
+  // Ten a page; what is ticked stays ticked across pages.
+  const FOLDERS_PER_PAGE = 10;
+  let page = $state(1);
+  let shown = $derived(paginate(folders ?? [], page, FOLDERS_PER_PAGE));
 
   onMount(() => {
     api.importFolderContents().then((found) => (folders = found)).catch((e) => (problem = message(e)));
@@ -38,7 +44,7 @@
     <p class="caption">The import folder holds no folders.</p>
   {:else}
     <ul>
-      {#each folders as folder (folder.name)}
+      {#each shown.items as folder (folder.name)}
         {@const done = folder.new === 0}
         <li class:done>
           <label>
@@ -49,13 +55,14 @@
               <span class="caption">→ {folder.session}{folder.date ? ` · ${folder.date}` : ""}</span>
             </span>
             <span class="caption count">
-              {done ? "Already in library"
+              {!folder.recordings ? "No recordings" : done ? "Already in library"
                     : folder.new === folder.recordings ? plural(folder.recordings, "recording")
                     : `${folder.new} new of ${folder.recordings}`}</span>
           </label>
         </li>
       {/each}
     </ul>
+    <CompactPager {shown} label="Folders" onpage={(p) => (page = p)} />
   {/if}
   {#snippet footer()}
     {#if loadable.length > 1}

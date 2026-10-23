@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FlightView, SessionView, TagView } from "../api";
-import { counted, figures, filterFigures, filterFlights, pageNumbers, paginate, placed, resegmentLosses,
+import { counted, figures, filterFigures, filterFlights, pageNumbers, pageOf, paginate, placed, resegmentLosses,
          sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
@@ -127,5 +127,12 @@ describe("resegmentLosses", () => {
       flight("t1", 4, { actionCam: true, title: "Osmo", liked: true, labels: ["cinematic"] }),
     ]);
     expect(resegmentLosses(mixed)).toEqual({ flights: 3, titled: 1, liked: 1, tagged: 1 });
+  });
+});
+
+describe("pageOf", () => {
+  it("finds the page holding an item, so a session opened elsewhere shows in the list", () => {
+    expect([0, 14, 15, 29, 30].map((i) => pageOf(i, 15))).toEqual([1, 1, 2, 2, 3]);
+    expect(pageOf(-1, 15)).toBe(1);
   });
 });
