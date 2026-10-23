@@ -68,6 +68,20 @@ fn cuts_losslessly_at_the_frames_own_timestamps() {
 }
 
 #[test]
+fn writes_the_dvrs_pcm_sound_again_so_it_is_cut_on_the_frame() {
+    let ffmpeg = RecordingFfmpeg::default();
+    let out = tempfile::tempdir().unwrap();
+    let mut file = source("PICT0031.AVI", FrameRate::new(1_000_000, 40839), "mjpeg");
+    file.media.audio_codec = Some("pcm_s16le".into());
+    let (clip, _) = part(&file, 1721, 2436);
+    ClipExporter::new(&ffmpeg).export_clip(&clip, &file, &out.path().join("flight.avi")).unwrap();
+    let arguments = &ffmpeg.calls()[0];
+    assert!(arguments.windows(2).any(|w| w == ["-c:v", "copy"]));
+    assert!(arguments.windows(2).any(|w| w == ["-c:a", "pcm_s16le"]));
+    assert!(!arguments.windows(2).any(|w| w == ["-c", "copy"]));
+}
+
+#[test]
 fn refuses_to_copy_a_long_gop_codec_from_the_middle_of_a_file() {
     let file = source("GH010042.MP4", FrameRate::new(60, 1), "h264");
     let (clip, _) = part(&file, 100, 200);

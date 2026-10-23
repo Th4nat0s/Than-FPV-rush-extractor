@@ -375,6 +375,14 @@ Two things the exporter had to learn from real footage:
   a boundary sits at most a µs early, so the last frame wanted stays in and the next stays out.
   Found by the reduction's frame check; `fpv-export/tests/real_export.rs` cuts at that rate
   through the real ffmpeg. The proxy's reference numbers are unchanged (61.013 s / 61.014 s).
+- **The DVR's sound is written again, not copied, in a cut** (2026-10-23). It is PCM in
+  packets of 128 ms, and a stream copy cuts at packets: the cut's sound started at the next
+  packet yet played from the first frame — up to a tenth of a second early (99 ms on a piece of
+  PICT0031). PCM in, PCM out holds the very same samples (compared sample for sample) and is
+  cut on the frame, so a DVR cut is `-c:v copy -c:a pcm_s16le`; the picture stays copied, byte
+  for byte (every packet of the reduced Test (2) pieces compared to the originals'). Long-GOP
+  takes keep `-c copy`. `real_export.rs` finds the cut's noise in the recording's and holds it
+  to within one sample of the cut's first frame.
 - **A flight spanning two files may not be losslessly concatenable.** The two recordings have
   different frame rates, and stream-copying them into one file plays the second part at the
   wrong speed. Usually the gap is hundredths of a frame per second and harmless, but PICT0030

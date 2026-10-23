@@ -162,7 +162,17 @@ fn copy_arguments(clip: &Clip, file: &SourceFile) -> Result<Vec<String>, ExportE
     if file.media.is_all_intra() {
         arguments.extend(["-ss".into(), seconds_argument(start)]);
     }
-    arguments.extend(["-t".into(), seconds_argument(duration), "-c".into(), "copy".into()]);
+    arguments.extend(["-t".into(), seconds_argument(duration)]);
+    // The picture is copied. PCM sound — the DVR's — is written again sample
+    // for sample: copied, it is cut at its packets (128 ms on the DVR), so a
+    // cut's sound started at the next packet yet played from the first frame,
+    // up to a tenth of a second early (99 ms on PICT0031, measured). PCM in,
+    // PCM out holds the very same samples, now cut on the frame.
+    match file.media.audio_codec.as_deref() {
+        Some(codec) if codec.starts_with("pcm_") && file.media.is_all_intra() =>
+            arguments.extend(["-c:v".into(), "copy".into(), "-c:a".into(), codec.into()]),
+        _ => arguments.extend(["-c".into(), "copy".into()]),
+    }
     Ok(arguments)
 }
 
