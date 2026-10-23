@@ -45,6 +45,13 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("v4", r#"
         ALTER TABLE "sourceFile" ADD COLUMN "camera" TEXT;
     "#),
+    // Free labels on a whole flight — "freestyle", "gates" (2026-10-23), beside
+    // the figure tags that mark a moment in a recording. They hang off the
+    // flight like its title and like, and go with it; one label once per
+    // flight whatever its case.
+    ("v5", r#"
+        CREATE TABLE "flightLabel" ("flightId" TEXT NOT NULL REFERENCES "flight"("id") ON DELETE CASCADE, "label" TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY ("flightId", "label"));
+    "#),
 ];
 
 /// Applies every migration not yet in the ledger, up to and including

@@ -354,6 +354,21 @@ async fn tag_labels(app: Shared<'_>) -> Reply<Vec<String>> {
     blocking(&app, |app| app.library().tag_labels()).await
 }
 
+#[tauri::command]
+async fn add_flight_label(app: Shared<'_>, flight: String, label: String) -> Reply<()> {
+    blocking(&app, move |app| app.library().add_flight_label(&flight, &label)).await
+}
+
+#[tauri::command]
+async fn remove_flight_label(app: Shared<'_>, flight: String, label: String) -> Reply<()> {
+    blocking(&app, move |app| app.library().remove_flight_label(&flight, &label)).await
+}
+
+#[tauri::command]
+async fn flight_label_names(app: Shared<'_>) -> Reply<Vec<String>> {
+    blocking(&app, |app| app.library().flight_label_names()).await
+}
+
 fn main() {
     // RUST_LOG=debug prints every ffmpeg argument vector (CLAUDE.md 8).
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
@@ -388,6 +403,7 @@ fn main() {
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,
+            add_flight_label, remove_flight_label, flight_label_names,
         ])
         .run(tauri::generate_context!())
         .expect("the FPV Rush window could not start");

@@ -364,3 +364,45 @@ fn lists_action_cam_files_never_read_for_their_camera_once() {
     assert_eq!(store.source_file(take.id).unwrap().unwrap().media.camera.as_deref(),
                Some("DJI Osmo Action 4"));
 }
+
+#[test]
+fn labels_a_flight_once_whatever_the_case_and_forgets_a_removed_label() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0032.AVI", 32);
+    let flight = one_clip(&store, &file, 0, 200).0.id;
+    store.add_flight_label(flight, "freestyle").unwrap();
+    store.add_flight_label(flight, "Freestyle").unwrap();
+    store.add_flight_label(flight, "gates").unwrap();
+    assert_eq!(store.flight_labels_in_session(session.id).unwrap()[&flight], ["freestyle", "gates"]);
+
+    store.remove_flight_label(flight, "FREESTYLE").unwrap();
+    assert_eq!(store.flight_labels_in_session(session.id).unwrap()[&flight], ["gates"]);
+    assert!(store.add_flight_label(Uuid::new_v4(), "gates").is_err(), "no such flight");
+}
+
+#[test]
+fn suggests_the_most_used_flight_labels_first() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (_, file) = session_with_one_file(&store, "PICT0032.AVI", 32);
+    let (_, other) = session_with_one_file(&store, "PICT0033.AVI", 33);
+    let first = one_clip(&store, &file, 0, 200).0.id;
+    let second = one_clip(&store, &other, 300, 500).0.id;
+    store.add_flight_label(first, "cinematic").unwrap();
+    store.add_flight_label(first, "gates").unwrap();
+    store.add_flight_label(second, "Gates").unwrap();
+    // The spelling first used names it.
+    assert_eq!(store.flight_label_names().unwrap(), ["gates", "cinematic"]);
+}
+
+#[test]
+fn drops_a_flights_labels_with_the_flight() {
+    // Re-segmenting replaces a file's flights: their labels go with them, as
+    // their titles and likes do.
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0036.AVI", 36);
+    let flight = one_clip(&store, &file, 0, 200).0.id;
+    store.add_flight_label(flight, "crash").unwrap();
+    one_clip(&store, &file, 0, 150);
+    assert!(store.flight_labels_in_session(session.id).unwrap().is_empty());
+    assert!(store.flight_label_names().unwrap().is_empty());
+}

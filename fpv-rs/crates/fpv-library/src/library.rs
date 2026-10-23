@@ -332,7 +332,9 @@ impl Library {
     pub fn snapshot(&self) -> Result<Vec<SessionView>> {
         self.store.sessions()?.iter()
             .map(|session| Ok(views::session_view(
-                session, self.store.source_files(session.id)?, self.store.flights(session.id)?)))
+                session, self.store.source_files(session.id)?, self.store.flights(session.id)?,
+                self.store.flight_labels_in_session(session.id)?,
+                &self.store.tags_in_session(session.id)?)))
             .collect()
     }
 
@@ -464,6 +466,27 @@ impl Library {
         let rating = if flight.rating.is_some() { None } else { Some(1) };
         self.store.update_flight(&Flight { rating, ..flight })?;
         Ok(rating.is_some())
+    }
+
+    /// Labels a whole flight — "freestyle", "gates" — trimmed; a label it has
+    /// in any case is kept as first written.
+    pub fn add_flight_label(&self, id: &str, label: &str) -> Result<()> {
+        let label = label.trim();
+        if label.is_empty() {
+            return Err(LibraryError::Invalid("a tag needs a name".into()));
+        }
+        let (flight, _, _) = self.flight(id)?;
+        Ok(self.store.add_flight_label(flight.id, label)?)
+    }
+
+    pub fn remove_flight_label(&self, id: &str, label: &str) -> Result<()> {
+        let (flight, _, _) = self.flight(id)?;
+        Ok(self.store.remove_flight_label(flight.id, label)?)
+    }
+
+    /// Every flight label in the library, most used first.
+    pub fn flight_label_names(&self) -> Result<Vec<String>> {
+        Ok(self.store.flight_label_names()?)
     }
 
     /// Persists a hand-corrected boundary, clamped to the recording.

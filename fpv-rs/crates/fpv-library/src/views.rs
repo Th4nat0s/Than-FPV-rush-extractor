@@ -61,6 +61,10 @@ pub struct FlightView {
     pub format: String,
     /// Changes whenever a boundary does: what cached strips are keyed on.
     pub cache_key: String,
+    /// The pilot's free labels on the whole flight: "freestyle", "gates".
+    pub labels: Vec<String>,
+    /// Its figure tags on the flight's clock, in time order.
+    pub figures: Vec<TagView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -146,13 +150,17 @@ pub(crate) fn last_frame(file: &SourceFile) -> i64 {
         .unwrap_or_else(|| file.media.frame_rate.frame_index(file.media.duration))
 }
 
-pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid, SourceFile>)
-    -> FlightView {
+pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid, SourceFile>,
+                          labels: Vec<String>, tags: &[FigureTag]) -> FlightView {
     let parts: Vec<(Clip, SourceFile)> = clips.iter()
         .filter_map(|clip| files.get(&clip.source_file_id).map(|f| (clip.clone(), f.clone())))
         .collect();
     let timeline = FlightTimeline::new(parts.clone());
+    let mut figures: Vec<TagView> = tags.iter().filter_map(|tag| tag_view(tag, &timeline)).collect();
+    figures.sort_by(|a, b| a.start.total_cmp(&b.start));
     FlightView {
+        labels,
+        figures,
         id: uuid_string(flight.id),
         order: flight.order_in_session,
         title: flight.title.clone(),
@@ -191,7 +199,8 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
 }
 
 pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
-                           flights: Vec<(Flight, Vec<Clip>)>) -> SessionView {
+                           flights: Vec<(Flight, Vec<Clip>)>,
+                           mut labels: HashMap<Uuid, Vec<String>>, tags: &[FigureTag]) -> SessionView {
     let by_id: HashMap<Uuid, SourceFile> = files.iter().map(|f| (f.id, f.clone())).collect();
     SessionView {
         id: uuid_string(session.id),
@@ -200,7 +209,10 @@ pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
         segmentable: files.iter().any(|f| f.media.needs_segmentation()),
         detection_profile: session.detection_profile.as_str().into(),
         files: files.iter().map(file_view).collect(),
-        flights: flights.iter().map(|(flight, clips)| flight_view(flight, clips, &by_id)).collect(),
+        flights: flights.iter()
+            .map(|(flight, clips)| flight_view(flight, clips, &by_id,
+                                               labels.remove(&flight.id).unwrap_or_default(), tags))
+            .collect(),
     }
 }
 

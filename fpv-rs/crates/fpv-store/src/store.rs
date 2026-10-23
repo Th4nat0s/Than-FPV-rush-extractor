@@ -378,6 +378,53 @@ impl LibraryStore {
 
     /// Every label in the library, most used first — the autocomplete vocabulary,
     /// built from use instead of a frozen taxonomy.
+    /// Labels a flight; a label it already has, in any case, is left as it was.
+    pub fn add_flight_label(&self, flight_id: Uuid, label: &str) -> Result<()> {
+        let db = self.db();
+        let exists = db.query_row("SELECT 1 FROM flight WHERE id = ?", [Id(flight_id)], |_| Ok(()))
+            .optional()?.is_some();
+        if !exists {
+            return not_found_unless(0, "flight", flight_id);
+        }
+        db.execute("INSERT OR IGNORE INTO flightLabel (flightId, label) VALUES (?1, ?2)",
+                   params![Id(flight_id), label])?;
+        Ok(())
+    }
+
+    pub fn remove_flight_label(&self, flight_id: Uuid, label: &str) -> Result<()> {
+        self.db().execute("DELETE FROM flightLabel WHERE flightId = ?1 AND label = ?2",
+                          params![Id(flight_id), label])?;
+        Ok(())
+    }
+
+    /// Every labelled flight of a session and its labels, in the order given.
+    pub fn flight_labels_in_session(&self, session_id: Uuid) -> Result<HashMap<Uuid, Vec<String>>> {
+        let db = self.db();
+        let mut statement = db.prepare(
+            "SELECT flightLabel.flightId, flightLabel.label FROM flightLabel
+             JOIN flight ON flight.id = flightLabel.flightId
+             WHERE flight.sessionId = ? ORDER BY flightLabel.rowid")?;
+        let rows = statement.query_map([Id(session_id)], |row| Ok((row.get::<_, Id>(0)?.0, row.get(1)?)))?;
+        let mut labels: HashMap<Uuid, Vec<String>> = HashMap::new();
+        for row in rows {
+            let (flight, label) = row?;
+            labels.entry(flight).or_default().push(label);
+        }
+        Ok(labels)
+    }
+
+    /// Every flight label in the library, most used first: the suggestions.
+    pub fn flight_label_names(&self) -> Result<Vec<String>> {
+        let db = self.db();
+        let mut statement = db.prepare(
+            // With MIN(rowid), SQLite takes the bare `label` from that row:
+            // the spelling first used names the group.
+            "SELECT label, MIN(rowid) FROM flightLabel GROUP BY label
+             ORDER BY COUNT(*) DESC, label")?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn tag_labels(&self) -> Result<Vec<String>> {
         let db = self.db();
         let mut statement = db.prepare(

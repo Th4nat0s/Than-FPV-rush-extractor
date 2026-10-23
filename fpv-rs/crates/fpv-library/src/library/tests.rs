@@ -114,6 +114,40 @@ fn tags_a_take_and_reads_it_back_on_the_flight_clock() {
 }
 
 #[test]
+fn shows_each_flights_figures_on_its_card_in_time_order() {
+    // The Figures view and a card's "N figures" read the snapshot, not one
+    // flight at a time.
+    let (fixture, session) = imported();
+    let take = &session.flights[0].id;
+    fixture.library.add_tag(take, "split-s", 2.5, 2.8).unwrap();
+    fixture.library.add_tag(take, "flip", 0.5, 0.5).unwrap();
+    let flights = &fixture.library.snapshot().unwrap()[0].flights;
+    let labels: Vec<_> = flights[0].figures.iter().map(|t| t.label.as_str()).collect();
+    assert_eq!(labels, ["flip", "split-s"]);
+    assert!((flights[0].figures[1].start - 2.5).abs() < 0.02);
+    assert!(flights[1].figures.is_empty());
+}
+
+#[test]
+fn labels_a_whole_flight_and_suggests_labels_already_used() {
+    let (fixture, session) = imported();
+    let (take, other) = (&session.flights[0].id, &session.flights[1].id);
+    let library = &fixture.library;
+    library.add_flight_label(take, " freestyle ").unwrap();
+    library.add_flight_label(take, "gates").unwrap();
+    library.add_flight_label(other, "Gates").unwrap();
+    let flights = &library.snapshot().unwrap()[0].flights;
+    assert_eq!(flights[0].labels, ["freestyle", "gates"]);
+    assert_eq!(flights[1].labels, ["Gates"]);
+    // "gates" twice, whatever the case: first.
+    assert_eq!(library.flight_label_names().unwrap(), ["gates", "freestyle"]);
+
+    library.remove_flight_label(take, "freestyle").unwrap();
+    assert_eq!(library.snapshot().unwrap()[0].flights[0].labels, ["gates"]);
+    assert!(library.add_flight_label(take, "   ").is_err());
+}
+
+#[test]
 fn edits_titles_likes_names_and_boundaries() {
     let (fixture, session) = imported();
     let take = &session.flights[1];
