@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FlightView, SessionView, TagView } from "../api";
-import { counted, figures, filterFigures, filterFlights, pageNumbers, pageOf, paginate, placed, resegmentLosses,
+import type { FileView, FlightView, SessionView, TagView } from "../api";
+import { counted, figures, filterFigures, filterFlights, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
          sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
@@ -134,5 +134,21 @@ describe("pageOf", () => {
   it("finds the page holding an item, so a session opened elsewhere shows in the list", () => {
     expect([0, 14, 15, 29, 30].map((i) => pageOf(i, 15))).toEqual([1, 1, 2, 2, 3]);
     expect(pageOf(-1, 15)).toBe(1);
+  });
+});
+
+describe("sessionSources", () => {
+  const file = (source: string, actionCam: boolean) => ({ source, actionCam }) as FileView;
+  const with_ = (files: FileView[]) => ({ ...session("s", null, []), files });
+
+  it("says DVR once, and each camera once, in the order the files came", () => {
+    expect(sessionSources(with_([file("DVR", false), file("DVR", false)]))).toEqual({ dvr: true, cameras: [] });
+    expect(sessionSources(with_([file("GoPro HERO11", true), file("DVR", false), file("DJI Osmo Nano", true),
+                                 file("GoPro HERO11", true)])))
+      .toEqual({ dvr: true, cameras: ["GoPro HERO11", "DJI Osmo Nano"] });
+  });
+
+  it("has nothing to say about a session without files", () => {
+    expect(sessionSources(with_([]))).toEqual({ dvr: false, cameras: [] });
   });
 });

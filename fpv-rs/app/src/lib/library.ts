@@ -158,3 +158,13 @@ export function resegmentLosses(session: SessionView) {
 export function pageOf(index: number, size: number): number {
   return Math.floor(Math.max(0, index) / size) + 1;
 }
+
+/** What recorded a session, each once: the DVR first, then its cameras in
+ * the order its files came — for the sidebar's badges. */
+export function sessionSources(session: SessionView): { dvr: boolean; cameras: string[] } {
+  const cameras: string[] = [];
+  for (const file of session.files) {
+    if (file.actionCam && !cameras.some((c) => sameLabel(c, file.source))) cameras.push(file.source);
+  }
+  return { dvr: session.files.some((file) => !file.actionCam), cameras };
+}

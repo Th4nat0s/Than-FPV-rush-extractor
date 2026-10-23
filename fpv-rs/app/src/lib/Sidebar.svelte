@@ -8,7 +8,7 @@
   import LoadFolderDialog from "./LoadFolderDialog.svelte";
   import ReduceDialog from "./ReduceDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
-  import { figures, pageOf, paginate, placed, type View } from "./library";
+  import { figures, pageOf, paginate, placed, sessionSources, type View } from "./library";
   import CompactPager from "./CompactPager.svelte";
   import { runningTask } from "./tasks.svelte";
   import { exportLabels, loadImportFolder, reduce, segment } from "./sessions";
@@ -196,6 +196,13 @@
                    onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
                    onblur={(e) => rename(session, e.currentTarget)} />
             <span class="caption">{subtitle(session)}</span>
+            {#if session.files.length}
+              {@const sources = sessionSources(session)}
+              <span class="caption sources">
+                {#if sources.dvr}<span class="row"><Icon name="goggles" size={12} />DVR</span>{/if}
+                {#each sources.cameras as camera (camera)}<span class="row"><Icon name="camera" size={12} />{camera}</span>{/each}
+              </span>
+            {/if}
           </div>
           <button class="plain more" aria-label="Actions for {session.name}" aria-haspopup="menu"
                   onclick={(e) => openMenu(e, session)}>⋯</button>
@@ -314,6 +321,8 @@
   .split .arrow { border-radius: 0 6px 6px 0; border-left: none; padding: 2px 5px; line-height: 0; }
   .more { color: var(--muted); font-size: 16px; line-height: 1; padding: 4px 8px; }
   .hint { margin: 10px 8px 0; }
+  .sources { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 1px; }
+  .sources .row { gap: 4px; white-space: nowrap; }
   /* Always in reach, however long the page of sessions. */
   .pages { position: sticky; bottom: -12px; background: var(--sidebar); }
   .tabs { display: flex; gap: 2px; padding: 2px; margin: 14px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
