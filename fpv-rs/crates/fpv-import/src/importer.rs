@@ -245,6 +245,66 @@ impl<'a> LibraryImporter<'a> {
         Ok(report)
     }
 
+    /// Registers recordings already in the import folder into `session`, where
+    /// they are: no copy, nothing moved. For "Load from destination folder":
+    /// a session removed with its recordings kept, a library rebuilt over an
+    /// import folder. A recording the library knows, by path or by content,
+    /// is skipped; an action-cam take becomes its whole-file flight, a DVR
+    /// recording waits for segmentation.
+    pub fn register_in_place(&self, files: Vec<DiscoveredFile>, session: &Session,
+                             mut progress: impl FnMut(ImportEvent)) -> Result<ImportReport, ImportError> {
+        let mut report = ImportReport::default();
+        let known = self.store.imported_paths()?;
+        let mut seen = self.store.checksums().unwrap_or_default();
+        let probe = MediaProbe::new(self.ffmpeg);
+        let mut saved: Vec<(SourceFile, Option<GoProChapter>)> = vec![];
+        for file in files {
+            if known.contains(file.path.to_string_lossy().as_ref()) {
+                report.skipped.push(file.path.clone());
+                progress(ImportEvent::Skipped(file.path));
+                continue;
+            }
+            let media = match probe.probe(&file.path) {
+                Ok(media) if media.needs_segmentation() => media,
+                Ok(media) => MediaInfo { creation_date: cam_timestamp(&file, &media), ..media },
+                Err(error) => {
+                    fail(&mut report, &mut progress, &file.path, error.to_string());
+                    continue;
+                }
+            };
+            let checksum = sha256(&file.path).ok();
+            if checksum.as_ref().is_some_and(|c| !seen.insert(c.clone())) {
+                report.skipped.push(file.path.clone());
+                progress(ImportEvent::Skipped(file.path));
+                continue;
+            }
+            let path = file.path.to_string_lossy().into_owned();
+            let mut record = SourceFile::new(session.id, path.clone(), path,
+                                             file.sequence_number.or(file.gopro.map(|g| g.order_key())), media);
+            record.checksum = checksum;
+            report.imported.push(record.clone());
+            progress(ImportEvent::Imported(Box::new(record.clone())));
+            saved.push((record, file.gopro));
+        }
+        if saved.is_empty() {
+            return Ok(report);
+        }
+        let files: Vec<SourceFile> = saved.iter().map(|(f, _)| f.clone()).collect();
+        self.store.save_source_files(&files)?;
+        report.sessions.push(session.clone());
+        let takes: Vec<_> = saved.into_iter().filter(|(f, _)| !f.media.needs_segmentation()).collect();
+        if !takes.is_empty() {
+            let posters = self.posters.clone().unwrap_or_else(|| PathBuf::from("thumbnails"));
+            for flight in self.save_whole_file_flights(session, &takes, &posters)? {
+                progress(ImportEvent::Flight {
+                    session: session.name.clone(), order: flight.0.order_in_session, parts: flight.1,
+                });
+                report.flights.push(flight.0);
+            }
+        }
+        Ok(report)
+    }
+
     /// One flight per action-cam take: the chapters of a GoPro recording join
     /// into one, exactly as a flight the DVR cut across two files does, so the
     /// player, the tags and export need nothing new. Appended after the

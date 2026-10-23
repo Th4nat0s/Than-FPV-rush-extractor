@@ -394,6 +394,62 @@ impl Library {
         Ok(summary)
     }
 
+    /// "Load from destination folder": registers every recording in the
+    /// import folder the library does not know, where it is — no copy. Each
+    /// folder is a session, read back from its name (`session_of_folder`):
+    /// the folders of one session and day (one per source) join one session,
+    /// and a session of that name and day already in the library is joined.
+    /// Folders holding nothing new create nothing.
+    pub fn load_import_folder(&self, mut progress: impl FnMut(ImportEvent)) -> Result<ImportSummary> {
+        let ffmpeg = self.ffmpeg();
+        let importer = LibraryImporter::new(&ffmpeg, &self.store).posters_in(self.posters());
+        let mut folders: Vec<PathBuf> = std::fs::read_dir(&self.root)?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.is_dir()
+                && !path.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
+            .collect();
+        folders.sort();
+        let found: Vec<(PathBuf, Vec<_>)> = folders.into_iter()
+            .map(|folder| Ok((folder.clone(), importer.discover(&folder)?)))
+            .collect::<std::io::Result<_>>()?;
+        let count = found.iter().map(|(_, files)| files.len()).sum();
+        progress(ImportEvent::Discovered { count, sessions: found.len() });
+
+        let known = self.store.imported_paths()?;
+        let mut summary = ImportSummary::default();
+        for (folder, files) in found {
+            if files.iter().all(|f| known.contains(f.path.to_string_lossy().as_ref())) {
+                for file in files {
+                    summary.skipped += 1;
+                    progress(ImportEvent::Skipped(file.path));
+                }
+                continue;
+            }
+            let (day, name) = fpv_import::session_of_folder(&file_name(&folder.to_string_lossy()));
+            let date = day.map(|d| local_midnight(&d.format("%Y-%m-%d").to_string())).transpose()?;
+            let local_day = |date: Option<DateTime<Utc>>| date.map(|d| d.with_timezone(&Local).date_naive());
+            let session = match self.store.sessions()?.into_iter()
+                .find(|s| s.name == name && local_day(s.date) == day) {
+                Some(session) => session,
+                None => {
+                    let session = Session::new(name, date);
+                    self.store.save_session(&session)?;
+                    session
+                }
+            };
+            let report = importer.register_in_place(files, &session, &mut progress)?;
+            summary.imported += report.imported.len();
+            summary.skipped += report.skipped.len();
+            summary.failed += report.failed.len();
+            summary.flights += report.flights.len();
+            if report.imported.is_empty() && self.store.source_files(session.id)?.is_empty() {
+                // Every new-looking file failed: no empty session left behind.
+                self.store.delete_session(session.id)?;
+            }
+        }
+        Ok(summary)
+    }
+
     /// Runs the detector over a session's DVR recordings and files the flights.
     /// Re-running is cheap and reversible by design (CLAUDE.md 3.2).
     pub fn segment(&self, session: &str, progress: impl FnMut(SegmentationEvent))

@@ -219,6 +219,69 @@ fn deletes_a_session_and_its_media_folder() {
     assert!(fixture.card.join("DCIM/100GOPRO/GH010042.MP4").exists());
 }
 
+/// An H.264 take of `seconds` named `name`, written into `folder`; takes of
+/// different lengths differ by content, as two real takes do.
+fn take_in(folder: &Path, name: &str, seconds: u32) {
+    std::fs::create_dir_all(folder).unwrap();
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-f", "lavfi", "-i", &format!("testsrc2=size=320x240:rate=30:duration={seconds}"),
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-metadata", "creation_time=2026-08-23T11:00:00Z", "-y"])
+        .arg(folder.join(name)).status().expect("ffmpeg on PATH");
+    assert!(status.success());
+}
+
+#[test]
+fn loads_recordings_left_in_the_import_folder_where_they_are() {
+    // A session removed with its videos kept: loading the import folder brings
+    // it back, read from its folder's name, without copying anything.
+    let (fixture, session) = imported();
+    let library = &fixture.library;
+    let take = library.root.join("2026-08-23 Letz Kwad GOPRO/GH010042.MP4");
+    let written = std::fs::metadata(&take).unwrap().modified().unwrap();
+    library.delete_session(&session.id, true).unwrap();
+    let mut copied = 0;
+    let summary = library.load_import_folder(|event| {
+        if matches!(event, ImportEvent::Copying(_)) { copied += 1; }
+    }).unwrap();
+    assert_eq!((summary.imported, summary.skipped, summary.failed, summary.flights), (3, 0, 0, 2));
+    assert_eq!(copied, 0);
+    assert_eq!(std::fs::metadata(&take).unwrap().modified().unwrap(), written);
+    let sessions = library.snapshot().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].name, "Letz Kwad");
+    assert!(sessions[0].date.as_deref().is_some_and(|d| d.starts_with("2026-08-2")), "{:?}", sessions[0].date);
+    assert_eq!(sessions[0].flights.len(), 2);
+    let paths: Vec<_> = sessions[0].files.iter()
+        .map(|f| library.recording_path(&f.id).unwrap()).collect();
+    assert!(paths.contains(&take), "registered where it is: {paths:?}");
+
+    // Nothing new: nothing happens.
+    let summary = library.load_import_folder(|_| {}).unwrap();
+    assert_eq!((summary.imported, summary.skipped), (0, 3));
+    assert_eq!(library.snapshot().unwrap().len(), 1);
+}
+
+#[test]
+fn files_a_loaded_folder_into_its_session_and_day_or_a_new_one() {
+    let (fixture, _) = imported();
+    let library = &fixture.library;
+    // The same session and day from another camera: joined.
+    take_in(&library.root.join("2026-08-23 Letz Kwad DJI"), "DJI_0001.MP4", 1);
+    // A folder dropped in by hand: a session of its own, dated from its name.
+    take_in(&library.root.join("2026-09-01 Bench"), "DJI_0002.MP4", 2);
+    let summary = library.load_import_folder(|_| {}).unwrap();
+    assert_eq!((summary.imported, summary.skipped, summary.flights), (2, 3, 2));
+
+    let sessions = library.snapshot().unwrap();
+    let names: Vec<_> = sessions.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    let letz = sessions.iter().find(|s| s.name == "Letz Kwad").unwrap();
+    assert_eq!((letz.files.len(), letz.flights.len()), (4, 3));
+    let bench = sessions.iter().find(|s| s.name == "Bench").unwrap();
+    assert!(bench.date.as_deref().is_some_and(|d| d.starts_with("2026-08-31") || d.starts_with("2026-09-01")));
+    assert_eq!(bench.flights[0].source, "DJI");
+}
+
 #[test]
 fn removes_a_session_but_keeps_its_recordings_for_a_later_import() {
     let (fixture, session) = imported();

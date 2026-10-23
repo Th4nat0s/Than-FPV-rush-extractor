@@ -156,6 +156,7 @@ export const api = {
   cards: () => invoke<Card[]>("cards"),
   importCard: (task: string, folder: string, name: string, date: string | null, deleteOriginals: boolean) =>
     invoke<ImportSummary>("import_card", { task, folder, name, date, deleteOriginals }),
+  loadImportFolder: (task: string) => invoke<ImportSummary>("load_import_folder", { task }),
   segment: (task: string, session: string) => invoke<string>("segment", { task, session }),
   setDetectionProfile: (session: string, profile: string) =>
     invoke<void>("set_detection_profile", { session, profile }),

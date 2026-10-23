@@ -8,7 +8,7 @@
   import { browse, openSession, show } from "./browse.svelte";
   import { figures, placed, type View } from "./library";
   import { runningTask } from "./tasks.svelte";
-  import { exportLabels, segment } from "./sessions";
+  import { exportLabels, loadImportFolder, segment } from "./sessions";
 
   let { sessions, cards, ffmpegOk, error, onimportcard, onimportfolder,
         onsettings, onchange, onerror }: {
@@ -59,6 +59,16 @@
   let menu = $state<{ session: SessionView; x: number; y: number } | null>(null);
   let profileOf = $state<SessionView | null>(null);
   let notice = $state<string | null>(null);
+  let noticeTitle = $state("Export Labels");
+  // The arrow beside Import Folder…: the other way recordings come in.
+  let importMenu = $state<{ x: number; y: number } | null>(null);
+
+  async function loadFolder() {
+    importMenu = null;
+    const done = await loadImportFolder();
+    noticeTitle = "Load from Destination Folder";
+    notice = done;
+  }
   let inputs: Record<string, HTMLInputElement> = {};
 
   function openMenu(event: MouseEvent, session: SessionView) {
@@ -84,7 +94,10 @@
 
   async function writeLabels(session: SessionView) {
     const done = await exportLabels(session);
-    if (done) notice = done;
+    if (done) {
+      noticeTitle = "Export Labels";
+      notice = done;
+    }
   }
 
   function resegment(session: SessionView) {
@@ -108,7 +121,12 @@
   <div class="top row">
     <strong>FPV Rush</strong>
     <span class="spacer"></span>
-    <button class="small" onclick={onimportfolder} disabled={!ffmpegOk}>Import Folder…</button>
+    <div class="split">
+      <button class="small" onclick={onimportfolder} disabled={!ffmpegOk}>Import Folder…</button>
+      <button class="small arrow" aria-label="More ways to import" aria-haspopup="menu" disabled={!ffmpegOk}
+              onclick={(e) => { const box = e.currentTarget.getBoundingClientRect(); importMenu = { x: box.left, y: box.bottom + 2 }; }}>
+        <Icon name="down" size={12} /></button>
+    </div>
     <button class="small" onclick={onsettings} title="Settings"><Icon name="settings" /></button>
   </div>
 
@@ -180,11 +198,21 @@
   </div>
 {/if}
 
+{#if importMenu}
+  <button class="backdrop" aria-label="Close the menu" onclick={() => (importMenu = null)}></button>
+  <div class="popup" role="menu" aria-label="Import" style:left="{importMenu.x}px" style:top="{importMenu.y}px">
+    <button class="plain" role="menuitem" onclick={() => { importMenu = null; onimportfolder(); }}>Import Folder…</button>
+    <button class="plain" role="menuitem" onclick={loadFolder}
+            title="Add what the import folder holds and the library does not — where it is, without copying">
+      Load from Destination Folder</button>
+  </div>
+{/if}
+
 {#if profileOf}
   <ProfileDialog session={profileOf} {onchange} onclose={() => (profileOf = null)} />
 {/if}
 {#if notice}
-  <Modal title="Export Labels" onclose={() => (notice = null)}>
+  <Modal title={noticeTitle} onclose={() => (notice = null)}>
     <p>{notice}</p>
     {#snippet footer()}<button class="primary" onclick={() => (notice = null)}>OK</button>{/snippet}
   </Modal>
@@ -230,6 +258,9 @@
   li.selected { background: var(--selected); }
   .session { flex: 1; min-width: 0; padding: 6px 8px; display: flex; flex-direction: column; cursor: pointer; }
   .name { font-weight: 500; }
+  .split { display: flex; }
+  .split button:first-child { border-radius: 6px 0 0 6px; }
+  .split .arrow { border-radius: 0 6px 6px 0; border-left: none; padding: 2px 5px; line-height: 0; }
   .more { color: var(--muted); font-size: 16px; line-height: 1; padding: 4px 8px; }
   .hint { margin: 10px 8px 0; }
   .tabs { display: flex; gap: 2px; padding: 2px; margin: 14px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }

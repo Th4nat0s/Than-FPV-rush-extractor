@@ -148,6 +148,19 @@ async fn import_card(handle: AppHandle, app: Shared<'_>, task: String, folder: P
     }).await
 }
 
+/// "Load from destination folder": what the import folder holds that the
+/// library does not, registered where it is; progress as import events.
+#[tauri::command]
+async fn load_import_folder(handle: AppHandle, app: Shared<'_>, task: String) -> Reply<ImportSummary> {
+    blocking(&app, move |app| {
+        let mut progress = ImportProgress::default();
+        app.library().load_import_folder(|event| {
+            let Step { line, done, total } = progress.step(event);
+            let _ = handle.emit("import-progress", Progress { task: task.clone(), line, done, total });
+        })
+    }).await
+}
+
 #[tauri::command]
 async fn segment(handle: AppHandle, app: Shared<'_>, task: String, session: String) -> Reply<String> {
     blocking(&app, move |app| {
@@ -414,7 +427,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card,
+            info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder,
             segment, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,

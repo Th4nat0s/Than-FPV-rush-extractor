@@ -1,6 +1,6 @@
 //! Where an import copies a recording: `<import folder>/<rendered pattern>/<file>`.
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use fpv_core::MediaInfo;
 
 use crate::DiscoveredFile;
@@ -106,6 +106,31 @@ pub fn source_name(file: &DiscoveredFile, media: &MediaInfo) -> String {
     }.into()
 }
 
+/// The session a folder of the import folder holds, read back from its name:
+/// a leading `YYYY-MM-DD` is its day, a trailing source label (`FATSHARK`,
+/// `GOPRO`…) is dropped, the rest is its name. That undoes the default
+/// pattern and the bare-session-name layout; a folder named any other way
+/// keeps its whole name, which the pilot can rename.
+pub fn session_of_folder(folder: &str) -> (Option<NaiveDate>, String) {
+    let mut rest = folder.trim();
+    let mut date = None;
+    if let Some((head, tail)) = rest.split_once(' ')
+        && let Ok(day) = NaiveDate::parse_from_str(head, "%Y-%m-%d")
+    {
+        date = Some(day);
+        rest = tail.trim_start();
+    }
+    if let Some((head, last)) = rest.rsplit_once(' ')
+        && SOURCE_LABELS.contains(&last)
+    {
+        rest = head.trim_end();
+    }
+    if rest.is_empty() { (date, folder.trim().to_owned()) } else { (date, rest.to_owned()) }
+}
+
+/// Every label `source_label` gives.
+const SOURCE_LABELS: [&str; 5] = ["FATSHARK", "GOPRO", "DJI", "INSTA360", "CAM"];
+
 /// A name a folder can carry on every desktop: no path separators, no colon,
 /// never empty.
 pub fn folder_name(name: &str) -> String {
@@ -141,6 +166,25 @@ mod tests {
         assert_eq!(name("DJI_0001.MP4", &take("hevc", None)), "DJI");
         assert_eq!(name("VID_20261010_101500_00_001.mp4", &take("h264", None)), "Insta360");
         assert_eq!(name("clip.mp4", &take("h264", None)), "Action cam");
+    }
+
+    #[test]
+    fn reads_a_session_back_from_its_folder_name() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 10);
+        assert_eq!(session_of_folder("2026-10-10 Alpes FATSHARK"), (day, "Alpes".into()));
+        assert_eq!(session_of_folder("2026-10-10 Entrainement Letz Kwad GOPRO"),
+                   (day, "Entrainement Letz Kwad".into()));
+        // The bare-session-name layout, and an undated session.
+        assert_eq!(session_of_folder("Letz Kwad"), (None, "Letz Kwad".into()));
+        assert_eq!(session_of_folder("Alpes DJI"), (None, "Alpes".into()));
+        // A name is never emptied: a source word alone stays the name.
+        assert_eq!(session_of_folder("GOPRO"), (None, "GOPRO".into()));
+        assert_eq!(session_of_folder("2026-10-10 CAM"), (day, "CAM".into()));
+        // Every label the folders are made with reads back.
+        for label in ["FATSHARK", "GOPRO", "DJI", "INSTA360", "CAM"] {
+            let folder = FolderPattern::default().render(local(2026, 10, 10), "Alpes", label);
+            assert_eq!(session_of_folder(&folder), (day, "Alpes".into()), "{folder}");
+        }
     }
 
     #[test]
