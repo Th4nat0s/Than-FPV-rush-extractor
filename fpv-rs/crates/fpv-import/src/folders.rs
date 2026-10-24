@@ -132,13 +132,14 @@ pub fn session_of_folder(folder: &str) -> (Option<NaiveDate>, String) {
 const SOURCE_LABELS: [&str; 5] = ["FATSHARK", "GOPRO", "DJI", "INSTA360", "CAM"];
 
 /// A name a folder can carry on every desktop: no path separators, no colon,
-/// never empty.
+/// never empty, and never `.` or `..` — a session named `..` under the
+/// `{session}` pattern would have been imported beside the import folder.
 pub fn folder_name(name: &str) -> String {
     let cleaned: String = name.chars()
         .map(|c| if c == '/' || c == ':' || c == '\\' { '-' } else { c })
         .collect();
     let trimmed = cleaned.trim();
-    if trimmed.is_empty() { "session".into() } else { trimmed.into() }
+    if trimmed.chars().all(|c| c == '.') { "session".into() } else { trimmed.into() }
 }
 
 #[cfg(test)]
@@ -205,6 +206,15 @@ mod tests {
     fn keeps_folder_names_legal() {
         assert_eq!(FolderPattern::session_only().render(None, "23/08 : Letz", "X"), "23-08 - Letz");
         assert_eq!(folder_name("   "), "session");
+    }
+
+    #[test]
+    fn never_names_a_folder_that_leaves_the_import_folder() {
+        for name in ["..", ".", " .. ", "..."] {
+            assert_eq!(FolderPattern::session_only().render(None, name, "X"), "session", "{name:?}");
+        }
+        assert_eq!(folder_name("../Alpes"), "..-Alpes");
+        assert_eq!(folder_name(".hidden"), ".hidden");
     }
 
     #[test]
