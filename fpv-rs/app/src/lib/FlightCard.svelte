@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, clock, day, flightName, media, message, type FlightView, type SessionView } from "../api";
   import { batch } from "./tasks.svelte";
+  import { notify } from "./notices.svelte";
   import { STRIP } from "./strips";
   import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
@@ -110,13 +111,13 @@
       await api.toggleLike(flight.id);
       onchange();
     } catch (e) {
-      alert(message(e));
+      notify(`Cannot like ${flightName(flight)}: ${message(e)}`);
     }
   }
 
   async function rename(input: HTMLInputElement) {
     if (input.value.trim() === (flight.title ?? "")) return;
-    await api.setFlightTitle(flight.id, input.value).catch((e) => alert(message(e)));
+    await api.setFlightTitle(flight.id, input.value).catch((e) => notify(`Cannot rename ${flightName(flight)}: ${message(e)}`));
     onchange();
   }
 

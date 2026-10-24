@@ -1147,6 +1147,12 @@ frame-exact boundary editor. Layout:
   events carry the task's ID (`task` on `import_card`, `segment`, `export_flights`), so two
   jobs of one kind never mix. A segmented file counts as done when it is through, not when it
   starts.
+  **Errors are notifications beside it** (2026-10-24, the pilot's request): a bell at the
+  bar's right end, red with the count of errors not yet seen; a click lists them (time,
+  dismiss, *Clear all*) and marks them read. `lib/notices.svelte.ts` (`notify`) replaced the
+  red banner in the sidebar, which showed one error at a time and stayed until the next, and
+  the `alert()`s of the flight cards. The same error again while unread counts up ("2 times")
+  instead of listing twice; 50 kept.
   **Thumbnails are tasks too, batched** (2026-10-20): posters, hover strips and editor
   previews are many short calls, so `batch(key, …)` counts the calls sharing a key as one task
   ("Posters 7 made", "Hover strip of Flight 1 24 made"). `poster`, `filmstrip_frame` and

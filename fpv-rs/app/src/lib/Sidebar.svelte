@@ -14,21 +14,20 @@
   import CompactPager from "./CompactPager.svelte";
   import { fit, type Anchor } from "./fit";
   import { runningTask } from "./tasks.svelte";
+  import { notify } from "./notices.svelte";
   import { exportLabels, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
 
-  let { sessions, cards, root, ffmpegOk, error, onimportcard, onimportfolder,
-        onsettings, onchange, onerror }: {
+  let { sessions, cards, root, ffmpegOk, onimportcard, onimportfolder,
+        onsettings, onchange }: {
     sessions: SessionView[];
     cards: Card[];
     /** The import folder, where Load from Destination Folder looks. */
     root: string;
     ffmpegOk: boolean;
-    error: string | null;
     onimportcard: (card: Card) => void;
     onimportfolder: () => void;
     onsettings: () => void;
     onchange: () => void;
-    onerror: (text: string) => void;
   } = $props();
 
   function subtitle(session: SessionView): string {
@@ -49,7 +48,7 @@
       onchange();
     } catch (e) {
       input.value = session.name;
-      onerror(`Cannot rename the session: ${message(e)}`);
+      notify(`Cannot rename the session: ${message(e)}`);
     }
   }
 
@@ -155,7 +154,7 @@
   function resegment(session: SessionView) {
     openSession(session.id);
     // Progress shows in the task bar and the session's footer.
-    segment(session).then((line) => line?.startsWith("Segmentation failed") && onerror(line));
+    segment(session).then((line) => line?.startsWith("Segmentation failed") && notify(line));
   }
 
   async function remove(session: SessionView, keepRecordings: boolean) {
@@ -164,7 +163,7 @@
       await api.deleteSession(session.id, keepRecordings);
       onchange();
     } catch (e) {
-      onerror(`Cannot delete the session: ${message(e)}`);
+      notify(`Cannot delete the session: ${message(e)}`);
     }
   }
 </script>
@@ -188,7 +187,6 @@
   {#if !ffmpegOk}
     <p class="notice warn">ffmpeg not found — install it (<code>sudo apt install ffmpeg</code>) and restart.</p>
   {/if}
-  {#if error}<p class="notice error">{error}</p>{/if}
 
   {#each cards as card (card.volume)}
     <button class="card" onclick={() => onimportcard(card)} disabled={!ffmpegOk}>
@@ -262,7 +260,7 @@
   <div class="popup" role="menu" aria-label="{session.name}" use:fit={menu.at}>
     <span class="caption heading">{session.name}{day(session.date) ? ` · ${day(session.date)}` : ""}</span>
     <button class="plain" role="menuitem" disabled={!session.files.length}
-            onclick={() => act((s) => api.revealSession(s.id).catch((e) => onerror(message(e))))}>Open Folder</button>
+            onclick={() => act((s) => api.revealSession(s.id).catch((e) => notify(`Cannot open the folder: ${message(e)}`)))}>Open Folder</button>
     {#if session.segmentable}
       <button class="plain" role="menuitem" onclick={() => act((s) => (profileOf = s))}>Detection Profile…</button>
       <button class="plain" role="menuitem" disabled={!ffmpegOk || !!runningTask(`segment:${session.id}`)}
@@ -399,7 +397,6 @@
   .none { padding: 6px 8px; }
   .notice { margin: 6px; padding: 8px 10px; border-radius: var(--radius); font-size: 12px; }
   .warn { background: rgba(183, 121, 31, 0.15); color: var(--warn); }
-  .error { background: rgba(192, 57, 43, 0.12); color: var(--danger); }
   .card {
     display: flex;
     gap: 10px;

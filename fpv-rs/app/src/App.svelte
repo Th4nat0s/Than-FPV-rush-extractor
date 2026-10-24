@@ -13,6 +13,7 @@
   import TaskBar from "./lib/TaskBar.svelte";
   import ResegmentConfirm from "./lib/ResegmentConfirm.svelte";
   import { onTaskEnd } from "./lib/tasks.svelte";
+  import { notify } from "./lib/notices.svelte";
   import { prepareStrips } from "./lib/strips";
 
   let sessions = $state<SessionView[]>([]);
@@ -21,7 +22,6 @@
                            ffmpegOk: true });
   let ffmpegOk = $derived(info.ffmpegOk);
   let settingsOpen = $state(false);
-  let error = $state<string | null>(null);
   let importing = $state<{ folder: string; name: string } | null>(null);
 
   let selected = $derived(sessions.find((s) => s.id === browse.session) ?? null);
@@ -43,7 +43,7 @@
         if (filter.session && !sessions.some((s) => s.id === filter.session)) filter.session = null;
       }
     } catch (e) {
-      error = `Cannot read the library: ${message(e)}`;
+      notify(`Cannot read the library: ${message(e)}`);
     }
   }
 
@@ -78,12 +78,11 @@
 
 <div class="window">
 <div class="layout">
-  <Sidebar {sessions} {cards} root={info.root} {ffmpegOk} {error}
+  <Sidebar {sessions} {cards} root={info.root} {ffmpegOk}
            onimportcard={(card) => (importing = { folder: card.folder, name: card.name })}
            onimportfolder={pickFolder}
            onsettings={() => (settingsOpen = true)}
-           onchange={refresh}
-           onerror={(text) => (error = text)} />
+           onchange={refresh} />
   <main>
     {#if browse.view === "flights"}
       <FlightsPane view="flights" title="All flights" subtitle={scope(browse.flights.session)} items={flights}
