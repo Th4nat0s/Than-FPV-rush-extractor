@@ -20,6 +20,8 @@ export interface FileView {
   format: string;
   /** A piece of a DVR recording cut down to its flights. */
   reduced: boolean;
+  /** Its folder, when outside the current import folder (an earlier one). */
+  elsewhere: string | null;
 }
 
 export interface ClipView {
@@ -134,6 +136,18 @@ export interface SessionEdit {
   labels: string[];
 }
 
+export interface RelocationPreview {
+  recordings: number;
+  bytes: number;
+  from: string[];
+  to: string[];
+}
+
+export interface RelocationSummary {
+  moved: number;
+  failed: [string, string][];
+}
+
 /** What deleting a flight does to its files. */
 export interface FlightDeletion {
   /** Files that held nothing but the flight: to the trash. */
@@ -227,6 +241,8 @@ export const api = {
     invoke<void>("set_detection_profile", { session, profile }),
   renameSession: (id: string, name: string) => invoke<void>("rename_session", { id, name }),
   updateSession: (id: string, edit: SessionEdit) => invoke<void>("update_session", { id, edit }),
+  relocationPreview: (session: string) => invoke<RelocationPreview>("relocation_preview", { session }),
+  moveSession: (task: string, session: string) => invoke<RelocationSummary>("move_session", { task, session }),
   deleteSession: (id: string, keepRecordings: boolean) =>
     invoke<void>("delete_session", { id, keepRecordings }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),
@@ -268,7 +284,7 @@ export const api = {
 };
 
 export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress"
-                                  | "reduce-progress",
+                                  | "reduce-progress" | "move-progress",
                            handler: (progress: Progress) => void): Promise<UnlistenFn> {
   return listen<Progress>(event, (message) => handler(message.payload));
 }

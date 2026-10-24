@@ -50,6 +50,9 @@ pub struct FileView {
     pub format: String,
     /// A piece of a DVR recording cut down to its flights ("Reduce…").
     pub reduced: bool,
+    /// The folder it sits in when that is outside the current import folder —
+    /// an earlier one, before the setting changed. `None` inside it.
+    pub elsewhere: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,6 +128,7 @@ pub(crate) fn file_view(file: &SourceFile) -> FileView {
         source: source(file),
         format: format_label(&file.media),
         reduced: false,
+        elsewhere: None,
     }
 }
 
@@ -156,6 +160,12 @@ pub(crate) fn format_label(media: &MediaInfo) -> String {
 
 fn source(file: &SourceFile) -> String {
     fpv_import::source_name(&fpv_import::DiscoveredFile::new(&file.imported_path), &file.media)
+}
+
+/// The folder of a recording that is not under `root`, or `None`.
+pub(crate) fn outside(root: &Path, path: &str) -> Option<String> {
+    let path = Path::new(path);
+    (!path.starts_with(root)).then(|| path.parent().unwrap_or(path).to_string_lossy().into_owned())
 }
 
 pub(crate) fn last_frame(file: &SourceFile) -> i64 {
@@ -212,10 +222,19 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
     }
 }
 
-pub(crate) fn session_view(session_labels: Vec<String>, session: &Session, files: Vec<SourceFile>,
-                           flights: Vec<(Flight, Vec<Clip>)>,
-                           mut labels: HashMap<Uuid, Vec<String>>, tags: &[FigureTag],
-                           reduced: &HashSet<Uuid>) -> SessionView {
+/// What a session's view needs beside its own rows.
+pub(crate) struct SessionContext<'a> {
+    /// The current import folder: recordings outside it are "elsewhere".
+    pub root: &'a Path,
+    pub session_labels: Vec<String>,
+    pub flight_labels: HashMap<Uuid, Vec<String>>,
+    pub tags: &'a [FigureTag],
+    pub reduced: &'a HashSet<Uuid>,
+}
+
+pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>, flights: Vec<(Flight, Vec<Clip>)>,
+                           context: SessionContext) -> SessionView {
+    let SessionContext { root, session_labels, flight_labels: mut labels, tags, reduced } = context;
     let segmentable = files.iter().any(|f| f.media.needs_segmentation() && !reduced.contains(&f.id));
     let by_id: HashMap<Uuid, SourceFile> = files.iter().map(|f| (f.id, f.clone())).collect();
     SessionView {
@@ -231,7 +250,11 @@ pub(crate) fn session_view(session_labels: Vec<String>, session: &Session, files
         notes: session.notes.clone(),
         labels: session_labels,
         files: files.iter()
-            .map(|f| FileView { reduced: reduced.contains(&f.id), ..file_view(f) })
+            .map(|f| FileView {
+                reduced: reduced.contains(&f.id),
+                elsewhere: outside(root, &f.imported_path),
+                ..file_view(f)
+            })
             .collect(),
         flights: flights.iter()
             .map(|(flight, clips)| FlightView {

@@ -48,6 +48,20 @@ export async function reduce(session: SessionView): Promise<string> {
   }
 }
 
+/** Moves the session's recordings from an earlier import folder into the
+ * current one, as a task; resolves to what happened. */
+export async function moveIntoImportFolder(session: SessionView): Promise<string> {
+  try {
+    const s = await track(`Move “${session.name}”`, (id) => api.moveSession(id, session.id), {
+      key: `move:${session.id}`, summary: (s) => `${s.moved} moved${s.failed.length ? `, ${s.failed.length} failed` : ""}`,
+    });
+    const failed = s.failed.length ? ` ${s.failed.length} could not be: ${s.failed.map(([f, why]) => `${f} (${why})`).join("; ")}.` : "";
+    return `${s.moved} recording(s) moved into the import folder.${failed}`;
+  } catch (e) {
+    return `Cannot move: ${message(e)}`;
+  }
+}
+
 /** Writes the clip boundaries as ground truth for the detector's harness;
  * resolves to what happened, or null if the viewer cancelled. */
 export async function exportLabels(session: SessionView): Promise<string | null> {

@@ -142,6 +142,26 @@ pub struct BulkExport {
     pub failed: Vec<(String, String)>,
 }
 
+/// What moving a session's recordings into the import folder would do.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocationPreview {
+    pub recordings: usize,
+    pub bytes: u64,
+    /// The folders they sit in now, and the ones they would move to.
+    pub from: Vec<String>,
+    pub to: Vec<String>,
+}
+
+/// What moving did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocationSummary {
+    pub moved: usize,
+    /// [recording, reason]: left where it was.
+    pub failed: Vec<(String, String)>,
+}
+
 /// A session's details as the Edit Session dialog sends them back.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -415,11 +435,15 @@ impl Library {
     pub fn snapshot(&self) -> Result<Vec<SessionView>> {
         let mut labels = self.store.session_labels()?;
         self.store.sessions()?.iter()
-            .map(|session| Ok(views::session_view(labels.remove(&session.id).unwrap_or_default(),
+            .map(|session| Ok(views::session_view(
                 session, self.store.source_files(session.id)?, self.store.flights(session.id)?,
-                self.store.flight_labels_in_session(session.id)?,
-                &self.store.tags_in_session(session.id)?,
-                &self.store.reduced_files(session.id)?)))
+                views::SessionContext {
+                    root: &self.root,
+                    session_labels: labels.remove(&session.id).unwrap_or_default(),
+                    flight_labels: self.store.flight_labels_in_session(session.id)?,
+                    tags: &self.store.tags_in_session(session.id)?,
+                    reduced: &self.store.reduced_files(session.id)?,
+                })))
             .collect()
     }
 
@@ -868,6 +892,119 @@ impl Library {
     /// Every flight label in the library, most used first.
     pub fn flight_label_names(&self) -> Result<Vec<String>> {
         Ok(self.store.flight_label_names()?)
+    }
+
+    /// The session's recordings outside the current import folder, each with
+    /// the path it would move to: the folder the pattern names for it today.
+    fn relocation_plan(&self, session: &Session) -> Result<Vec<(SourceFile, PathBuf)>> {
+        let pattern = FolderPattern::parse(&self.config.folder_pattern)
+            .map_err(|e| LibraryError::Invalid(format!("folderPattern in config.json: {e}")))?;
+        let mut plan: Vec<(SourceFile, PathBuf)> = vec![];
+        for file in self.store.source_files(session.id)? {
+            if views::outside(&self.root, &file.imported_path).is_none() {
+                continue;
+            }
+            let path = Path::new(&file.imported_path);
+            let source = fpv_import::source_label(&fpv_import::DiscoveredFile::new(path), &file.media);
+            let folder = self.root.join(pattern.render(session.date, &session.name, source));
+            let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let extension = path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default();
+            // Never over a file already there, nor over one planned before.
+            let mut destination = free_name(&folder, &stem, &extension);
+            let mut n = 2;
+            while plan.iter().any(|(_, d)| d == &destination) {
+                destination = free_name(&folder, &format!("{stem} ({n})"), &extension);
+                n += 1;
+            }
+            plan.push((file, destination));
+        }
+        Ok(plan)
+    }
+
+    /// What "Move to Import Folder…" would do, for its confirmation.
+    pub fn relocation_preview(&self, session: &str) -> Result<RelocationPreview> {
+        let session = self.session(session)?;
+        let mut preview = RelocationPreview::default();
+        for (file, destination) in self.relocation_plan(&session)? {
+            preview.recordings += 1;
+            preview.bytes += std::fs::metadata(&file.imported_path).map(|m| m.len()).unwrap_or(0);
+            let from = Path::new(&file.imported_path).parent().unwrap_or(Path::new("")).to_string_lossy().into_owned();
+            let to = destination.parent().unwrap_or(Path::new("")).to_string_lossy().into_owned();
+            if !preview.from.contains(&from) { preview.from.push(from); }
+            if !preview.to.contains(&to) { preview.to.push(to); }
+        }
+        Ok(preview)
+    }
+
+    /// "Move to Import Folder…": brings a session's recordings left in an
+    /// earlier import folder into the current one, each into the folder the
+    /// pattern names for it today. A rename where the two share a disk, else
+    /// a copy — mtime kept, size checked — then the original removed. The
+    /// library follows each file as it lands, and a file it cannot record is
+    /// put back; folders left empty behind are removed. Nothing is ever
+    /// written over.
+    pub fn move_session_into_import_folder(&self, session: &str, mut progress: impl FnMut(usize, usize, String))
+        -> Result<RelocationSummary> {
+        let session = self.session(session)?;
+        let plan = self.relocation_plan(&session)?;
+        let total = plan.len();
+        let mut summary = RelocationSummary::default();
+        let mut left: Vec<PathBuf> = vec![];
+        for (index, (file, destination)) in plan.into_iter().enumerate() {
+            let source = PathBuf::from(&file.imported_path);
+            let name = file_name(&file.imported_path);
+            progress(index, total, format!("Moving {name} ({}/{total})…", index + 1));
+            match self.move_recording(&file, &source, &destination) {
+                Ok(()) => {
+                    summary.moved += 1;
+                    if let Some(parent) = source.parent() && !left.iter().any(|p| p == parent) {
+                        left.push(parent.to_path_buf());
+                    }
+                }
+                Err(error) => summary.failed.push((name, error.to_string())),
+            }
+        }
+        // Emptied folders go, and their parents if that empties them too —
+        // never beyond the folder a recording sat in and its own parents.
+        for folder in left {
+            let mut folder = Some(folder.as_path());
+            while let Some(dir) = folder {
+                if std::fs::remove_dir(dir).is_err() {
+                    break;
+                }
+                folder = dir.parent();
+            }
+        }
+        progress(total, total, format!("{} recording(s) moved", summary.moved));
+        Ok(summary)
+    }
+
+    fn move_recording(&self, file: &SourceFile, source: &Path, destination: &Path) -> Result<()> {
+        if let Some(folder) = destination.parent() {
+            std::fs::create_dir_all(folder)?;
+        }
+        let renamed = std::fs::rename(source, destination).is_ok();
+        if !renamed {
+            // Another disk: copied whole, then checked, before the original goes.
+            fpv_import::copy_preserving_mtime(source, destination)?;
+            let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
+            if size(source) != size(destination) {
+                let _ = std::fs::remove_file(destination);
+                return Err(LibraryError::Invalid("the copy came out a different size".into()));
+            }
+        }
+        if let Err(error) = self.store.set_imported_path(file.id, &destination.to_string_lossy()) {
+            if renamed {
+                let _ = std::fs::rename(destination, source);
+            } else {
+                let _ = std::fs::remove_file(destination);
+            }
+            return Err(error.into());
+        }
+        if !renamed {
+            std::fs::remove_file(source)?;
+        }
+        Ok(())
     }
 
     /// What deleting a flight would do to its files (`delete_flight`).

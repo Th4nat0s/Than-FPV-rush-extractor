@@ -144,6 +144,13 @@ impl LibraryStore {
         Ok(())
     }
 
+    /// Records where a recording now lives, after it was moved.
+    pub fn set_imported_path(&self, file_id: Uuid, path: &str) -> Result<()> {
+        let changed = self.db().execute("UPDATE sourceFile SET importedPath = ?2 WHERE id = ?1",
+                                        params![Id(file_id), path])?;
+        not_found_unless(changed, "source file", file_id)
+    }
+
     /// The session's recordings already cut down to their flights.
     pub fn reduced_files(&self, session_id: Uuid) -> Result<HashSet<Uuid>> {
         let db = self.db();

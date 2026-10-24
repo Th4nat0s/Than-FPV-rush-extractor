@@ -1000,3 +1000,39 @@ fn edits_a_sessions_details_and_tags_from_one_dialog() {
     assert!(library.update_session(&session.id, &SessionEdit { name: "A".into(), date: Some("23/10".into()),
                                                               ..Default::default() }).is_err());
 }
+
+#[test]
+fn moves_a_sessions_recordings_from_an_earlier_import_folder_into_the_current_one() {
+    let (mut fixture, session) = imported();
+    let old = fixture.library.root.join("2026-08-23 Letz Kwad GOPRO");
+    let take = old.join("GH010042.MP4");
+    let written = std::fs::metadata(&take).unwrap().modified().unwrap();
+    let new_root = fixture._root.path().join("new import folder");
+    std::fs::create_dir_all(&new_root).unwrap();
+    fixture.library.set_media_root(&new_root).unwrap();
+    let library = &fixture.library;
+
+    // Left behind by the change: said, with where.
+    let before = library.snapshot().unwrap().remove(0);
+    assert!(before.files.iter().all(|f| f.elsewhere.as_deref() == Some(old.to_string_lossy().as_ref())));
+    let preview = library.relocation_preview(&session.id).unwrap();
+    let new_folder = new_root.join("2026-08-23 Letz Kwad GOPRO");
+    assert_eq!((preview.recordings, preview.from.clone(), preview.to.clone()),
+               (3, vec![old.to_string_lossy().into_owned()], vec![new_folder.to_string_lossy().into_owned()]));
+
+    let summary = library.move_session_into_import_folder(&session.id, |_, _, _| {}).unwrap();
+    assert_eq!((summary.moved, summary.failed.len()), (3, 0));
+    let moved = new_folder.join("GH010042.MP4");
+    assert!(moved.is_file() && !take.exists());
+    assert!(!old.exists(), "the emptied folder went");
+    assert_eq!(std::fs::metadata(&moved).unwrap().modified().unwrap(), written);
+    let after = library.snapshot().unwrap().remove(0);
+    assert!(after.files.iter().all(|f| f.elsewhere.is_none()));
+    assert_eq!(library.recording_path(&after.files[0].id).unwrap().parent().unwrap(), new_folder);
+    // The library follows: the take still exports from where it is now.
+    let out = fixture._root.path().join("take.mp4");
+    library.export(&after.flights[0].id, &out, ExportMode::Lossless).unwrap();
+    assert!(out.is_file());
+    // Nothing left to move.
+    assert_eq!(library.relocation_preview(&session.id).unwrap(), RelocationPreview::default());
+}

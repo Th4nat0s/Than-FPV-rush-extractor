@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileView, FlightView, SessionView, TagView } from "../api";
-import { counted, figures, filterFigures, filterFlights, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
+import { counted, elsewhere, figures, filterFigures, filterFlights, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
          sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
@@ -146,6 +146,15 @@ describe("resegmentLosses", () => {
       flight("t1", 4, { actionCam: true, title: "Osmo", liked: true, labels: ["cinematic"] }),
     ]);
     expect(resegmentLosses(mixed)).toEqual({ flights: 3, titled: 1, liked: 1, tagged: 1 });
+  });
+});
+
+describe("elsewhere", () => {
+  it("lists the earlier folders a session's recordings sit in, each once", () => {
+    const at = (folder: string | null) => ({ elsewhere: folder }) as FileView;
+    const s = { ...session("s", null, []), files: [at("/old/A GOPRO"), at(null), at("/old/A GOPRO"), at("/disk/A")] };
+    expect(elsewhere(s)).toEqual(["/old/A GOPRO", "/disk/A"]);
+    expect(elsewhere({ ...s, files: [at(null)] })).toEqual([]);
   });
 });
 

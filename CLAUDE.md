@@ -942,6 +942,17 @@ frame-exact boundary editor. Layout:
   extended at launch and on change to the cache, the import folder and every folder holding an
   earlier poster (`Library::image_directories`), since the static scope only covers the home
   folder.
+  **Recordings left in an earlier import folder can be brought in** (2026-10-24, the pilot's
+  request). A file not under the current import folder carries its folder
+  (`FileView.elsewhere`); the session list marks it "elsewhere" (path on hover), and the
+  session's menu offers **Move to Import Folder…** behind a confirmation listing from → to
+  (`Library::relocation_preview`). `move_session_into_import_folder` moves each file into the
+  folder the pattern names for it today — a rename on the same disk, else
+  `copy_preserving_mtime`, a size check, then the original removed — records the new path at
+  once (`set_imported_path`), puts the file back if that fails, never writes over a file
+  (`free_name`), and removes the folders it emptied. Posters, strips and proxies are keyed by
+  IDs in the cache and need nothing. Tested on a GoPro card after a change of import folder;
+  the cross-disk copy branch is not exercised by a test (one disk here).
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
   progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,

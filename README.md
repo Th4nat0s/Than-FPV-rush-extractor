@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 242 tests
+cd fpv-rs && cargo test --workspace     # 244 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -96,6 +96,8 @@ reference card.
   `2026-10-10 Alpes GOPRO` beside it for the same session's GoPro takes — editable
   in **Settings**. Changing either moves nothing: earlier imports stay where they
   are and keep working.
+  A session whose recordings sit in an earlier import folder is marked *elsewhere* in
+  the list; **Move to Import Folder…**, in its menu, brings them in.
 - **`~/.cache/fpv_rush_extractor/`** — posters, playback proxies and hover
   filmstrips. All of it rebuilds on demand, so it can be emptied at any time; the proxies are held
   under `"proxyBudgetGb"` in `config.json` (10 GB by default), least recently

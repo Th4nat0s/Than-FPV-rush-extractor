@@ -384,7 +384,7 @@ fn cam_timestamp(file: &DiscoveredFile, media: &MediaInfo) -> Option<DateTime<Ut
 /// leaves a truncated file under the real name — which the next import would
 /// take for "already imported". The mtime is carried over (CLAUDE.md 2);
 /// `std::fs::copy` alone does not.
-fn copy_preserving_mtime(source: &Path, destination: &Path) -> std::io::Result<PathBuf> {
+pub fn copy_preserving_mtime(source: &Path, destination: &Path) -> std::io::Result<PathBuf> {
     let directory = destination.parent().expect("a destination inside a session folder");
     std::fs::create_dir_all(directory)?;
     let partial = directory.join(format!(".{}.partial", file_name(destination)));

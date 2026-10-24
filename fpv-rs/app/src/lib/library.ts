@@ -161,6 +161,16 @@ export function resegmentLosses(session: SessionView) {
   };
 }
 
+/** The folders outside the current import folder a session's recordings
+ * sit in, each once: what "Move to Import Folder…" would bring in. */
+export function elsewhere(session: SessionView): string[] {
+  const folders: string[] = [];
+  for (const file of session.files) {
+    if (file.elsewhere && !folders.includes(file.elsewhere)) folders.push(file.elsewhere);
+  }
+  return folders;
+}
+
 /** The 1-based page holding the item at `index`. */
 export function pageOf(index: number, size: number): number {
   return Math.floor(Math.max(0, index) / size) + 1;

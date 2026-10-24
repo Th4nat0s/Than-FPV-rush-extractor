@@ -500,3 +500,13 @@ fn suggests_session_and_flight_tags_as_one_vocabulary() {
     store.set_session_labels(session.id, &["Gates".into(), "Alpes".into()]).unwrap();
     assert_eq!(store.flight_label_names().unwrap(), ["gates", "Alpes"]);
 }
+
+#[test]
+fn records_where_a_moved_recording_now_lives() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0032.AVI", 32);
+    store.set_imported_path(file.id, "/new/import/2026-08-23 Letz Kwad FATSHARK/PICT0032.AVI").unwrap();
+    assert_eq!(store.source_files(session.id).unwrap()[0].imported_path,
+               "/new/import/2026-08-23 Letz Kwad FATSHARK/PICT0032.AVI");
+    assert!(store.set_imported_path(Uuid::new_v4(), "/x").is_err());
+}

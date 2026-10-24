@@ -12,7 +12,7 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FlightDeletion, SessionEdit, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
+use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FlightDeletion, RelocationPreview, RelocationSummary, SessionEdit, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
                   Playback, SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
@@ -197,6 +197,24 @@ async fn reduce_session(handle: AppHandle, app: Shared<'_>, task: String, sessio
     blocking(&app, move |app| {
         app.library().reduce_session(&session, |done, total, line| {
             let _ = handle.emit("reduce-progress", Progress { task: task.clone(), line, done, total });
+        })
+    }).await
+}
+
+/// What moving a session's recordings into the import folder would do.
+#[tauri::command]
+async fn relocation_preview(app: Shared<'_>, session: String) -> Reply<RelocationPreview> {
+    blocking(&app, move |app| app.library().relocation_preview(&session)).await
+}
+
+/// Moves a session's recordings from an earlier import folder into the
+/// current one; progress as events.
+#[tauri::command]
+async fn move_session(handle: AppHandle, app: Shared<'_>, task: String, session: String)
+    -> Reply<RelocationSummary> {
+    blocking(&app, move |app| {
+        app.library().move_session_into_import_folder(&session, |done, total, line| {
+            let _ = handle.emit("move-progress", Progress { task: task.clone(), line, done, total });
         })
     }).await
 }
@@ -469,7 +487,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder, import_folder_contents,
-            segment, reduce_preview, reduce_session, update_session, set_detection_profile, rename_session, delete_session,
+            segment, reduce_preview, reduce_session, update_session, relocation_preview, move_session, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, flight_deletion, delete_flight, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,

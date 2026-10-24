@@ -8,11 +8,12 @@
   import LoadFolderDialog from "./LoadFolderDialog.svelte";
   import ReduceDialog from "./ReduceDialog.svelte";
   import SessionDialog from "./SessionDialog.svelte";
+  import MoveSessionDialog from "./MoveSessionDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
-  import { figures, pageOf, paginate, placed, sessionSources, type View } from "./library";
+  import { elsewhere, figures, pageOf, paginate, placed, sessionSources, type View } from "./library";
   import CompactPager from "./CompactPager.svelte";
   import { runningTask } from "./tasks.svelte";
-  import { exportLabels, loadImportFolder, reduce, segment } from "./sessions";
+  import { exportLabels, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
 
   let { sessions, cards, root, ffmpegOk, error, onimportcard, onimportfolder,
         onsettings, onchange, onerror }: {
@@ -123,6 +124,14 @@
   // Edit Session dialog.
   let renamingId = $state<string | null>(null);
   let editingSession = $state<SessionView | null>(null);
+  let moving = $state<SessionView | null>(null);
+
+  async function runMove(session: SessionView) {
+    moving = null;
+    const done = await moveIntoImportFolder(session);
+    noticeTitle = `Move “${session.name}”`;
+    notice = done;
+  }
 
   async function startRename(session: SessionView) {
     openSession(session.id);
@@ -219,6 +228,10 @@
                       : sources.reduced === "some" ? " · partly reduced" : ""}</span>
                 {/if}
                 {#each sources.cameras as camera (camera)}<span class="row"><Icon name="camera" size={12} />{camera}</span>{/each}
+                {#if elsewhere(session).length}
+                  <span class="row elsewhere" title="In an earlier import folder: {elsewhere(session).join(', ')}">
+                    <Icon name="folder" size={12} />elsewhere</span>
+                {/if}
               </span>
             {/if}
           </div>
@@ -257,6 +270,11 @@
               onclick={() => act((s) => (reducing = s))}>Reduce…</button>
     {/if}
     <hr />
+    {#if elsewhere(session).length}
+      <button class="plain" role="menuitem" disabled={!!runningTask(`move:${session.id}`)}
+              title="Bring its recordings from the earlier import folder into the current one"
+              onclick={() => act((s) => (moving = s))}>Move to Import Folder…</button>
+    {/if}
     <button class="plain" role="menuitem" onclick={() => act((s) => (editingSession = s))}>Edit Session…</button>
     <button class="plain" role="menuitem" onclick={() => act(startRename)}>Rename</button>
     <button class="plain danger" role="menuitem" onclick={() => act((s) => (removing = s))}>Remove from Library…</button>
@@ -276,6 +294,11 @@
 {#if reducing}
   {@const target = reducing}
   <ReduceDialog session={target} onreduce={() => runReduce(target)} onclose={() => (reducing = null)} />
+{/if}
+
+{#if moving}
+  {@const target = moving}
+  <MoveSessionDialog session={target} onmove={() => runMove(target)} onclose={() => (moving = null)} />
 {/if}
 
 {#if editingSession}
@@ -347,6 +370,7 @@
   .hint { margin: 10px 8px 0; }
   .sources { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 1px; }
   .sources .row { gap: 4px; white-space: nowrap; }
+  .sources .elsewhere { color: var(--warn); }
   /* Always in reach, however long the page of sessions. */
   .pages { position: sticky; bottom: -12px; background: var(--sidebar); }
   .tabs { display: flex; gap: 2px; padding: 2px; margin: 14px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
