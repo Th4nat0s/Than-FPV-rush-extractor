@@ -189,3 +189,15 @@ export function sessionSources(session: SessionView):
   const cut = dvr.filter((file) => file.reduced).length;
   return { dvr: dvr.length > 0, reduced: !cut ? "none" : cut === dvr.length ? "all" : "some", cameras };
 }
+
+/** Where a pop-up menu goes so that it is seen whole: below its anchor
+ * (`y`), or above it (`above`, the anchor's top) when the window has no room
+ * below, and never past the window's edges. */
+export function fitMenu(at: { x: number; y: number; above: number }, size: { width: number; height: number },
+                        view: { width: number; height: number }, margin = 8): { left: number; top: number } {
+  let top = at.y;
+  if (top + size.height + margin > view.height) top = at.above - size.height;
+  top = Math.max(margin, Math.min(top, view.height - size.height - margin));
+  const left = Math.max(margin, Math.min(at.x, view.width - size.width - margin));
+  return { left, top };
+}

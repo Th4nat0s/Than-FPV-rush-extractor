@@ -4,6 +4,7 @@
   import { STRIP } from "./strips";
   import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
+  import { fit, type Anchor } from "./fit";
 
   let { flight, session = null, sessionLabels = [], exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
         onplay, onedit, onexport, ondelete, onchange }: {
@@ -32,6 +33,8 @@
   let frames = $state<(string | undefined)[]>(Array(STRIP).fill(undefined));
   let hover = $state<number | null>(null);
   let menuOpen = $state(false);
+  /** Where its ⋯ is: the menu opens below it, or above near the window's bottom. */
+  let menuAt = $state<Anchor>({ x: 0, y: 0, above: 0 });
   let filling = false;
   let stripKey = "";
 
@@ -151,9 +154,13 @@
     <button class="plain icon" title="Export the video…" aria-label="Export the video"
             disabled={exporting || !ffmpegOk} onclick={onexport}><Icon name="export" size={15} /></button>
     <div class="menu">
-      <button class="plain" title="More" onclick={() => (menuOpen = !menuOpen)}>⋯</button>
+      <button class="plain" title="More" onclick={(e) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        menuAt = { x: box.right - 170, y: box.bottom, above: box.top };
+        menuOpen = !menuOpen;
+      }}>⋯</button>
       {#if menuOpen}
-        <div class="popup" role="menu">
+        <div class="popup" role="menu" use:fit={menuAt}>
           <button class="plain" onclick={() => act(onplay)}>Play &amp; tag</button>
           <button class="plain" onclick={() => act(like)}>{flight.liked ? "Unlike" : "Like"}</button>
           <button class="plain" onclick={() => act(onedit)}>Edit boundaries…</button>
@@ -180,7 +187,8 @@
   {/if}
 </article>
 
-<svelte:window onclick={(e) => menuOpen && !(e.target as Element).closest(".menu") && (menuOpen = false)} />
+<svelte:window onclick={(e) => menuOpen && !(e.target as Element).closest(".menu") && (menuOpen = false)}
+               onkeydown={(e) => e.key === "Escape" && (menuOpen = false)} />
 
 <style>
   article { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -231,9 +239,7 @@
   .badges .row { gap: 4px; }
   .menu { position: relative; }
   .popup {
-    position: absolute;
-    right: 0;
-    top: 100%;
+    position: fixed;
     z-index: 5;
     min-width: 170px;
     display: flex;

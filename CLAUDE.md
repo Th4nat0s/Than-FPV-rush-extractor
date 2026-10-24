@@ -1065,7 +1065,11 @@ frame-exact boundary editor. Layout:
   computed in the window from the snapshot (`lib/library.ts`, `lib/browse.svelte.ts`, both
   tested): the library is already there, so no view asks Rust for more. A session's folder,
   detection profile, labels export, re-segment, rename and removal moved to its **menu** (⋯ or
-  right-click) — the pilot's call over keeping them in the header. **Flight tags**
+  right-click) — the pilot's call over keeping them in the header. Every pop-up menu (a
+  session's, a card's, Import Folder's arrow) is placed by `fitMenu` (`lib/fit.ts`, tested):
+  measured once rendered, below its anchor or above it when the window has no room — a
+  session low in the list had its menu cut off (the pilot's report, 2026-10-24) — and never
+  past the window's edges. Escape closes them. **Flight tags**
   ("freestyle", "gates") are free labels on a whole flight, beside the figure tags that mark a
   moment: table `flightLabel` (schema `v5`), one label per flight whatever its case, the
   spelling first used naming it in suggestions; edited in the player. In the code they are

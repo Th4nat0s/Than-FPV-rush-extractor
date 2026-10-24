@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileView, FlightView, SessionView, TagView } from "../api";
-import { counted, elsewhere, figures, filterFigures, filterFlights, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
+import { counted, elsewhere, figures, fitMenu, filterFigures, filterFlights, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
          sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
@@ -186,5 +186,26 @@ describe("sessionSources", () => {
     expect(reduced([file("DVR", false, true), file("DVR", false, true), file("GoPro", true)])).toBe("all");
     expect(reduced([file("DVR", false, true), file("DVR", false)])).toBe("some");
     expect(reduced([file("DVR", false), file("GoPro", true)])).toBe("none");
+  });
+});
+
+describe("fitMenu", () => {
+  const view = { width: 1000, height: 800 };
+  const menu = { width: 220, height: 300 };
+
+  it("opens below its anchor when there is room", () => {
+    expect(fitMenu({ x: 200, y: 100, above: 80 }, menu, view)).toEqual({ left: 200, top: 100 });
+  });
+
+  it("opens above its anchor near the bottom of the window", () => {
+    // A session low in the list: its ⋯ spans 600-620.
+    expect(fitMenu({ x: 200, y: 620, above: 600 }, menu, view)).toEqual({ left: 200, top: 300 });
+  });
+
+  it("stays inside the window whatever happens", () => {
+    // Too tall for either side: pinned to the margins.
+    expect(fitMenu({ x: 990, y: 400, above: 390 }, { width: 220, height: 780 }, view))
+      .toEqual({ left: 772, top: 8 });
+    expect(fitMenu({ x: -5, y: 790, above: 30 }, menu, view).top).toBe(8);
   });
 });

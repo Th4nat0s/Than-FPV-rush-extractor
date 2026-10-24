@@ -12,6 +12,7 @@
   import { browse, openSession, show } from "./browse.svelte";
   import { elsewhere, figures, pageOf, paginate, placed, sessionSources, type View } from "./library";
   import CompactPager from "./CompactPager.svelte";
+  import { fit, type Anchor } from "./fit";
   import { runningTask } from "./tasks.svelte";
   import { exportLabels, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
 
@@ -79,12 +80,12 @@
   });
 
   // A session's menu, from its ⋯ or a right-click, where the pointer is.
-  let menu = $state<{ session: SessionView; x: number; y: number } | null>(null);
+  let menu = $state<{ session: SessionView; at: Anchor } | null>(null);
   let profileOf = $state<SessionView | null>(null);
   let notice = $state<string | null>(null);
   let noticeTitle = $state("Export Labels");
   // The arrow beside Import Folder…: the other way recordings come in.
-  let importMenu = $state<{ x: number; y: number } | null>(null);
+  let importMenu = $state<Anchor | null>(null);
 
   let choosing = $state(false);
   let reducing = $state<SessionView | null>(null);
@@ -108,10 +109,12 @@
 
   function openMenu(event: MouseEvent, session: SessionView) {
     event.preventDefault();
+    // Below the pointer or the ⋯, or above it when the window has no room.
     const at = event.type === "contextmenu"
-      ? { x: event.clientX, y: event.clientY }
-      : (({ right, bottom }) => ({ x: right - 4, y: bottom }))((event.currentTarget as HTMLElement).getBoundingClientRect());
-    menu = { session, ...at };
+      ? { x: event.clientX, y: event.clientY, above: event.clientY }
+      : (({ right, top, bottom }) => ({ x: right - 4, y: bottom, above: top }))(
+          (event.currentTarget as HTMLElement).getBoundingClientRect());
+    menu = { session, at };
   }
 
   function act(action: (session: SessionView) => void) {
@@ -166,6 +169,9 @@
   }
 </script>
 
+<!-- Escape closes an open menu, as it does a dialog. -->
+<svelte:window onkeydown={(e) => { if (e.key === "Escape") { menu = null; importMenu = null; } }} />
+
 <aside>
   <div class="top row">
     <strong>FPV Rush</strong>
@@ -173,7 +179,7 @@
     <div class="split">
       <button class="small" onclick={onimportfolder} disabled={!ffmpegOk}>Import Folder…</button>
       <button class="small arrow" aria-label="More ways to import" aria-haspopup="menu" disabled={!ffmpegOk}
-              onclick={(e) => { const box = e.currentTarget.getBoundingClientRect(); importMenu = { x: box.left, y: box.bottom + 2 }; }}>
+              onclick={(e) => { const box = e.currentTarget.getBoundingClientRect(); importMenu = { x: box.left, y: box.bottom + 2, above: box.top - 2 }; }}>
         <Icon name="down" size={12} /></button>
     </div>
     <button class="small" onclick={onsettings} title="Settings"><Icon name="settings" /></button>
@@ -253,7 +259,7 @@
   {@const session = menu.session}
   <button class="backdrop" aria-label="Close the menu" onclick={() => (menu = null)}
           oncontextmenu={(e) => { e.preventDefault(); menu = null; }}></button>
-  <div class="popup" role="menu" aria-label="{session.name}" style:left="{menu.x}px" style:top="{menu.y}px">
+  <div class="popup" role="menu" aria-label="{session.name}" use:fit={menu.at}>
     <span class="caption heading">{session.name}{day(session.date) ? ` · ${day(session.date)}` : ""}</span>
     <button class="plain" role="menuitem" disabled={!session.files.length}
             onclick={() => act((s) => api.revealSession(s.id).catch((e) => onerror(message(e))))}>Open Folder</button>
@@ -283,7 +289,7 @@
 
 {#if importMenu}
   <button class="backdrop" aria-label="Close the menu" onclick={() => (importMenu = null)}></button>
-  <div class="popup" role="menu" aria-label="Import" style:left="{importMenu.x}px" style:top="{importMenu.y}px">
+  <div class="popup" role="menu" aria-label="Import" use:fit={importMenu}>
     <button class="plain" role="menuitem" onclick={() => { importMenu = null; onimportfolder(); }}>Import Folder…</button>
     <button class="plain" role="menuitem" onclick={() => { importMenu = null; choosing = true; }}
             title="Add what the import folder holds and the library does not — where it is, without copying">
