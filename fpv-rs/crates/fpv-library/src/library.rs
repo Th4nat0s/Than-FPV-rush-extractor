@@ -142,6 +142,21 @@ pub struct BulkExport {
     pub failed: Vec<(String, String)>,
 }
 
+/// What deleting a flight does to its recordings, for its confirmation and
+/// its outcome alike.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightDeletion {
+    /// Files that held nothing but this flight — pieces of a reduced DVR
+    /// recording, an action-cam take and its chapters: to the trash.
+    pub trashed: Vec<String>,
+    /// Reduced pieces it shares with another flight: kept for that one.
+    pub shared: Vec<String>,
+    /// Whole DVR recordings it is part of: kept, only the flight goes — a
+    /// re-segment would find it again.
+    pub recordings: Vec<String>,
+}
+
 /// What reducing a session's DVR recordings to their flights would do.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -812,6 +827,53 @@ impl Library {
     /// Every flight label in the library, most used first.
     pub fn flight_label_names(&self) -> Result<Vec<String>> {
         Ok(self.store.flight_label_names()?)
+    }
+
+    /// What deleting a flight would do to its files (`delete_flight`).
+    pub fn flight_deletion(&self, id: &str) -> Result<FlightDeletion> {
+        Ok(self.plan_flight_deletion(id)?.0)
+    }
+
+    fn plan_flight_deletion(&self, id: &str) -> Result<(FlightDeletion, Uuid, Vec<SourceFile>)> {
+        let (flight, clips, _) = self.flight(id)?;
+        let reduced = self.store.reduced_files(flight.session_id)?;
+        let others: Vec<Clip> = self.store.flights(flight.session_id)?.into_iter()
+            .filter(|(f, _)| f.id != flight.id)
+            .flat_map(|(_, clips)| clips).collect();
+        let mut plan = FlightDeletion::default();
+        let mut going = vec![];
+        for clip in &clips {
+            let Some(file) = self.store.source_file(clip.source_file_id)? else { continue };
+            let name = file_name(&file.imported_path);
+            // A file is the flight's own when nothing else is cut from it: an
+            // action-cam take, or a reduced piece no other flight lies in.
+            if file.media.needs_segmentation() && !reduced.contains(&file.id) {
+                plan.recordings.push(name);
+            } else if others.iter().any(|c| c.source_file_id == file.id) {
+                plan.shared.push(name);
+            } else if !going.iter().any(|f: &SourceFile| f.id == file.id) {
+                plan.trashed.push(name);
+                going.push(file);
+            }
+        }
+        Ok((plan, flight.id, going))
+    }
+
+    /// Deletes a flight from the library. A whole DVR recording stays — only
+    /// the flight's pointer into it goes. A file that held nothing but this
+    /// flight goes to the trash with it: the pieces a reduction left, an
+    /// action-cam take and its chapters. A reduced piece shared with another
+    /// flight stays for that one. The library changes in one transaction;
+    /// the files follow.
+    pub fn delete_flight(&self, id: &str) -> Result<FlightDeletion> {
+        let (plan, flight, going) = self.plan_flight_deletion(id)?;
+        self.store.delete_flight(flight, &going.iter().map(|f| f.id).collect::<Vec<_>>())?;
+        for file in &going {
+            if let Err(error) = trash::delete(&file.imported_path) {
+                log::warn!("could not move {} to the trash: {error}", file.imported_path);
+            }
+        }
+        Ok(plan)
     }
 
     /// Persists a hand-corrected boundary, clamped to the recording.

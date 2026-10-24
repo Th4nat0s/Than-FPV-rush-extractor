@@ -9,6 +9,7 @@
   import EditorDialog from "./EditorDialog.svelte";
   import Modal from "./Modal.svelte";
   import Pager from "./Pager.svelte";
+  import DeleteFlightDialog from "./DeleteFlightDialog.svelte";
   import { browse, setPageSize } from "./browse.svelte";
   import { paginate, sortFlights, type Placed, type Sort, type View } from "./library";
   import { track } from "./tasks.svelte";
@@ -43,6 +44,7 @@
   let notice = $state<string | null>(null);
   let playing = $state<FlightView | null>(null);
   let editing = $state<Placed | null>(null);
+  let deleting = $state<FlightView | null>(null);
   let conflict = $state<{ flight: FlightView; destination: string; reason: string } | null>(null);
   let content = $state<HTMLElement>();
 
@@ -139,7 +141,7 @@
                       {exporting} {ffmpegOk} {onchange} {selecting}
                       selected={picked.includes(entry.flight.id)} ontoggle={() => toggle(entry.flight.id)}
                       onplay={() => (playing = entry.flight)} onedit={() => (editing = entry)}
-                      onexport={() => exportFlight(entry)} />
+                      onexport={() => exportFlight(entry)} ondelete={() => (deleting = entry.flight)} />
         {/each}
       </div>
     {/if}
@@ -162,6 +164,10 @@
   <!-- A boundary edit re-keys the flight's strip: it is remade straight away. -->
   <EditorDialog flight={edited.flight}
                 onclose={() => { editing = null; onchange(); prepareStrips(edited.session.id); }} />
+{/if}
+{#if deleting}
+  <DeleteFlightDialog flight={deleting} onclose={() => (deleting = null)}
+                      ondeleted={() => { deleting = null; onchange(); }} />
 {/if}
 {#if conflict}
   {@const pending = conflict}

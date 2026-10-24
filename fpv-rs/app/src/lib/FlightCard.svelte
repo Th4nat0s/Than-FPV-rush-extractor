@@ -6,7 +6,7 @@
   import Icon, { type IconName } from "./Icon.svelte";
 
   let { flight, session = null, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
-        onplay, onedit, onexport, onchange }: {
+        onplay, onedit, onexport, ondelete, onchange }: {
     flight: FlightView;
     /** Named under the title where flights of several sessions are listed. */
     session?: SessionView | null;
@@ -19,6 +19,7 @@
     onplay: () => void;
     onedit: () => void;
     onexport: () => void;
+    ondelete: () => void;
     onchange: () => void;
   } = $props();
 
@@ -153,6 +154,8 @@
           <button class="plain" onclick={() => act(like)}>{flight.liked ? "Unlike" : "Like"}</button>
           <button class="plain" onclick={() => act(onedit)}>Edit boundaries…</button>
           <button class="plain" disabled={exporting || !ffmpegOk} onclick={() => act(onexport)}>Export…</button>
+          <hr />
+          <button class="plain danger" onclick={() => act(ondelete)}>Delete Flight…</button>
         </div>
       {/if}
     </div>
@@ -237,4 +240,5 @@
   }
   .popup button { text-align: left; padding: 6px 10px; border-radius: 4px; }
   .popup button:hover:not(:disabled) { background: var(--hover); }
+  .popup hr { border: none; border-top: 1px solid var(--line); margin: 4px 6px; }
 </style>

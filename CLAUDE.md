@@ -1065,6 +1065,16 @@ frame-exact boundary editor. Layout:
   Asked in `segment()` (`lib/sessions.ts`, through `confirm.svelte.ts`), the one path the
   header, the session menu and the detection profile all take; a first segmentation asks
   nothing.
+- **Delete Flight…** (2026-10-24, the pilot's request), in a card's ⋯ menu, behind a
+  confirmation that names what goes (`Library::flight_deletion`, the same plan
+  `delete_flight` carries out). A **whole DVR recording stays**: only the flight's pointer
+  goes, and a re-segment would find the flight again. A file that held **nothing but this
+  flight goes to the trash** with it — a piece a reduction left, an action-cam take and its
+  chapters (the pilot named the DVR cases; a take is its file, so it follows the piece's rule).
+  A reduced piece **shared with another flight** (their margins merged) stays for that one.
+  One transaction (`LibraryStore::delete_flight`: the flight, then the files' rows, their
+  figure tags and runs by cascade), then the trash. Flight numbers are not renumbered: "Flight
+  3" stays the same flight. Tested on all three cases; verified in the app on Test (2).
 - **Load from Destination Folder** (2026-10-23, the pilot's request), behind the ▾ beside
   *Import Folder…*: registers what the import folder holds and the library does not, **where
   it is** — no copy (`Library::load_import_folder`, `LibraryImporter::register_in_place`).

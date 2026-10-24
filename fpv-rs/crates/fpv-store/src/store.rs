@@ -129,6 +129,21 @@ impl LibraryStore {
         Ok(())
     }
 
+    /// Removes a flight and, in the same transaction, the recordings given —
+    /// those that held nothing but it. Its clips, labels and the recordings'
+    /// figure tags and runs go by cascade. The files on disk are the caller's.
+    pub fn delete_flight(&self, flight_id: Uuid, files: &[Uuid]) -> Result<()> {
+        let mut db = self.db();
+        let transaction = db.transaction()?;
+        let changed = transaction.execute("DELETE FROM flight WHERE id = ?", [Id(flight_id)])?;
+        not_found_unless(changed, "flight", flight_id)?;
+        for file in files {
+            transaction.execute("DELETE FROM sourceFile WHERE id = ?", [Id(*file)])?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// The session's recordings already cut down to their flights.
     pub fn reduced_files(&self, session_id: Uuid) -> Result<HashSet<Uuid>> {
         let db = self.db();

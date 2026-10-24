@@ -917,3 +917,60 @@ fn reduces_a_dvr_recording_to_its_flights_and_keeps_everything_on_them() {
     assert!(!before.files.iter().any(|f| f.reduced) && !before.flights.iter().any(|f| f.reduced));
     assert!(after.files.iter().all(|f| f.reduced) && after.flights.iter().all(|f| f.reduced));
 }
+
+#[test]
+fn deletes_a_dvr_flight_but_keeps_its_whole_recording() {
+    let (fixture, session) = dvr_card();
+    let library = &fixture.library;
+    flights_in(&fixture, &session);
+    let before = library.snapshot().unwrap().remove(0);
+    let recording = library.recording_path(&before.files[0].id).unwrap();
+    let expected = FlightDeletion { recordings: vec!["PICT0032.AVI".into()], ..Default::default() };
+    assert_eq!(library.flight_deletion(&before.flights[0].id).unwrap(), expected);
+    assert_eq!(library.delete_flight(&before.flights[0].id).unwrap(), expected);
+
+    let after = library.snapshot().unwrap().remove(0);
+    assert_eq!(after.flights.len(), 2);
+    assert_eq!(after.files.len(), 1);
+    assert!(recording.is_file(), "only the pointer went");
+}
+
+#[test]
+fn deletes_a_reduced_flight_with_its_own_piece_and_keeps_a_shared_one() {
+    let (fixture, session) = dvr_card();
+    let library = &fixture.library;
+    flights_in(&fixture, &session);
+    library.reduce_session(&session.id, |_, _, _| {}).unwrap();
+    let reduced = library.snapshot().unwrap().remove(0);
+    let folder = library.recording_path(&reduced.files[0].id).unwrap().parent().unwrap().to_path_buf();
+    let (a, b, c) = (&reduced.flights[0], &reduced.flights[1], &reduced.flights[2]);
+
+    // C alone in PICT0032-2: the piece goes with it.
+    let deleted = library.delete_flight(&c.id).unwrap();
+    assert_eq!(deleted, FlightDeletion { trashed: vec!["PICT0032-2.AVI".into()], ..Default::default() });
+    assert!(!folder.join("PICT0032-2.AVI").exists());
+    // A shares PICT0032-1 with B: the piece stays for B.
+    let deleted = library.delete_flight(&a.id).unwrap();
+    assert_eq!(deleted, FlightDeletion { shared: vec!["PICT0032-1.AVI".into()], ..Default::default() });
+    assert!(folder.join("PICT0032-1.AVI").is_file());
+
+    let after = library.snapshot().unwrap().remove(0);
+    assert_eq!(after.flights.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(), [b.id.as_str()]);
+    assert_eq!(after.files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["PICT0032-1.AVI"]);
+    // B, now alone in its piece, would take it along.
+    assert_eq!(library.flight_deletion(&b.id).unwrap().trashed, ["PICT0032-1.AVI"]);
+}
+
+#[test]
+fn deletes_an_action_cam_take_with_its_chapters() {
+    let (fixture, session) = imported();
+    let library = &fixture.library;
+    let take = &session.flights[0];
+    let chapter = library.recording_path(&take.clips[1].file_id).unwrap();
+    assert_eq!(library.delete_flight(&take.id).unwrap(),
+               FlightDeletion { trashed: vec!["GH010042.MP4".into(), "GH020042.MP4".into()], ..Default::default() });
+    assert!(!chapter.exists());
+    let after = library.snapshot().unwrap().remove(0);
+    assert_eq!(after.flights.len(), 1);
+    assert_eq!(after.files.len(), 1, "the other take stays");
+}

@@ -120,6 +120,16 @@ export interface FolderView {
   new: number;
 }
 
+/** What deleting a flight does to its files. */
+export interface FlightDeletion {
+  /** Files that held nothing but the flight: to the trash. */
+  trashed: string[];
+  /** Reduced pieces shared with another flight: kept. */
+  shared: string[];
+  /** Whole DVR recordings: kept, only the flight goes. */
+  recordings: string[];
+}
+
 export interface ReducePreview {
   recordings: number;
   /** Recordings without a flight: they go whole. */
@@ -206,6 +216,8 @@ export const api = {
     invoke<void>("delete_session", { id, keepRecordings }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),
   toggleLike: (id: string) => invoke<boolean>("toggle_like", { id }),
+  flightDeletion: (id: string) => invoke<FlightDeletion>("flight_deletion", { id }),
+  deleteFlight: (id: string) => invoke<FlightDeletion>("delete_flight", { id }),
   updateClip: (id: string, startFrame: number, endFrame: number) =>
     invoke<void>("update_clip", { id, startFrame, endFrame }),
   filmstripFrame: (flight: string, index: number, count: number) =>

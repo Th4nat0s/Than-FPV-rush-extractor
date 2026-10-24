@@ -450,3 +450,29 @@ fn leaves_everything_as_it_was_when_a_reduction_fails_halfway() {
     assert_eq!(store.tags_in_session(session.id).unwrap().len(), tags.len());
     assert!(store.reduced_files(session.id).unwrap().is_empty());
 }
+
+#[test]
+fn deletes_a_flight_with_the_recordings_that_held_only_it() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0032-2.AVI", 32);
+    let (flight, _) = one_clip(&store, &file, 0, 200);
+    store.add_flight_label(flight.id, "crash").unwrap();
+    store.save_tag(&tag(file.id, 10, 20, "dive")).unwrap();
+    store.delete_flight(flight.id, &[file.id]).unwrap();
+    assert!(store.flights(session.id).unwrap().is_empty());
+    assert!(store.source_files(session.id).unwrap().is_empty());
+    assert!(store.tags_in_session(session.id).unwrap().is_empty());
+    assert!(store.flight_label_names().unwrap().is_empty());
+    // A flight that is not there: nothing happens, and it says so.
+    assert!(store.delete_flight(flight.id, &[]).is_err());
+}
+
+#[test]
+fn deletes_only_the_flight_when_its_recording_stays() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0032.AVI", 32);
+    let (flight, _) = one_clip(&store, &file, 0, 200);
+    store.delete_flight(flight.id, &[]).unwrap();
+    assert!(store.flights(session.id).unwrap().is_empty());
+    assert_eq!(store.source_files(session.id).unwrap(), [file]);
+}
