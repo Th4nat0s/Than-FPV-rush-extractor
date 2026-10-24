@@ -69,6 +69,10 @@ export interface SessionView {
   reducible: boolean;
   /** The detector thresholds for its DVR footage. */
   detectionProfile: "standard" | "textured";
+  location: string | null;
+  notes: string | null;
+  /** Tags on the whole session: every flight of it carries them. */
+  labels: string[];
 }
 
 export interface TagView {
@@ -118,6 +122,16 @@ export interface FolderView {
   recordings: number;
   /** Recordings the library does not know: 0 is a folder already imported. */
   new: number;
+}
+
+/** What the Edit Session dialog sends back. */
+export interface SessionEdit {
+  name: string;
+  /** YYYY-MM-DD, or none. */
+  date: string | null;
+  location: string;
+  notes: string;
+  labels: string[];
 }
 
 /** What deleting a flight does to its files. */
@@ -212,6 +226,7 @@ export const api = {
   setDetectionProfile: (session: string, profile: string) =>
     invoke<void>("set_detection_profile", { session, profile }),
   renameSession: (id: string, name: string) => invoke<void>("rename_session", { id, name }),
+  updateSession: (id: string, edit: SessionEdit) => invoke<void>("update_session", { id, edit }),
   deleteSession: (id: string, keepRecordings: boolean) =>
     invoke<void>("delete_session", { id, keepRecordings }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),

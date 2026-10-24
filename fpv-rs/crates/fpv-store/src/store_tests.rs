@@ -476,3 +476,27 @@ fn deletes_only_the_flight_when_its_recording_stays() {
     assert!(store.flights(session.id).unwrap().is_empty());
     assert_eq!(store.source_files(session.id).unwrap(), [file]);
 }
+
+#[test]
+fn keeps_a_sessions_tags_apart_from_its_flights_and_through_a_re_segment() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0032.AVI", 32);
+    store.set_session_labels(session.id, &["Alpes".into(), "race".into(), "ALPES".into()]).unwrap();
+    assert_eq!(store.session_labels().unwrap()[&session.id], ["Alpes", "race"]);
+    // A re-segment remakes the flights; the session's tags stay.
+    one_clip(&store, &file, 0, 200);
+    one_clip(&store, &file, 0, 150);
+    assert_eq!(store.session_labels().unwrap()[&session.id], ["Alpes", "race"]);
+    store.set_session_labels(session.id, &["race".into()]).unwrap();
+    assert_eq!(store.session_labels().unwrap()[&session.id], ["race"]);
+}
+
+#[test]
+fn suggests_session_and_flight_tags_as_one_vocabulary() {
+    let store = LibraryStore::in_memory().unwrap();
+    let (session, file) = session_with_one_file(&store, "PICT0032.AVI", 32);
+    let flight = one_clip(&store, &file, 0, 200).0.id;
+    store.add_flight_label(flight, "gates").unwrap();
+    store.set_session_labels(session.id, &["Gates".into(), "Alpes".into()]).unwrap();
+    assert_eq!(store.flight_label_names().unwrap(), ["gates", "Alpes"]);
+}

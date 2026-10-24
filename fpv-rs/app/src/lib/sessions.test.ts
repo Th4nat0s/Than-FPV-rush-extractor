@@ -24,7 +24,7 @@ beforeEach(async () => {
 
 const flight = (actionCam: boolean) => ({ id: "f", order: 1, actionCam, liked: false, title: null, labels: [] }) as unknown as FlightView;
 const session = (flights: FlightView[]) =>
-  ({ id: "letz", name: "Letz Kwad", date: null, files: [], flights, segmentable: true, reducible: false, detectionProfile: "standard" }) as SessionView;
+  ({ id: "letz", name: "Letz Kwad", date: null, files: [], flights, segmentable: true, reducible: false, detectionProfile: "standard", location: null, notes: null, labels: [] }) as SessionView;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("segment", () => {

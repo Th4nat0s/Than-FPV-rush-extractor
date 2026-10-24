@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileView, FlightView, SessionView, TagView } from "../api";
-import { counted, figures, filterFigures, filterFlights, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
+import { counted, figures, filterFigures, filterFlights, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
          sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
@@ -13,6 +13,7 @@ const flight = (id: string, order: number, extra: Partial<FlightView> = {}): Fli
 
 const session = (id: string, date: string | null, flights: FlightView[]): SessionView => ({
   id, name: id, date, files: [], flights, segmentable: true, reducible: false, detectionProfile: "standard",
+  location: null, notes: null, labels: [],
 });
 
 // Two sessions, the later one first in the snapshot.
@@ -47,6 +48,24 @@ describe("filterFlights", () => {
   it("narrows to one session and to liked flights", () => {
     expect(ids(filterFlights(all, { ...none, session: "letz" }))).toEqual(["l1", "l2"]);
     expect(ids(filterFlights(all, { ...none, liked: true }))).toEqual(["l1"]);
+  });
+});
+
+describe("session tags", () => {
+  // A session tagged "race": every flight of it carries the tag.
+  const raced = { ...letz, labels: ["race", "GATES"] };
+  const all = placed([alpes, raced]);
+  const none = { session: null, liked: false, labels: [], match: "any" as const };
+
+  it("gives every flight its session's tags after its own, each once", () => {
+    expect(labelsOf(all[1])).toEqual(["freestyle", "gates", "race"]);
+    expect(labelsOf(all[2])).toEqual(["Gates", "race"]);
+    expect(labelsOf(all[0])).toEqual(["cinematic"]);
+  });
+
+  it("filters on a tag at either level", () => {
+    expect(ids(filterFlights(all, { ...none, labels: ["race"] }))).toEqual(["l1", "l2"]);
+    expect(ids(filterFlights(all, { ...none, labels: ["race", "freestyle"], match: "all" }))).toEqual(["l1"]);
   });
 });
 

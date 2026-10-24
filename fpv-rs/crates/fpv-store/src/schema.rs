@@ -52,6 +52,12 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("v5", r#"
         CREATE TABLE "flightLabel" ("flightId" TEXT NOT NULL REFERENCES "flight"("id") ON DELETE CASCADE, "label" TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY ("flightId", "label"));
     "#),
+    // Tags on a whole session (2026-10-24): every flight of it carries them,
+    // beside its own. Kept apart from the flights' so a re-segment, which
+    // remakes the flights, leaves them.
+    ("v6", r#"
+        CREATE TABLE "sessionLabel" ("sessionId" TEXT NOT NULL REFERENCES "session"("id") ON DELETE CASCADE, "label" TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY ("sessionId", "label"));
+    "#),
 ];
 
 /// Applies every migration not yet in the ledger, up to and including

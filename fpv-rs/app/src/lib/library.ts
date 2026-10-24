@@ -48,14 +48,21 @@ export function figures(sessions: SessionView[]): Figure[] {
 export const sameLabel = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
 const holds = (list: string[], label: string) => list.some((item) => sameLabel(item, label));
 
+/** A flight's tags: its own, then its session's it does not already carry. */
+export function labelsOf({ flight, session }: Placed): string[] {
+  return [...flight.labels, ...session.labels.filter((label) => !holds(flight.labels, label))];
+}
+
 export function filterFlights(items: Placed[], filter: FlightFilter): Placed[] {
-  return items.filter(({ flight, session }) =>
-    (!filter.session || session.id === filter.session)
-    && (!filter.liked || flight.liked)
-    && (!filter.labels.length
-        || (filter.match === "all"
-          ? filter.labels.every((label) => holds(flight.labels, label))
-          : filter.labels.some((label) => holds(flight.labels, label)))));
+  return items.filter((item) => {
+    const labels = labelsOf(item);
+    return (!filter.session || item.session.id === filter.session)
+      && (!filter.liked || item.flight.liked)
+      && (!filter.labels.length
+          || (filter.match === "all"
+            ? filter.labels.every((label) => holds(labels, label))
+            : filter.labels.some((label) => holds(labels, label))));
+  });
 }
 
 export function filterFigures(items: Figure[], filter: FigureFilter): Figure[] {

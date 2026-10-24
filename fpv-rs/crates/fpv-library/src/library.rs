@@ -142,6 +142,19 @@ pub struct BulkExport {
     pub failed: Vec<(String, String)>,
 }
 
+/// A session's details as the Edit Session dialog sends them back.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionEdit {
+    pub name: String,
+    /// `YYYY-MM-DD`, or none.
+    pub date: Option<String>,
+    pub location: String,
+    pub notes: String,
+    /// The session's tags, which every flight of it carries.
+    pub labels: Vec<String>,
+}
+
 /// What deleting a flight does to its recordings, for its confirmation and
 /// its outcome alike.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -400,8 +413,9 @@ impl Library {
 
     /// Everything the browser shows, in one pass.
     pub fn snapshot(&self) -> Result<Vec<SessionView>> {
+        let mut labels = self.store.session_labels()?;
         self.store.sessions()?.iter()
-            .map(|session| Ok(views::session_view(
+            .map(|session| Ok(views::session_view(labels.remove(&session.id).unwrap_or_default(),
                 session, self.store.source_files(session.id)?, self.store.flights(session.id)?,
                 self.store.flight_labels_in_session(session.id)?,
                 &self.store.tags_in_session(session.id)?,
@@ -786,6 +800,33 @@ impl Library {
 
     /// Which detector thresholds the session's DVR footage is segmented with.
     /// Nothing is re-detected here: the next `segment` applies it.
+    /// Saves what the Edit Session dialog changed: name, flying day, place,
+    /// notes and tags. Text is trimmed, and an emptied place or note is none.
+    /// A tag given twice, in any case, is kept once as first written. The
+    /// day only dates the session: folders already on disk keep their names.
+    pub fn update_session(&self, id: &str, edit: &SessionEdit) -> Result<()> {
+        let name = edit.name.trim();
+        if name.is_empty() {
+            return Err(LibraryError::Invalid("a session needs a name".into()));
+        }
+        let session = self.session(id)?;
+        let date = match edit.date.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+            Some(day) => Some(local_midnight(day)?),
+            None => None,
+        };
+        let text = |value: &str| Some(value.trim().to_owned()).filter(|v| !v.is_empty());
+        let mut labels: Vec<String> = vec![];
+        for label in edit.labels.iter().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+            if !labels.iter().any(|known| known.eq_ignore_ascii_case(label)) {
+                labels.push(label.to_owned());
+            }
+        }
+        self.store.save_session(&Session {
+            name: name.into(), date, location: text(&edit.location), notes: text(&edit.notes), ..session
+        })?;
+        Ok(self.store.set_session_labels(session.id, &labels)?)
+    }
+
     pub fn set_detection_profile(&self, id: &str, profile: &str) -> Result<()> {
         let profile = DetectionProfile::from_raw(profile)
             .ok_or_else(|| LibraryError::Invalid(format!("no detection profile {profile}")))?;

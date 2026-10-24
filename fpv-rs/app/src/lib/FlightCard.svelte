@@ -5,11 +5,13 @@
   import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
 
-  let { flight, session = null, exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
+  let { flight, session = null, sessionLabels = [], exporting, ffmpegOk, selecting = false, selected = false, ontoggle,
         onplay, onedit, onexport, ondelete, onchange }: {
     flight: FlightView;
     /** Named under the title where flights of several sessions are listed. */
     session?: SessionView | null;
+    /** The session's tags, which the flight carries too; shown apart. */
+    sessionLabels?: string[];
     exporting: boolean;
     ffmpegOk: boolean;
     /** In selection mode a click ticks the card instead of playing it. */
@@ -92,6 +94,8 @@
     }
   });
 
+  let inherited = $derived(sessionLabels.filter((l) => !flight.labels.some((own) => own.toLowerCase() === l.toLowerCase())));
+
   let badges = $derived(([
     [flight.actionCam ? "camera" : "goggles", flight.reduced ? `${flight.source} · reduced` : flight.source],
     ["film", flight.format],
@@ -168,9 +172,10 @@
       {#each badges as [icon, text]}<span class="row"><Icon name={icon} size={12} />{text}</span>{/each}
     </div>
   {/if}
-  {#if flight.labels.length}
+  {#if flight.labels.length || inherited.length}
     <div class="labels">
       {#each flight.labels as label (label)}<span class="label">{label}</span>{/each}
+      {#each inherited as label (label)}<span class="label inherited" title="From the session">{label}</span>{/each}
     </div>
   {/if}
 </article>
@@ -221,6 +226,7 @@
     padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 12px;
   }
   .labels { display: flex; gap: 4px; flex-wrap: wrap; }
+  .label.inherited { background: none; border-style: dashed; }
   .label { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--hover); border: 1px solid var(--line); }
   .badges .row { gap: 4px; }
   .menu { position: relative; }

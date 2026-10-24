@@ -2,7 +2,7 @@
   import { day, type SessionView } from "../api";
   import Icon from "./Icon.svelte";
   import { browse, show } from "./browse.svelte";
-  import { counted, figures, filterFigures, filterFlights, placed, sameLabel } from "./library";
+  import { counted, figures, filterFigures, filterFlights, labelsOf, placed, sameLabel } from "./library";
 
   // The All flights and Figures tabs' filters: tags or figures picked from
   // what the library holds, one session or all, liked only.
@@ -17,7 +17,7 @@
   // offered with its count shows what choosing it would list.
   let names = $derived(onFigures
     ? counted(filterFigures(figures(sessions), { ...browse.figures, figures: [] }).map((f) => f.tag.label))
-    : counted(filterFlights(placed(sessions), { ...browse.flights, labels: [] }).flatMap((p) => p.flight.labels)));
+    : counted(filterFlights(placed(sessions), { ...browse.flights, labels: [] }).flatMap(labelsOf)));
   let matching = $derived(onFigures
     ? filterFigures(figures(sessions), browse.figures).length
     : filterFlights(placed(sessions), browse.flights).length);

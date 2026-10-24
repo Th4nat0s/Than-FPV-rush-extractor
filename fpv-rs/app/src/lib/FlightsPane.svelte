@@ -137,7 +137,7 @@
       {/if}
       <div class="grid" class:busy inert={busy}>
         {#each shown.items as entry (entry.flight.id)}
-          <FlightCard flight={entry.flight} session={showSession ? entry.session : null}
+          <FlightCard flight={entry.flight} session={showSession ? entry.session : null} sessionLabels={entry.session.labels}
                       {exporting} {ffmpegOk} {onchange} {selecting}
                       selected={picked.includes(entry.flight.id)} ontoggle={() => toggle(entry.flight.id)}
                       onplay={() => (playing = entry.flight)} onedit={() => (editing = entry)}

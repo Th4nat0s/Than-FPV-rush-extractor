@@ -27,6 +27,10 @@ pub struct SessionView {
     pub reducible: bool,
     /// `standard` or `textured`: the detector thresholds for its DVR footage.
     pub detection_profile: String,
+    pub location: Option<String>,
+    pub notes: Option<String>,
+    /// Tags on the whole session: every flight of it carries them.
+    pub labels: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -208,7 +212,7 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
     }
 }
 
-pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
+pub(crate) fn session_view(session_labels: Vec<String>, session: &Session, files: Vec<SourceFile>,
                            flights: Vec<(Flight, Vec<Clip>)>,
                            mut labels: HashMap<Uuid, Vec<String>>, tags: &[FigureTag],
                            reduced: &HashSet<Uuid>) -> SessionView {
@@ -223,6 +227,9 @@ pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>,
             .any(|clip| by_id.get(&clip.source_file_id)
                 .is_some_and(|f| f.media.needs_segmentation() && !reduced.contains(&f.id))),
         detection_profile: session.detection_profile.as_str().into(),
+        location: session.location.clone(),
+        notes: session.notes.clone(),
+        labels: session_labels,
         files: files.iter()
             .map(|f| FileView { reduced: reduced.contains(&f.id), ..file_view(f) })
             .collect(),

@@ -12,7 +12,7 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FlightDeletion, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
+use fpv_library::{BulkExport, CacheUsage, Card, Config, ExportMode, FlightDeletion, SessionEdit, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
                   Playback, SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
@@ -199,6 +199,12 @@ async fn reduce_session(handle: AppHandle, app: Shared<'_>, task: String, sessio
             let _ = handle.emit("reduce-progress", Progress { task: task.clone(), line, done, total });
         })
     }).await
+}
+
+/// Saves the Edit Session dialog: name, day, place, notes and tags.
+#[tauri::command]
+async fn update_session(app: Shared<'_>, id: String, edit: SessionEdit) -> Reply<()> {
+    blocking(&app, move |app| app.library().update_session(&id, &edit)).await
 }
 
 #[tauri::command]
@@ -463,7 +469,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder, import_folder_contents,
-            segment, reduce_preview, reduce_session, set_detection_profile, rename_session, delete_session,
+            segment, reduce_preview, reduce_session, update_session, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, flight_deletion, delete_flight, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
             missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,

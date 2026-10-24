@@ -974,3 +974,29 @@ fn deletes_an_action_cam_take_with_its_chapters() {
     assert_eq!(after.flights.len(), 1);
     assert_eq!(after.files.len(), 1, "the other take stays");
 }
+
+#[test]
+fn edits_a_sessions_details_and_tags_from_one_dialog() {
+    let (fixture, session) = imported();
+    let library = &fixture.library;
+    library.update_session(&session.id, &SessionEdit {
+        name: "  Alpes ".into(), date: Some("2026-10-17".into()), location: " Col du Lautaret ".into(),
+        notes: "".into(), labels: vec!["mountain".into(), " race ".into(), "Mountain".into(), "".into()],
+    }).unwrap();
+    let edited = library.snapshot().unwrap().remove(0);
+    assert_eq!(edited.name, "Alpes");
+    assert!(edited.date.as_deref().is_some_and(|d| d.starts_with("2026-10-1")), "{:?}", edited.date);
+    assert_eq!(edited.location.as_deref(), Some("Col du Lautaret"));
+    assert_eq!(edited.notes, None);
+    assert_eq!(edited.labels, ["mountain", "race"]);
+    // One vocabulary with the flights' tags, for the suggestions.
+    assert_eq!(library.flight_label_names().unwrap(), ["mountain", "race"]);
+
+    let undated = SessionEdit { name: "Alpes".into(), ..Default::default() };
+    library.update_session(&session.id, &undated).unwrap();
+    let cleared = library.snapshot().unwrap().remove(0);
+    assert!(cleared.date.is_none() && cleared.labels.is_empty() && cleared.location.is_none());
+    assert!(library.update_session(&session.id, &SessionEdit { name: " ".into(), ..Default::default() }).is_err());
+    assert!(library.update_session(&session.id, &SessionEdit { name: "A".into(), date: Some("23/10".into()),
+                                                              ..Default::default() }).is_err());
+}

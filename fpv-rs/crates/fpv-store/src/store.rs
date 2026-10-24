@@ -436,14 +436,43 @@ impl LibraryStore {
         Ok(labels)
     }
 
-    /// Every flight label in the library, most used first: the suggestions.
+    /// Replaces a session's tags, in the order given.
+    pub fn set_session_labels(&self, session_id: Uuid, labels: &[String]) -> Result<()> {
+        let mut db = self.db();
+        let transaction = db.transaction()?;
+        transaction.execute("DELETE FROM sessionLabel WHERE sessionId = ?", [Id(session_id)])?;
+        for label in labels {
+            transaction.execute("INSERT OR IGNORE INTO sessionLabel (sessionId, label) VALUES (?1, ?2)",
+                                params![Id(session_id), label])?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Every tagged session and its tags, in the order given.
+    pub fn session_labels(&self) -> Result<HashMap<Uuid, Vec<String>>> {
+        let db = self.db();
+        let mut statement = db.prepare("SELECT sessionId, label FROM sessionLabel ORDER BY rowid")?;
+        let rows = statement.query_map([], |row| Ok((row.get::<_, Id>(0)?.0, row.get(1)?)))?;
+        let mut labels: HashMap<Uuid, Vec<String>> = HashMap::new();
+        for row in rows {
+            let (session, label) = row?;
+            labels.entry(session).or_default().push(label);
+        }
+        Ok(labels)
+    }
+
+    /// Every tag in the library — on flights and on sessions alike, one
+    /// vocabulary — most used first: the suggestions.
     pub fn flight_label_names(&self) -> Result<Vec<String>> {
         let db = self.db();
         let mut statement = db.prepare(
-            // With MIN(rowid), SQLite takes the bare `label` from that row:
-            // the spelling first used names the group.
-            "SELECT label, MIN(rowid) FROM flightLabel GROUP BY label
-             ORDER BY COUNT(*) DESC, label")?;
+            // With MIN(n), SQLite takes the bare `label` from that row: the
+            // spelling first used names the group. Flights' tags count first.
+            "SELECT label, MIN(n) FROM (
+               SELECT label, rowid AS n FROM flightLabel
+               UNION ALL SELECT label, rowid + 1000000000 AS n FROM sessionLabel)
+             GROUP BY label COLLATE NOCASE ORDER BY COUNT(*) DESC, label")?;
         let rows = statement.query_map([], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }

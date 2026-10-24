@@ -7,6 +7,7 @@
   import ProfileDialog from "./ProfileDialog.svelte";
   import LoadFolderDialog from "./LoadFolderDialog.svelte";
   import ReduceDialog from "./ReduceDialog.svelte";
+  import SessionDialog from "./SessionDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
   import { figures, pageOf, paginate, placed, sessionSources, type View } from "./library";
   import CompactPager from "./CompactPager.svelte";
@@ -118,8 +119,14 @@
     action(session);
   }
 
+  // The name edits in place only after Rename in its menu; otherwise in the
+  // Edit Session dialog.
+  let renamingId = $state<string | null>(null);
+  let editingSession = $state<SessionView | null>(null);
+
   async function startRename(session: SessionView) {
     openSession(session.id);
+    renamingId = session.id;
     await tick();
     inputs[session.id]?.focus();
     inputs[session.id]?.select();
@@ -191,10 +198,17 @@
           <div class="session" role="button" tabindex="0"
                onclick={() => openSession(session.id)}
                onkeydown={(e) => e.key === "Enter" && e.target === e.currentTarget && openSession(session.id)}>
-            <input class="inline name" value={session.name} aria-label="Session name" bind:this={inputs[session.id]}
-                   onfocus={() => openSession(session.id)}
-                   onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-                   onblur={(e) => rename(session, e.currentTarget)} />
+            {#if renamingId === session.id}
+              <input class="inline name" value={session.name} aria-label="Session name" bind:this={inputs[session.id]}
+                     onclick={(e) => e.stopPropagation()}
+                     onkeydown={(e) => {
+                       if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                       if (e.key === "Escape") { (e.currentTarget as HTMLInputElement).value = session.name; renamingId = null; }
+                     }}
+                     onblur={(e) => { renamingId = null; rename(session, e.currentTarget); }} />
+            {:else}
+              <span class="name">{session.name}</span>
+            {/if}
             <span class="caption">{subtitle(session)}</span>
             {#if session.files.length}
               {@const sources = sessionSources(session)}
@@ -243,6 +257,7 @@
               onclick={() => act((s) => (reducing = s))}>Reduce…</button>
     {/if}
     <hr />
+    <button class="plain" role="menuitem" onclick={() => act((s) => (editingSession = s))}>Edit Session…</button>
     <button class="plain" role="menuitem" onclick={() => act(startRename)}>Rename</button>
     <button class="plain danger" role="menuitem" onclick={() => act((s) => (removing = s))}>Remove from Library…</button>
   </div>
@@ -261,6 +276,11 @@
 {#if reducing}
   {@const target = reducing}
   <ReduceDialog session={target} onreduce={() => runReduce(target)} onclose={() => (reducing = null)} />
+{/if}
+
+{#if editingSession}
+  <SessionDialog session={editingSession} onclose={() => (editingSession = null)}
+                 onsaved={() => { editingSession = null; onchange(); }} />
 {/if}
 
 {#if choosing}
@@ -319,7 +339,7 @@
   li:hover { background: var(--hover); }
   li.selected { background: var(--selected); }
   .session { flex: 1; min-width: 0; padding: 6px 8px; display: flex; flex-direction: column; cursor: pointer; }
-  .name { font-weight: 500; }
+  .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .split { display: flex; }
   .split button:first-child { border-radius: 6px 0 0 6px; }
   .split .arrow { border-radius: 0 6px 6px 0; border-left: none; padding: 2px 5px; line-height: 0; }

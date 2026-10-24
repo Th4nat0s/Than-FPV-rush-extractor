@@ -115,6 +115,7 @@ DetectionRun id, sourceFileID, algorithmVersion, parameters (JSON), ranAt
 FigureTag    id, sourceFileID, startFrame, endFrame, label, note?, createdAt
                                           -- source frames in the file's own rate
 FlightLabel  flightID, label              -- free tags on a whole flight (v5)
+SessionLabel sessionID, label             -- tags on a session, carried by its flights (v6)
 ```
 
 **`FigureTag` hangs off `SourceFile`, not `Clip`** (2026-09-16). `replaceClips` deletes a file's
@@ -1065,6 +1066,16 @@ frame-exact boundary editor. Layout:
   Asked in `segment()` (`lib/sessions.ts`, through `confirm.svelte.ts`), the one path the
   header, the session menu and the detection profile all take; a first segmentation asks
   nothing.
+- **Edit Session…** (2026-10-24, the pilot's request), in a session's menu: name, flying day,
+  place, notes (the v1 columns, never shown until now) and **session tags**, saved together by
+  `Library::update_session`. The name no longer edits in place on a click: only after
+  *Rename* in the menu, or in this dialog. A changed day dates the session; folders on disk
+  keep their names. **Session tags** (`sessionLabel`, schema `v6`) are carried by every flight
+  of the session: `labelsOf` gives a flight its own tags then its session's, each once, and
+  the All flights filter and its counts go through it, so a tag filters at either level. The
+  cards show inherited tags dashed. Suggestions are one vocabulary across both tables
+  (`flight_label_names`). Kept apart from the flights' tags so a re-segment, which remakes the
+  flights, leaves them.
 - **Delete Flight…** (2026-10-24, the pilot's request), in a card's ⋯ menu, behind a
   confirmation that names what goes (`Library::flight_deletion`, the same plan
   `delete_flight` carries out). A **whole DVR recording stays**: only the flight's pointer

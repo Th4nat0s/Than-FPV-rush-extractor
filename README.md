@@ -67,7 +67,7 @@ runs it against the Vite dev server with hot reload.
 
 ```sh
 make check                              # all of the below
-cd fpv-rs && cargo test --workspace     # 239 tests
+cd fpv-rs && cargo test --workspace     # 242 tests
 cd fpv-rs/app && npm test               # Vitest: the front end's logic (task bar, helpers)
 cd fpv-rs/app && npm run check          # svelte-check, 0 errors / 0 warnings
 ```
@@ -177,7 +177,9 @@ brand from the file name.
 - **Delete Flight…**, in a card's ⋯ menu, removes a flight after a confirmation. A whole
   DVR recording stays (only the flight goes); a file holding nothing but that flight — a
   reduced piece, an action-cam take — goes to the trash.
-- **Titles and session names edit in place.**
+- **Titles edit in place.** A session's name, flying day, place, notes and tags are in
+  **Edit Session…**, in its menu (or **Rename** there for the name alone). Session tags are
+  carried by all its flights, and All flights filters on them like on a flight's own tags.
 - **Removing a session** (its menu) removes its flights from the library and asks
   whether to keep its recordings in the import folder or move them to the trash.
 - **Tags** — "freestyle", "gates" — label a whole flight, added in the player; the
