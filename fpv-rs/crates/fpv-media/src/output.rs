@@ -27,10 +27,18 @@ pub fn run_writing(ffmpeg: &dyn FfmpegInvoking, arguments: &[String], destinatio
 /// the way the demuxer unquotes it. Paths are made absolute: the demuxer
 /// resolves a relative one against the list's own folder, not the working
 /// directory, so `out/flight.avi` would send it looking in `out/.../out/...`.
+/// A path holding a line break is refused: the demuxer reads a line at a
+/// time, quotes or not, so the rest of the name would be read as directives.
 pub fn write_concat_list(pieces: &[PathBuf], list: &Path) -> std::io::Result<()> {
     let lines = pieces.iter()
-        .map(|piece| Ok(format!("file '{}'",
-                                std::path::absolute(piece)?.to_string_lossy().replace('\'', r"'\''"))))
+        .map(|piece| {
+            let path = std::path::absolute(piece)?.to_string_lossy().into_owned();
+            if path.contains(['\n', '\r']) {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput,
+                                               format!("a line break in a file name: {path:?}")));
+            }
+            Ok(format!("file '{}'", path.replace('\'', r"'\''")))
+        })
         .collect::<std::io::Result<Vec<String>>>()?;
     std::fs::write(list, lines.join("\n"))
 }
@@ -99,6 +107,17 @@ mod tests {
                             PathBuf::from("/lib/L'été/part001.avi")], &list).unwrap();
         assert_eq!(std::fs::read_to_string(list).unwrap(),
                    "file '/lib/Letz Kwad/part000.avi'\nfile '/lib/L'\\''été/part001.avi'");
+    }
+
+    #[test]
+    fn refuses_a_file_name_whose_line_break_would_add_a_directive() {
+        let directory = tempfile::tempdir().unwrap();
+        let list = directory.path().join("parts.txt");
+        let planted = PathBuf::from("/card/x\nfile '/home/pilot/.ssh/id_ed25519'\ny.avi");
+        let error = write_concat_list(&[PathBuf::from("/lib/part000.avi"), planted], &list).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!list.exists(), "nothing written");
+        assert!(write_concat_list(&[PathBuf::from("/card/a\rb.avi")], &list).is_err());
     }
 
     #[test]
