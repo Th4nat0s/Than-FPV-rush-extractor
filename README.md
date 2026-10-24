@@ -12,6 +12,13 @@ in it is tied to one desktop. `CLAUDE.md` is the project's full record —
 decisions, measurements, and the ideas that were tried and rejected; this README
 is the short version.
 
+![A session's flights: each cut from the goggles' DVR, reduced to its flights, with its format](docs/screenshots/flights.png)
+
+| Sessions | Player | Figures |
+|---|---|---|
+| ![The sessions in the sidebar, what recorded them, and one session's flights with their tags](docs/screenshots/session.png) | ![The player: a flight's tags, and its figures that seek the video](docs/screenshots/player.png) | ![Every figure of a session as a card, filtered in the sidebar](docs/screenshots/figures.png) |
+| What recorded each session, its flights, their tags and figures. | Tag the flight, mark figures (split-S, power loop…) that seek the video. | Every marked moment of the library, filtered by name, session or like. |
+
 ---
 
 ## Building
