@@ -1,7 +1,7 @@
 // What a session's menu and its pane both do: segment it, write its labels.
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { api, bytes, message, type DownloadSummary, type SessionView } from "../api";
+import { api, bytes, message, type DownloadSummary, type FreeUpSummary, type SessionView } from "../api";
 import { track } from "./tasks.svelte";
 import { notify } from "./notices.svelte";
 import { confirmResegment } from "./confirm.svelte";
@@ -60,6 +60,19 @@ export async function download(what: string, key: string, run: (task: string) =>
     for (const [file, why] of s.failed) notify(`Cannot download ${file}: ${why}`);
   } catch (e) {
     notify(`Cannot download ${what}: ${message(e)}`);
+  }
+}
+
+/** Makes recordings in a cloud drive's folder Online Only again, as a task;
+ * what the drive kept on this disk is notified. */
+export async function freeUpSpace(what: string, key: string, run: (task: string) => Promise<FreeUpSummary>) {
+  try {
+    const s = await track(`Free up ${what}`, run, {
+      key, summary: (s) => `${s.freed} made Online Only, ${bytes(s.bytes)} freed${s.failed.length ? `, ${s.failed.length} kept` : ""}`,
+    });
+    for (const [file, why] of s.failed) notify(`Cannot free ${file}: ${why}`);
+  } catch (e) {
+    notify(`Cannot free up ${what}: ${message(e)}`);
   }
 }
 

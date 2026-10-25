@@ -15,7 +15,7 @@
   import { fit, type Anchor } from "./fit";
   import { runningTask } from "./tasks.svelte";
   import { notify } from "./notices.svelte";
-  import { download, exportLabels, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
+  import { download, exportLabels, freeUpSpace, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
 
   let { sessions, cards, root, ffmpegOk, onimportcard, onimportfolder,
         onsettings, onchange }: {
@@ -288,6 +288,12 @@
               title="Bring its Online Only recordings back onto this computer"
               onclick={() => act((s) => download(`“${s.name}”`, `download:${s.id}`, (task) => api.downloadSession(task, s.id)))}>
         Download from the Cloud</button>
+    {/if}
+    {#if session.files.some((file) => file.freeable)}
+      <button class="plain" role="menuitem" disabled={!!runningTask(`free:${session.id}`)}
+              title="Make its recordings Online Only: they stay in the cloud drive and leave this disk"
+              onclick={() => act((s) => freeUpSpace(`“${s.name}”`, `free:${s.id}`, (task) => api.freeUpSession(task, s.id)))}>
+        Free Up Space</button>
     {/if}
     <button class="plain" role="menuitem" onclick={() => act((s) => (editingSession = s))}>Edit Session…</button>
     <button class="plain" role="menuitem" onclick={() => act(startRename)}>Rename</button>

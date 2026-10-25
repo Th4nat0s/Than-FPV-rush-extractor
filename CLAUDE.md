@@ -972,9 +972,19 @@ frame-exact boundary editor. Layout:
   `download_flight`), brings them back: the recording is read through to its end — the
   placeholder's first read is what makes the File Provider download it, so nothing of
   Proton's is called — as a task counting bytes; one still in the cloud afterwards is
-  notified, not trusted. **Freeing the space again** (Online Only) has no documented call
-  from another app: `fileproviderctl`'s help on the pilot's Mac (first 30 lines) shows no
-  `evict`; until one is found, the Finder's *Online Only (Free Up Space)* does it.
+  notified, not trusted. **Free Up Space**, in the same menus (`free_up_session`,
+  `free_up_flight`), makes them Online Only again — **an attempt, the pilot's choice
+  (2026-10-25), not a documented path**: eviction belongs to the provider's own extension
+  (`evictItem`), `fileproviderctl` has no `evict` on the pilot's Mac (grep of its help:
+  nothing), so `fpv_media::free_up_space` calls Foundation's
+  `evictUbiquitousItemAtURL:error:` (`objc2-foundation`, macOS only), written for iCloud. It
+  is offered only for files on this disk under `~/Library/CloudStorage/` (`on_cloud_drive`,
+  `FileView.freeable`), and trusted only if the file reads `dataless` afterwards; a refusal
+  or a file kept here is notified with its reason, and nothing is ever deleted any other way.
+  Checked here: the logic against stand-in drives (freeing, refusing, saying yes and keeping),
+  `cargo check --target aarch64-apple-darwin`, and the menus in a build simulating the drive.
+  **Not run on a real Mac yet** — if Proton refuses, the Finder's *Online Only (Free Up
+  Space)* remains.
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
   progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,

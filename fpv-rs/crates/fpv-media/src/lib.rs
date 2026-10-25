@@ -9,7 +9,7 @@ mod probe;
 mod runner;
 mod thumbnail;
 
-pub use cloud::only_in_cloud;
+pub use cloud::{free_up_space, on_cloud_drive, only_in_cloud};
 pub use frame_reader::FrameReader;
 pub use output::{Workspace, run_writing, seconds_argument, write_concat_list};
 pub use probe::MediaProbe;

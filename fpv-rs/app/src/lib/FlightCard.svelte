@@ -2,7 +2,7 @@
   import { api, clock, day, flightName, media, message, type FlightView, type SessionView } from "../api";
   import { batch } from "./tasks.svelte";
   import { notify } from "./notices.svelte";
-  import { download } from "./sessions";
+  import { download, freeUpSpace } from "./sessions";
   import { STRIP } from "./strips";
   import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
@@ -173,6 +173,12 @@
                     onclick={() => act(() => download(flightName(flight), `download:${flight.id}`,
                                                       (task) => api.downloadFlight(task, flight.id)))}>
               Download from the Cloud</button>
+          {/if}
+          {#if flight.freeable}
+            <button class="plain" title="Make its recordings Online Only: they stay in the cloud drive and leave this disk"
+                    onclick={() => act(() => freeUpSpace(flightName(flight), `free:${flight.id}`,
+                                                         (task) => api.freeUpFlight(task, flight.id)))}>
+              Free Up Space</button>
           {/if}
           <hr />
           <button class="plain danger" onclick={() => act(ondelete)}>Delete Flight…</button>

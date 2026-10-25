@@ -72,3 +72,21 @@ describe("download", () => {
     expect(notices.notices[0].text).toBe("Cannot download Flight 3: not in the library: flight f");
   });
 });
+
+describe("freeUpSpace", () => {
+  it("runs as a task and notifies each recording the drive kept on this disk", async () => {
+    const notices = await import("./notices.svelte");
+    const tasks = await import("./tasks.svelte");
+    await sessions.freeUpSpace("Flight 3", "free:f", () =>
+      Promise.resolve({ freed: 2, bytes: 3_000_000, failed: [["PICT0033.AVI", "not uploaded yet"]] }));
+    expect(tasks.tasks[0]).toMatchObject({ title: "Free up Flight 3", state: "done" });
+    expect(tasks.tasks[0].line).toContain("2 made Online Only");
+    expect(notices.notices.map((n) => n.text)).toEqual(["Cannot free PICT0033.AVI: not uploaded yet"]);
+  });
+
+  it("notifies a request the system refused outright", async () => {
+    const notices = await import("./notices.svelte");
+    await sessions.freeUpSpace("“Letz”", "free:letz", () => Promise.reject("freeing a cloud file's space needs macOS"));
+    expect(notices.notices[0].text).toBe("Cannot free up “Letz”: freeing a cloud file's space needs macOS");
+  });
+});

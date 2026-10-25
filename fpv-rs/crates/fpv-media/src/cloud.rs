@@ -34,6 +34,36 @@ pub fn only_in_cloud(path: &Path) -> bool {
     }
 }
 
+/// Whether `path` lies in a cloud drive's folder: on macOS every File
+/// Provider — Proton Drive, Dropbox, OneDrive, Google Drive — keeps its files
+/// under `~/Library/CloudStorage/` (the pilot's:
+/// `…/Library/CloudStorage/ProtonDrive-…-folder/rushes`).
+pub fn on_cloud_drive(path: &Path) -> bool {
+    let parts: Vec<_> = path.components().map(|c| c.as_os_str()).collect();
+    parts.windows(2).any(|pair| pair[0] == "Library" && pair[1] == "CloudStorage")
+}
+
+/// Asks the system to make `path` Online Only again: its content leaves this
+/// disk, its placeholder stays, and the next read downloads it. Foundation's
+/// `evictUbiquitousItemAtURL:error:` — written for iCloud, and tried here on
+/// Proton Drive's File Provider because nothing else is offered to an app
+/// that is not the provider (`fileproviderctl` lost its `evict`). The drive
+/// may refuse, for a file not uploaded yet among others: the error says so.
+pub fn free_up_space(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::{NSFileManager, NSString, NSURL};
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+        NSFileManager::defaultManager().evictUbiquitousItemAtURL_error(&url)
+            .map_err(|error| std::io::Error::other(error.localizedDescription().to_string()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "freeing a cloud file's space needs macOS"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,6 +76,14 @@ mod tests {
         // `compressed` alone, `-`: downloaded.
         assert!(!dataless(0x20));
         assert!(!dataless(0));
+    }
+
+    #[test]
+    fn knows_a_cloud_drives_folder_by_where_macos_keeps_them() {
+        assert!(on_cloud_drive(Path::new(
+            "/Users/defane/Library/CloudStorage/ProtonDrive-pilot@example.org-folder/rushes/PICT0032.AVI")));
+        assert!(!on_cloud_drive(Path::new("/Users/defane/Videos/FPV Rush/PICT0032.AVI")));
+        assert!(!on_cloud_drive(Path::new("/home/pilot/CloudStorage/PICT0032.AVI")));
     }
 
     #[test]

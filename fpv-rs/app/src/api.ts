@@ -24,6 +24,8 @@ export interface FileView {
   elsewhere: string | null;
   /** Only in the cloud drive (Online Only): reading it downloads it first. */
   cloud: boolean;
+  /** On this disk in a cloud drive's folder: its space can be freed. */
+  freeable: boolean;
 }
 
 export interface ClipView {
@@ -57,6 +59,8 @@ export interface FlightView {
   reduced: boolean;
   /** A recording of it is only in the cloud: playing it downloads it first. */
   cloud: boolean;
+  /** A recording of it could be made Online Only. */
+  freeable: boolean;
   cacheKey: string;
   /** Free tags on the whole flight: "freestyle", "gates". */
   labels: string[];
@@ -151,6 +155,13 @@ export interface DownloadSummary {
   downloaded: number;
   bytes: number;
   /** [recording, reason]: still only in the cloud. */
+  failed: [string, string][];
+}
+
+export interface FreeUpSummary {
+  freed: number;
+  bytes: number;
+  /** [recording, reason]: still on this disk. */
   failed: [string, string][];
 }
 
@@ -257,6 +268,8 @@ export const api = {
   downloadSession: (task: string, session: string) =>
     invoke<DownloadSummary>("download_session", { task, session }),
   downloadFlight: (task: string, flight: string) => invoke<DownloadSummary>("download_flight", { task, flight }),
+  freeUpSession: (task: string, session: string) => invoke<FreeUpSummary>("free_up_session", { task, session }),
+  freeUpFlight: (task: string, flight: string) => invoke<FreeUpSummary>("free_up_flight", { task, flight }),
   deleteSession: (id: string, keepRecordings: boolean) =>
     invoke<void>("delete_session", { id, keepRecordings }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),
@@ -298,7 +311,8 @@ export const api = {
 };
 
 export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress"
-                                  | "reduce-progress" | "move-progress" | "download-progress",
+                                  | "reduce-progress" | "move-progress" | "download-progress"
+                                  | "free-progress",
                            handler: (progress: Progress) => void): Promise<UnlistenFn> {
   return listen<Progress>(event, (message) => handler(message.payload));
 }

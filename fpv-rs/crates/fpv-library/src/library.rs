@@ -165,6 +165,16 @@ pub struct RelocationSummary {
     pub failed: Vec<(String, String)>,
 }
 
+/// What freeing space on a cloud drive did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeUpSummary {
+    pub freed: usize,
+    pub bytes: u64,
+    /// [recording, reason]: still on this disk.
+    pub failed: Vec<(String, String)>,
+}
+
 /// How much of a recording a download reads at a time: progress moves on
 /// after each.
 const DOWNLOAD_CHUNK: usize = 8 << 20;
@@ -288,9 +298,28 @@ pub struct Library {
     pub store: LibraryStore,
     config: Config,
     tools: Option<PathBuf>,
-    /// Whether a recording is only in the cloud (`fpv_media::only_in_cloud`);
-    /// the tests stand in their own, there being no File Provider on Linux.
-    in_cloud: fn(&Path) -> bool,
+    /// The cloud drive the import folder may sit in; the tests stand in their
+    /// own, there being no File Provider on Linux.
+    cloud: CloudDrive,
+}
+
+/// What the library asks of a cloud drive, as plain functions so the tests
+/// can stand in for one.
+#[derive(Clone, Copy)]
+struct CloudDrive {
+    /// Online Only: reading it downloads it (`fpv_media::only_in_cloud`).
+    only_in_cloud: fn(&Path) -> bool,
+    /// In a cloud drive's folder at all (`fpv_media::on_cloud_drive`).
+    on_drive: fn(&Path) -> bool,
+    /// Makes it Online Only again (`fpv_media::free_up_space`).
+    free_up_space: fn(&Path) -> std::io::Result<()>,
+}
+
+impl Default for CloudDrive {
+    fn default() -> Self {
+        Self { only_in_cloud: fpv_media::only_in_cloud, on_drive: fpv_media::on_cloud_drive,
+               free_up_space: fpv_media::free_up_space }
+    }
 }
 
 impl Library {
@@ -339,7 +368,7 @@ impl Library {
         let library = Self {
             root: config.media_root.clone(), config_directory: config_directory.to_path_buf(),
             cache_directory: cache_directory.to_path_buf(), store, config, tools,
-            in_cloud: fpv_media::only_in_cloud,
+            cloud: CloudDrive::default(),
         };
         library.move_posters_into_cache()?;
         library.sweep_orphaned_thumbnails()?;
@@ -460,6 +489,8 @@ impl Library {
                 let files = self.store.source_files(session.id)?;
                 let cloud: HashSet<Uuid> = files.iter()
                     .filter(|f| self.only_in_cloud(f)).map(|f| f.id).collect();
+                let freeable: HashSet<Uuid> = files.iter()
+                    .filter(|f| self.freeable(f)).map(|f| f.id).collect();
                 Ok(views::session_view(session, files, self.store.flights(session.id)?,
                     views::SessionContext {
                         root: &self.root,
@@ -468,6 +499,7 @@ impl Library {
                         tags: &self.store.tags_in_session(session.id)?,
                         reduced: &self.store.reduced_files(session.id)?,
                         cloud: &cloud,
+                        freeable: &freeable,
                     }))
             })
             .collect()
@@ -477,7 +509,12 @@ impl Library {
     /// footage — posters, hover strips, the camera's name — leaves it there
     /// rather than download gigabytes nobody asked for.
     fn only_in_cloud(&self, file: &SourceFile) -> bool {
-        (self.in_cloud)(Path::new(&file.imported_path))
+        (self.cloud.only_in_cloud)(Path::new(&file.imported_path))
+    }
+
+    /// On this disk, in a cloud drive's folder: its space can be freed.
+    fn freeable(&self, file: &SourceFile) -> bool {
+        (self.cloud.on_drive)(Path::new(&file.imported_path)) && !self.only_in_cloud(file)
     }
 
     fn in_cloud_error(file: &SourceFile) -> LibraryError {
@@ -1211,6 +1248,11 @@ impl Library {
     /// computer (`download`).
     pub fn download_flight(&self, flight: &str, progress: impl FnMut(usize, usize, String))
         -> Result<DownloadSummary> {
+        self.download(self.flight_files(flight)?, DOWNLOAD_CHUNK, progress)
+    }
+
+    /// A flight's recordings, each once, in its order.
+    fn flight_files(&self, flight: &str) -> Result<Vec<SourceFile>> {
         let (_, clips, _) = self.flight(flight)?;
         let mut files: Vec<SourceFile> = vec![];
         for clip in &clips {
@@ -1220,7 +1262,46 @@ impl Library {
                 files.push(file);
             }
         }
-        self.download(files, DOWNLOAD_CHUNK, progress)
+        Ok(files)
+    }
+
+    /// Makes a session's recordings Online Only again (`free_up_space`).
+    pub fn free_up_session(&self, session: &str, progress: impl FnMut(usize, usize, String))
+        -> Result<FreeUpSummary> {
+        let session = self.session(session)?;
+        Ok(self.free_up_space(self.store.source_files(session.id)?, progress))
+    }
+
+    /// Makes a flight's recordings Online Only again (`free_up_space`).
+    pub fn free_up_flight(&self, flight: &str, progress: impl FnMut(usize, usize, String))
+        -> Result<FreeUpSummary> {
+        Ok(self.free_up_space(self.flight_files(flight)?, progress))
+    }
+
+    /// Asks the cloud drive to take each of `files` that is on this disk back
+    /// to Online Only. Only what sits in a cloud drive's folder is asked; a
+    /// recording the drive keeps here anyway — refused, or not uploaded yet —
+    /// is reported with its reason, and is never deleted by other means.
+    fn free_up_space(&self, files: Vec<SourceFile>, mut progress: impl FnMut(usize, usize, String))
+        -> FreeUpSummary {
+        let here: Vec<SourceFile> = files.into_iter().filter(|f| self.freeable(f)).collect();
+        let mut summary = FreeUpSummary::default();
+        for (index, file) in here.iter().enumerate() {
+            let name = file_name(&file.imported_path);
+            progress(index, here.len(), format!("Freeing {name} ({}/{})…", index + 1, here.len()));
+            let path = Path::new(&file.imported_path);
+            let size = std::fs::metadata(path).map_or(0, |m| m.len());
+            match (self.cloud.free_up_space)(path) {
+                Ok(()) if self.only_in_cloud(file) => {
+                    summary.freed += 1;
+                    summary.bytes += size;
+                }
+                Ok(()) => summary.failed.push((name, "the cloud drive kept it on this disk".into())),
+                Err(error) => summary.failed.push((name, error.to_string())),
+            }
+        }
+        progress(here.len(), here.len(), format!("{} recording(s) made Online Only", summary.freed));
+        summary
     }
 
     /// Reads every recording of `files` that is only in the cloud through to

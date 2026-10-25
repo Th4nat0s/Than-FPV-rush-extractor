@@ -56,6 +56,9 @@ pub struct FileView {
     /// Only in the cloud drive the import folder sits in (Proton Drive made
     /// it Online Only): reading it would download it first.
     pub cloud: bool,
+    /// On this disk in a cloud drive's folder: "Free Up Space" can make it
+    /// Online Only.
+    pub freeable: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,6 +82,8 @@ pub struct FlightView {
     pub reduced: bool,
     /// A recording of it is only in the cloud: playing it downloads it first.
     pub cloud: bool,
+    /// A recording of it could be made Online Only.
+    pub freeable: bool,
     /// Changes whenever a boundary does: what cached strips are keyed on.
     pub cache_key: String,
     /// The pilot's free labels on the whole flight: "freestyle", "gates".
@@ -135,6 +140,7 @@ pub(crate) fn file_view(file: &SourceFile) -> FileView {
         reduced: false,
         elsewhere: None,
         cloud: false,
+        freeable: false,
     }
 }
 
@@ -190,6 +196,7 @@ pub(crate) fn flight_view(flight: &Flight, clips: &[Clip], files: &HashMap<Uuid,
     FlightView {
         reduced: false,
         cloud: false,
+        freeable: false,
         labels,
         figures,
         id: uuid_string(flight.id),
@@ -239,11 +246,13 @@ pub(crate) struct SessionContext<'a> {
     pub reduced: &'a HashSet<Uuid>,
     /// Recordings only in the cloud (`Library::in_cloud`).
     pub cloud: &'a HashSet<Uuid>,
+    /// Recordings whose space a cloud drive could free.
+    pub freeable: &'a HashSet<Uuid>,
 }
 
 pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>, flights: Vec<(Flight, Vec<Clip>)>,
                            context: SessionContext) -> SessionView {
-    let SessionContext { root, session_labels, flight_labels: mut labels, tags, reduced, cloud } = context;
+    let SessionContext { root, session_labels, flight_labels: mut labels, tags, reduced, cloud, freeable } = context;
     let segmentable = files.iter().any(|f| f.media.needs_segmentation() && !reduced.contains(&f.id));
     let by_id: HashMap<Uuid, SourceFile> = files.iter().map(|f| (f.id, f.clone())).collect();
     SessionView {
@@ -263,6 +272,7 @@ pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>, flights: V
                 reduced: reduced.contains(&f.id),
                 elsewhere: outside(root, &f.imported_path),
                 cloud: cloud.contains(&f.id),
+                freeable: freeable.contains(&f.id),
                 ..file_view(f)
             })
             .collect(),
@@ -270,6 +280,7 @@ pub(crate) fn session_view(session: &Session, files: Vec<SourceFile>, flights: V
             .map(|(flight, clips)| FlightView {
                 reduced: clips.iter().any(|c| reduced.contains(&c.source_file_id)),
                 cloud: clips.iter().any(|c| cloud.contains(&c.source_file_id)),
+                freeable: clips.iter().any(|c| freeable.contains(&c.source_file_id)),
                 ..flight_view(flight, clips, &by_id, labels.remove(&flight.id).unwrap_or_default(), tags)
             })
             .collect(),

@@ -1268,6 +1268,7 @@ dependencies = [
  "chrono",
  "fpv-core",
  "log",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tempfile",

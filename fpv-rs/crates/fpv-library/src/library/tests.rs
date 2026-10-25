@@ -714,7 +714,7 @@ fn send_to_cloud(library: &Library, session: &SessionView, name: &str) {
 #[test]
 fn shows_what_is_only_in_the_cloud_and_never_downloads_it_for_a_picture() {
     let (mut fixture, session) = imported();
-    fixture.library.in_cloud = cloud_marker;
+    fixture.library.cloud.only_in_cloud = cloud_marker;
     send_to_cloud(&fixture.library, &session, "GH010043.MP4");
     let library = &fixture.library;
 
@@ -762,7 +762,7 @@ fn downloads_what_is_only_in_the_cloud_by_reading_it_through() {
         static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         cloud_marker(path) && ASKED.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
     }
-    fixture.library.in_cloud = until_read;
+    fixture.library.cloud.only_in_cloud = until_read;
     send_to_cloud(&fixture.library, &session, "GH010043.MP4");
     let take = fixture.library.recording_path(&session.files.iter().find(|f| f.name == "GH010043.MP4")
                                               .unwrap().id).unwrap();
@@ -777,7 +777,7 @@ fn downloads_what_is_only_in_the_cloud_by_reading_it_through() {
     assert_eq!(steps.last().map(|s| (s.0, s.1)), Some((size, size)));
 
     // Through to the end, a chunk at a time, however large the recording.
-    fixture.library.in_cloud = cloud_marker;
+    fixture.library.cloud.only_in_cloud = cloud_marker;
     let file = fixture.library.store.source_file(parse(&session.files.iter()
         .find(|f| f.name == "GH010043.MP4").unwrap().id).unwrap()).unwrap().unwrap();
     let mut reads = 0;
@@ -789,11 +789,51 @@ fn downloads_what_is_only_in_the_cloud_by_reading_it_through() {
 #[test]
 fn says_when_the_cloud_drive_did_not_bring_a_recording_down() {
     let (mut fixture, session) = imported();
-    fixture.library.in_cloud = cloud_marker;
+    fixture.library.cloud.only_in_cloud = cloud_marker;
     send_to_cloud(&fixture.library, &session, "GH020042.MP4");
     let summary = fixture.library.download_session(&session.id, |_, _, _| {}).unwrap();
     assert_eq!(summary.downloaded, 0);
     assert_eq!(summary.failed, [("GH020042.MP4".to_owned(), "the cloud drive did not bring it down".to_owned())]);
+}
+
+#[test]
+fn frees_a_cloud_drives_space_and_says_what_it_kept() {
+    let (mut fixture, session) = imported();
+    fixture.library.cloud.only_in_cloud = cloud_marker;
+    // Outside a cloud drive's folder there is nothing to free.
+    let shown = fixture.library.snapshot().unwrap().remove(0);
+    assert!(shown.files.iter().all(|f| !f.freeable) && shown.flights.iter().all(|f| !f.freeable));
+    assert_eq!(fixture.library.free_up_session(&session.id, |_, _, _| {}).unwrap().freed, 0);
+
+    // Inside one, with a drive that frees as Online Only does.
+    fixture.library.cloud.on_drive = |_| true;
+    fixture.library.cloud.free_up_space = |path| std::fs::write(path.with_extension("cloud"), b"");
+    let shown = fixture.library.snapshot().unwrap().remove(0);
+    assert!(shown.files.iter().all(|f| f.freeable) && shown.flights.iter().all(|f| f.freeable));
+    let take = fixture.library.recording_path(&shown.files.iter().find(|f| f.name == "GH010043.MP4")
+                                              .unwrap().id).unwrap();
+    let size = std::fs::metadata(&take).unwrap().len();
+    let mut lines = vec![];
+    let summary = fixture.library.free_up_flight(&shown.flights[1].id, |_, _, line| lines.push(line)).unwrap();
+    assert_eq!((summary.freed, summary.bytes, summary.failed.len()), (1, size, 0));
+    assert_eq!(lines.first().map(String::as_str), Some("Freeing GH010043.MP4 (1/1)…"));
+    let shown = fixture.library.snapshot().unwrap().remove(0);
+    assert_eq!(shown.flights.iter().map(|f| (f.cloud, f.freeable)).collect::<Vec<_>>(),
+               [(false, true), (true, false)]);
+
+    // A drive that refuses says why; one that says yes and keeps the file is
+    // not believed. The take already in the cloud is not asked again.
+    fixture.library.cloud.free_up_space = |_| Err(std::io::Error::other("not uploaded yet"));
+    let summary = fixture.library.free_up_session(&session.id, |_, _, _| {}).unwrap();
+    assert_eq!(summary.freed, 0);
+    assert_eq!(summary.failed, [("GH010042.MP4".to_owned(), "not uploaded yet".to_owned()),
+                                ("GH020042.MP4".to_owned(), "not uploaded yet".to_owned())]);
+    fixture.library.cloud.free_up_space = |_| Ok(());
+    let summary = fixture.library.free_up_session(&session.id, |_, _, _| {}).unwrap();
+    assert_eq!(summary.freed, 0);
+    assert_eq!(summary.failed.iter().map(|(_, why)| why.as_str()).collect::<Vec<_>>(),
+               ["the cloud drive kept it on this disk"; 2]);
+    assert!(take.is_file() && fixture.library.recording_path(&shown.files[0].id).unwrap().is_file());
 }
 
 #[test]

@@ -8,7 +8,7 @@ const tag = (label: string, start: number, end = start): TagView =>
 
 const flight = (id: string, order: number, extra: Partial<FlightView> = {}): FlightView => ({
   id, order, title: null, liked: false, duration: 60, clips: [], recordings: 1, actionCam: false,
-  source: "DVR", format: "480p · MJPEG · 29.89 fps", cacheKey: id, labels: [], figures: [], reduced: false, cloud: false, ...extra,
+  source: "DVR", format: "480p · MJPEG · 29.89 fps", cacheKey: id, labels: [], figures: [], reduced: false, cloud: false, freeable: false, ...extra,
 });
 
 const session = (id: string, date: string | null, flights: FlightView[]): SessionView => ({
