@@ -51,15 +51,18 @@ export async function reduce(session: SessionView): Promise<string> {
 
 /** Brings recordings the cloud drive holds online only back onto this
  * computer, as a task (`what`: a session's or a flight's name); what could not
- * be is notified. */
-export async function download(what: string, key: string, run: (task: string) => Promise<DownloadSummary>) {
+ * be is notified. Resolves to what was done, or null when it could not start. */
+export async function download(what: string, key: string, run: (task: string) => Promise<DownloadSummary>)
+  : Promise<DownloadSummary | null> {
   try {
     const s = await track(`Download ${what}`, run, {
       key, summary: (s) => `${s.downloaded} downloaded, ${bytes(s.bytes)}${s.failed.length ? `, ${s.failed.length} failed` : ""}`,
     });
     for (const [file, why] of s.failed) notify(`Cannot download ${file}: ${why}`);
+    return s;
   } catch (e) {
     notify(`Cannot download ${what}: ${message(e)}`);
+    return null;
   }
 }
 

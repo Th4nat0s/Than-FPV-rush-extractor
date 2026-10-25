@@ -986,6 +986,16 @@ frame-exact boundary editor. Layout:
   `cargo check --target aarch64-apple-darwin`, and the menus in a build simulating the drive.
   **Verified by the pilot on their Mac, on Proton Drive (2026-10-25): it works** — the
   iCloud call frees a third-party File Provider's file too.
+  **Playing a flight still in the cloud waits for it first** (2026-10-25, the pilot's
+  request): the card's click (or a figure's) opens `CloudWait` instead of the player — the
+  flight's download as a task, a bar and the time left — and the player opens once the
+  recordings are here; *Continue in Background* leaves the download in the task bar and the
+  flight unplayed, a failure is notified. The estimate (`lib/cloudwait.ts`, tested) goes by
+  the bytes read once they move; but a File Provider may hold a file's first read until the
+  whole of it is down, so a one-file flight can read nothing then everything — until then
+  the last download's speed (kept in `localStorage`) stands in, and the bar never shows done
+  before it is. Seen in the window with a build simulating a slow drive (the `.cloud`
+  marker, 300 ms a chunk); how Proton's own downloads report progress is for the Mac to show.
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
   progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,

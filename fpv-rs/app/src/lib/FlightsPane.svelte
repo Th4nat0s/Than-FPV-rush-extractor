@@ -6,6 +6,7 @@
   import BulkExportDialog from "./BulkExportDialog.svelte";
   import Icon from "./Icon.svelte";
   import PlayerDialog from "./PlayerDialog.svelte";
+  import CloudWait from "./CloudWait.svelte";
   import EditorDialog from "./EditorDialog.svelte";
   import Modal from "./Modal.svelte";
   import Pager from "./Pager.svelte";
@@ -43,6 +44,8 @@
   let exporting = $state(false);
   let notice = $state<string | null>(null);
   let playing = $state<FlightView | null>(null);
+  /** A flight only in the cloud, coming down before it plays. */
+  let fetching = $state<FlightView | null>(null);
   let editing = $state<Placed | null>(null);
   let deleting = $state<FlightView | null>(null);
   let conflict = $state<{ flight: FlightView; destination: string; reason: string } | null>(null);
@@ -140,7 +143,7 @@
           <FlightCard flight={entry.flight} session={showSession ? entry.session : null} sessionLabels={entry.session.labels}
                       {exporting} {ffmpegOk} {onchange} {selecting}
                       selected={picked.includes(entry.flight.id)} ontoggle={() => toggle(entry.flight.id)}
-                      onplay={() => (playing = entry.flight)} onedit={() => (editing = entry)}
+                      onplay={() => (entry.flight.cloud ? (fetching = entry.flight) : (playing = entry.flight))} onedit={() => (editing = entry)}
                       onexport={() => exportFlight(entry)} ondelete={() => (deleting = entry.flight)} />
         {/each}
       </div>
@@ -155,6 +158,10 @@
 
 {#if bulk}
   <BulkExportDialog flights={bulk} onclose={() => { bulk = null; stopSelecting(); }} />
+{/if}
+{#if fetching}
+  {@const flight = fetching}
+  <CloudWait {flight} onready={() => { playing = flight; fetching = null; }} onclose={() => (fetching = null)} />
 {/if}
 {#if playing}
   <PlayerDialog flight={playing} onclose={() => { playing = null; onchange(); }} />

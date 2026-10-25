@@ -3,6 +3,7 @@
   import FigureCard from "./FigureCard.svelte";
   import Pager from "./Pager.svelte";
   import PlayerDialog from "./PlayerDialog.svelte";
+  import CloudWait from "./CloudWait.svelte";
   import { browse, setPageSize } from "./browse.svelte";
   import { paginate, sortFigures, type Sort } from "./library";
 
@@ -15,6 +16,8 @@
   } = $props();
 
   let playing = $state<Figure | null>(null);
+  /** A figure whose flight is only in the cloud, coming down before it plays. */
+  let fetching = $state<Figure | null>(null);
   let content = $state<HTMLElement>();
   let shown = $derived(paginate(sortFigures(items, browse.sort.figures), browse.page, browse.pageSize));
 
@@ -47,7 +50,7 @@
     {:else}
       <div class="grid">
         {#each shown.items as figure (figure.tag.id)}
-          <FigureCard {figure} {ffmpegOk} onplay={() => (playing = figure)} />
+          <FigureCard {figure} {ffmpegOk} onplay={() => (figure.flight.cloud ? (fetching = figure) : (playing = figure))} />
         {/each}
       </div>
     {/if}
@@ -57,6 +60,11 @@
   {/if}
 </section>
 
+{#if fetching}
+  {@const figure = fetching}
+  <CloudWait flight={figure.flight} onready={() => { playing = figure; fetching = null; }}
+             onclose={() => (fetching = null)} />
+{/if}
 {#if playing}
   <PlayerDialog flight={playing.flight} at={playing.tag.start}
                 onclose={() => { playing = null; onchange(); }} />
