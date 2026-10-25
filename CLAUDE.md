@@ -953,6 +953,21 @@ frame-exact boundary editor. Layout:
   (`free_name`), and removes the folders it emptied. Posters, strips and proxies are keyed by
   IDs in the cache and need nothing. Tested on a GoPro card after a change of import folder;
   the cross-disk copy branch is not exercised by a test (one disk here).
+  **The import folder may sit in a cloud drive** (2026-10-25: the pilot's is in Proton Drive,
+  on the Mac). Proton Drive goes through Apple's File Provider: a file made *Online Only*
+  stays a placeholder — name, size, dates — and **the first read downloads it whole**. The
+  placeholder carries `UF_DATALESS` (0x40000000) in its BSD flags — `ls -lO` prints
+  `compressed,dataless` on the pilot's Online Only file and `-` on a downloaded one — so
+  `fpv_media::only_in_cloud` costs one `stat` and downloads nothing; `false` off macOS
+  (Proton Drive has no Linux sync client yet). Cards say *In the cloud*, the session list
+  *in the cloud* / *partly in the cloud* (`FileView.cloud`, `FlightView.cloud`, `inCloud`).
+  **What only looks at footage never downloads it:** the hover-strip job skips such flights,
+  a strip frame or a lost poster is refused (`LibraryError::InCloud`, which the cards ignore),
+  and `identify_cameras` leaves the take for a later run — otherwise opening the app would
+  have pulled the whole library back down. Playing, exporting, segmenting and reducing are
+  asked for, and read (so download) as before. `Library.in_cloud` is a plain `fn`, swapped in
+  the tests for a `.cloud` marker beside the recording. The badges were seen in the window
+  with a build reading that marker; the flag itself only on the pilot's Mac.
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
   progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,

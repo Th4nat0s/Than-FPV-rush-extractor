@@ -699,6 +699,57 @@ fn makes_every_hover_strip_ahead_of_the_pointer_once() {
     assert!(missing.iter().all(|frame| frame.flight == session.flights[1].id));
 }
 
+/// Stands in for Proton Drive's Online Only, which Linux has no File
+/// Provider for: a `.cloud` file beside a recording says it is in the cloud.
+fn cloud_marker(path: &Path) -> bool {
+    path.with_extension("cloud").exists()
+}
+
+fn send_to_cloud(library: &Library, session: &SessionView, name: &str) {
+    let file = session.files.iter().find(|f| f.name == name).unwrap();
+    let path = library.recording_path(&file.id).unwrap();
+    std::fs::write(path.with_extension("cloud"), b"").unwrap();
+}
+
+#[test]
+fn shows_what_is_only_in_the_cloud_and_never_downloads_it_for_a_picture() {
+    let (mut fixture, session) = imported();
+    fixture.library.in_cloud = cloud_marker;
+    send_to_cloud(&fixture.library, &session, "GH010043.MP4");
+    let library = &fixture.library;
+
+    let shown = library.snapshot().unwrap().remove(0);
+    let cloud: Vec<_> = shown.files.iter().filter(|f| f.cloud).map(|f| f.name.as_str()).collect();
+    assert_eq!(cloud, ["GH010043.MP4"]);
+    assert_eq!(shown.flights.iter().map(|f| f.cloud).collect::<Vec<_>>(), [false, true]);
+
+    // The strips job makes the downloaded take's strip and leaves the other.
+    assert_eq!(library.missing_strip_frames(8, None).unwrap().len(), 8);
+    let prepared = library.prepare_strips(8, None, |_, _, _| {}).unwrap();
+    assert_eq!((prepared.made, prepared.failed.len()), (8, 0));
+    assert!(matches!(library.filmstrip_frame(&shown.flights[1].id, 0, 8),
+                     Err(LibraryError::InCloud(name)) if name == "GH010043.MP4"));
+
+    // A poster already made still shows; a lost one is not remade from the cloud.
+    let clip = &shown.flights[1].clips[0];
+    assert!(library.poster(&clip.id).is_ok());
+    std::fs::remove_file(clip.thumbnail.as_deref().unwrap()).unwrap();
+    assert!(matches!(library.poster(&clip.id), Err(LibraryError::InCloud(_))));
+
+    // The camera is read from the downloaded takes only, the other one later.
+    for file in &shown.files {
+        let mut stored = library.store.source_file(parse(&file.id).unwrap()).unwrap().unwrap();
+        stored.media.camera = None;
+        library.store.save_source_files(&[stored]).unwrap();
+    }
+    assert_eq!(library.identify_cameras().unwrap(), 2);
+    let path = library.recording_path(&shown.files.iter().find(|f| f.cloud).unwrap().id).unwrap();
+    std::fs::remove_file(path.with_extension("cloud")).unwrap();
+    assert_eq!(library.identify_cameras().unwrap(), 1);
+    assert!(!library.snapshot().unwrap()[0].flights[1].cloud);
+    assert_eq!(library.missing_strip_frames(8, None).unwrap().len(), 8, "its strip, now");
+}
+
 #[test]
 fn makes_the_session_on_screen_first() {
     let (fixture, _) = imported();

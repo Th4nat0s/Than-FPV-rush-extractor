@@ -35,6 +35,9 @@ pub enum LibraryError {
     NotFound(String),
     #[error("{0}")]
     Invalid(String),
+    /// Left in the cloud rather than downloaded for a picture.
+    #[error("{0} is only in the cloud: download it first")]
+    InCloud(String),
 }
 
 pub type Result<T> = std::result::Result<T, LibraryError>;
@@ -271,6 +274,9 @@ pub struct Library {
     pub store: LibraryStore,
     config: Config,
     tools: Option<PathBuf>,
+    /// Whether a recording is only in the cloud (`fpv_media::only_in_cloud`);
+    /// the tests stand in their own, there being no File Provider on Linux.
+    in_cloud: fn(&Path) -> bool,
 }
 
 impl Library {
@@ -319,6 +325,7 @@ impl Library {
         let library = Self {
             root: config.media_root.clone(), config_directory: config_directory.to_path_buf(),
             cache_directory: cache_directory.to_path_buf(), store, config, tools,
+            in_cloud: fpv_media::only_in_cloud,
         };
         library.move_posters_into_cache()?;
         library.sweep_orphaned_thumbnails()?;
@@ -384,7 +391,7 @@ impl Library {
         let mut named = 0;
         for file in self.store.unidentified_cameras()? {
             let path = Path::new(&file.imported_path);
-            if !path.is_file() {
+            if !path.is_file() || self.only_in_cloud(&file) {
                 continue;
             }
             let camera = match probe.probe(path) {
@@ -435,16 +442,32 @@ impl Library {
     pub fn snapshot(&self) -> Result<Vec<SessionView>> {
         let mut labels = self.store.session_labels()?;
         self.store.sessions()?.iter()
-            .map(|session| Ok(views::session_view(
-                session, self.store.source_files(session.id)?, self.store.flights(session.id)?,
-                views::SessionContext {
-                    root: &self.root,
-                    session_labels: labels.remove(&session.id).unwrap_or_default(),
-                    flight_labels: self.store.flight_labels_in_session(session.id)?,
-                    tags: &self.store.tags_in_session(session.id)?,
-                    reduced: &self.store.reduced_files(session.id)?,
-                })))
+            .map(|session| {
+                let files = self.store.source_files(session.id)?;
+                let cloud: HashSet<Uuid> = files.iter()
+                    .filter(|f| self.only_in_cloud(f)).map(|f| f.id).collect();
+                Ok(views::session_view(session, files, self.store.flights(session.id)?,
+                    views::SessionContext {
+                        root: &self.root,
+                        session_labels: labels.remove(&session.id).unwrap_or_default(),
+                        flight_labels: self.store.flight_labels_in_session(session.id)?,
+                        tags: &self.store.tags_in_session(session.id)?,
+                        reduced: &self.store.reduced_files(session.id)?,
+                        cloud: &cloud,
+                    }))
+            })
             .collect()
+    }
+
+    /// A recording the cloud drive holds online only: what merely looks at
+    /// footage — posters, hover strips, the camera's name — leaves it there
+    /// rather than download gigabytes nobody asked for.
+    fn only_in_cloud(&self, file: &SourceFile) -> bool {
+        (self.in_cloud)(Path::new(&file.imported_path))
+    }
+
+    fn in_cloud_error(file: &SourceFile) -> LibraryError {
+        LibraryError::InCloud(file_name(&file.imported_path))
     }
 
     fn session(&self, id: &str) -> Result<Session> {
@@ -1080,6 +1103,9 @@ impl Library {
         let fraction = (index as f64 + 0.5) / count.max(1) as f64;
         let position = timeline.position(fraction * timeline.duration())
             .ok_or_else(|| LibraryError::NotFound("footage in this flight".into()))?;
+        if self.only_in_cloud(position.file) {
+            return Err(Self::in_cloud_error(position.file));
+        }
         let seconds = position.file.media.frame_rate.seconds(position.source_frame);
         let ffmpeg = self.ffmpeg();
         let generator = ThumbnailGenerator::new(&ffmpeg);
@@ -1106,7 +1132,13 @@ impl Library {
         }
         let mut missing = vec![];
         for session in sessions {
+            let cloud: HashSet<Uuid> = self.store.source_files(session.id)?.iter()
+                .filter(|f| self.only_in_cloud(f)).map(|f| f.id).collect();
             for (flight, clips) in self.store.flights(session.id)? {
+                // Its strip waits until the flight is downloaded.
+                if clips.iter().any(|c| cloud.contains(&c.source_file_id)) {
+                    continue;
+                }
                 let label = format!("{} — {}", session.name,
                                     flight.title.clone().unwrap_or_else(|| format!("Flight {}", flight.order_in_session)));
                 for index in 0..count {
@@ -1498,6 +1530,9 @@ impl Library {
         }
         let file = self.store.source_file(clip.source_file_id)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording of clip {}", clip.id)))?;
+        if self.only_in_cloud(&file) {
+            return Err(Self::in_cloud_error(&file));
+        }
         let ffmpeg = self.ffmpeg();
         let path = ThumbnailGenerator::new(&ffmpeg).generate_for_clip(&clip, &file, &self.posters(), 480)?;
         self.store.update_clip(&Clip { thumbnail_path: Some(path.to_string_lossy().into_owned()), ..clip })?;

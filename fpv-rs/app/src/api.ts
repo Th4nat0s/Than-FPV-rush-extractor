@@ -22,6 +22,8 @@ export interface FileView {
   reduced: boolean;
   /** Its folder, when outside the current import folder (an earlier one). */
   elsewhere: string | null;
+  /** Only in the cloud drive (Online Only): reading it downloads it first. */
+  cloud: boolean;
 }
 
 export interface ClipView {
@@ -53,6 +55,8 @@ export interface FlightView {
   format: string;
   /** Its DVR footage was cut down to its flights. */
   reduced: boolean;
+  /** A recording of it is only in the cloud: playing it downloads it first. */
+  cloud: boolean;
   cacheKey: string;
   /** Free tags on the whole flight: "freestyle", "gates". */
   labels: string[];

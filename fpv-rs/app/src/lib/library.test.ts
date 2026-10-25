@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileView, FlightView, SessionView, TagView } from "../api";
-import { counted, elsewhere, figures, fitMenu, filterFigures, filterFlights, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
+import { counted, elsewhere, figures, fitMenu, filterFigures, filterFlights, inCloud, labelsOf, pageNumbers, pageOf, paginate, placed, resegmentLosses, sessionSources,
          sortFigures, sortFlights } from "./library";
 
 const tag = (label: string, start: number, end = start): TagView =>
@@ -8,7 +8,7 @@ const tag = (label: string, start: number, end = start): TagView =>
 
 const flight = (id: string, order: number, extra: Partial<FlightView> = {}): FlightView => ({
   id, order, title: null, liked: false, duration: 60, clips: [], recordings: 1, actionCam: false,
-  source: "DVR", format: "480p · MJPEG · 29.89 fps", cacheKey: id, labels: [], figures: [], reduced: false, ...extra,
+  source: "DVR", format: "480p · MJPEG · 29.89 fps", cacheKey: id, labels: [], figures: [], reduced: false, cloud: false, ...extra,
 });
 
 const session = (id: string, date: string | null, flights: FlightView[]): SessionView => ({
@@ -155,6 +155,17 @@ describe("elsewhere", () => {
     const s = { ...session("s", null, []), files: [at("/old/A GOPRO"), at(null), at("/old/A GOPRO"), at("/disk/A")] };
     expect(elsewhere(s)).toEqual(["/old/A GOPRO", "/disk/A"]);
     expect(elsewhere({ ...s, files: [at(null)] })).toEqual([]);
+  });
+});
+
+describe("inCloud", () => {
+  it("says whether a session's footage is here, partly in the cloud, or all of it there", () => {
+    const at = (cloud: boolean) => ({ cloud }) as FileView;
+    const s = (files: FileView[]) => ({ ...session("s", null, []), files });
+    expect(inCloud(s([at(false), at(false)]))).toBe("none");
+    expect(inCloud(s([at(true), at(false)]))).toBe("some");
+    expect(inCloud(s([at(true), at(true)]))).toBe("all");
+    expect(inCloud(s([]))).toBe("none");
   });
 });
 

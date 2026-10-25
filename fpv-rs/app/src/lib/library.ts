@@ -171,6 +171,13 @@ export function elsewhere(session: SessionView): string[] {
   return folders;
 }
 
+/** How much of a session's footage the cloud drive holds online only:
+ * none of it is on this computer, some of it, or all of it is here. */
+export function inCloud(session: SessionView): "none" | "some" | "all" {
+  const away = session.files.filter((file) => file.cloud).length;
+  return !away ? "none" : away === session.files.length ? "all" : "some";
+}
+
 /** The 1-based page holding the item at `index`. */
 export function pageOf(index: number, size: number): number {
   return Math.floor(Math.max(0, index) / size) + 1;

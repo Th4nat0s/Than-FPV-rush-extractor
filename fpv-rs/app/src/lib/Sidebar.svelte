@@ -10,7 +10,7 @@
   import SessionDialog from "./SessionDialog.svelte";
   import MoveSessionDialog from "./MoveSessionDialog.svelte";
   import { browse, openSession, show } from "./browse.svelte";
-  import { elsewhere, figures, pageOf, paginate, placed, sessionSources, type View } from "./library";
+  import { elsewhere, figures, inCloud, pageOf, paginate, placed, sessionSources, type View } from "./library";
   import CompactPager from "./CompactPager.svelte";
   import { fit, type Anchor } from "./fit";
   import { runningTask } from "./tasks.svelte";
@@ -236,6 +236,10 @@
                   <span class="row elsewhere" title="In an earlier import folder: {elsewhere(session).join(', ')}">
                     <Icon name="folder" size={12} />elsewhere</span>
                 {/if}
+                {#if inCloud(session) !== "none"}
+                  <span class="row cloud" title="Online Only in the cloud drive: playing it downloads it first">
+                    <Icon name="cloud" size={12} />{inCloud(session) === "all" ? "in the cloud" : "partly in the cloud"}</span>
+                {/if}
               </span>
             {/if}
           </div>
@@ -375,6 +379,7 @@
   .sources { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 1px; }
   .sources .row { gap: 4px; white-space: nowrap; }
   .sources .elsewhere { color: var(--warn); }
+  .sources .cloud { color: var(--accent); }
   /* Always in reach, however long the page of sessions. */
   .pages { position: sticky; bottom: -12px; background: var(--sidebar); }
   .tabs { display: flex; gap: 2px; padding: 2px; margin: 14px 0 4px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
