@@ -104,6 +104,10 @@ export interface Info {
   /** How session folders are named, e.g. "{date} {session} {source}". */
   folderPattern: string;
   ffmpegOk: boolean;
+  /** The playback previews' budget, in GB. */
+  proxyBudgetGb: number;
+  /** The pictures' budget — hover strips, posters, editor frames — in GB. */
+  pictureBudgetGb: number;
 }
 
 export interface Card {
@@ -217,7 +221,12 @@ export interface StripsPrepared {
   made: number;
   /** [flight, reason], once per flight. */
   failed: [string, string][];
+  /** Stopped at the pictures' budget with strips still missing. */
+  atBudget: boolean;
 }
+
+/** One kind of what the cache holds. */
+export type CacheKind = "proxies" | "strips" | "posters" | "previews";
 
 /** Bytes in the cache folder, by kind. */
 export interface CacheUsage {
@@ -285,7 +294,8 @@ export const api = {
   /** Opens each folder the session's recordings sit in. */
   revealSession: (session: string) => invoke<void>("reveal_session", { session }),
   cacheUsage: () => invoke<CacheUsage>("cache_usage"),
-  clearCache: () => invoke<CacheUsage>("clear_cache"),
+  clearCache: (kinds: CacheKind[]) => invoke<CacheUsage>("clear_cache", { kinds }),
+  setCacheBudgets: (proxies: number, pictures: number) => invoke<Info>("set_cache_budgets", { proxies, pictures }),
   missingStrips: (count: number) => invoke<number>("missing_strips", { count }),
   identifyCameras: () => invoke<number>("identify_cameras"),
   prepareStrips: (task: string, count: number, first: string | null) =>

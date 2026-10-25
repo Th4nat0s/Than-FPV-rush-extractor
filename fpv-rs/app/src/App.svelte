@@ -19,7 +19,7 @@
   let sessions = $state<SessionView[]>([]);
   let cards = $state<Card[]>([]);
   let info = $state<Info>({ root: "", configDirectory: "", cacheDirectory: "", folderPattern: "",
-                           ffmpegOk: true });
+                           ffmpegOk: true, proxyBudgetGb: 10, pictureBudgetGb: 2 });
   let ffmpegOk = $derived(info.ffmpegOk);
   let settingsOpen = $state(false);
   let importing = $state<{ folder: string; name: string } | null>(null);

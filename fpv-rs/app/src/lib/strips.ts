@@ -43,5 +43,6 @@ export function prepareStrips(session: string | null = null): Promise<void> {
 
 function describe(result: StripsPrepared): string {
   const failed = result.failed.length ? `, ${result.failed.length} flight(s) failed — ${result.failed[0][1]}` : "";
-  return `${result.made} frame(s) made${failed}`;
+  const full = result.atBudget ? ", stopped at the pictures' budget" : "";
+  return `${result.made} frame(s) made${failed}${full}`;
 }

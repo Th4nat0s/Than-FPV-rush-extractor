@@ -899,7 +899,7 @@ fn measures_and_empties_the_cache_and_everything_comes_back() {
     assert!(usage.proxies > 0 && usage.strips > 0 && usage.posters > 0 && usage.previews > 0, "{usage:?}");
     assert_eq!(usage.total(), usage.proxies + usage.strips + usage.posters + usage.previews);
 
-    let freed = fixture.library.clear_cache().unwrap();
+    let freed = fixture.library.clear_cache(&CacheKind::ALL).unwrap();
     assert_eq!(freed.total(), usage.total());
     let after = fixture.library.cache_usage().unwrap();
     assert_eq!(after.total(), 0, "{after:?}");
@@ -914,11 +914,117 @@ fn measures_and_empties_the_cache_and_everything_comes_back() {
 }
 
 #[test]
+fn empties_one_kind_of_cache_and_leaves_the_others() {
+    let (fixture, session) = imported();
+    let take = &session.flights[0];
+    fixture.library.proxy(&take.id).unwrap();
+    fixture.library.prepare_strips(4, None, |_, _, _| {}).unwrap();
+    let before = fixture.library.cache_usage().unwrap();
+
+    let freed = fixture.library.clear_cache(&[CacheKind::Strips]).unwrap();
+    assert_eq!((freed.strips, freed.proxies, freed.posters), (before.strips, 0, 0));
+    let after = fixture.library.cache_usage().unwrap();
+    assert_eq!((after.strips, after.proxies, after.posters), (0, before.proxies, before.posters));
+
+    fixture.library.clear_cache(&[CacheKind::Proxies]).unwrap();
+    assert!(fixture.library.proxy_cache().entries().unwrap().is_empty());
+    assert_eq!(fixture.library.cache_usage().unwrap().posters, before.posters);
+}
+
+/// Dates the pictures of one cache folder an hour back, a second apart in
+/// name order, so the trimming order is known; returns the oldest.
+fn age_pictures(library: &Library, folder: &str) -> PathBuf {
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    let mut frames: Vec<PathBuf> = std::fs::read_dir(library.cache_directory.join(folder)).unwrap()
+        .flatten().map(|e| e.path()).collect();
+    frames.sort();
+    for (age, frame) in frames.iter().enumerate() {
+        std::fs::File::options().write(true).open(frame).unwrap()
+            .set_modified(hour_ago + std::time::Duration::from_secs(age as u64)).unwrap();
+    }
+    frames.remove(0)
+}
+
+fn gigabytes(bytes: u64) -> f64 {
+    bytes as f64 / (1u64 << 30) as f64
+}
+
+#[test]
+fn keeps_the_pictures_under_their_budget_strips_before_posters_and_the_last_used_longest() {
+    let (mut fixture, session) = imported();
+    fixture.library.prepare_strips(8, None, |_, _, _| {}).unwrap();
+    let usage = fixture.library.cache_usage().unwrap();
+    assert!(usage.strips > 0 && usage.posters > 0);
+    let oldest = age_pictures(&fixture.library, "strips");
+    // The pointer comes back over the oldest frame: it is now the one kept longest.
+    let (flight, index) = session.flights.iter().flat_map(|f| (0..8).map(move |i| (f, i)))
+        .find(|(f, i)| fixture.library.filmstrip_frame(&f.id, *i, 8).unwrap().path == oldest).unwrap();
+    let used = fixture.library.filmstrip_frame(&flight.id, index, 8).unwrap().path;
+
+    // Room for the posters and about half the strips.
+    fixture.library.config.picture_budget_gb = gigabytes(usage.posters + usage.strips / 2);
+    let freed = fixture.library.trim_pictures().unwrap();
+    let after = fixture.library.cache_usage().unwrap();
+    assert!(freed > 0 && after.strips + after.posters <= usage.posters + usage.strips / 2, "{after:?}");
+    assert_eq!(after.posters, usage.posters, "posters go last");
+    assert!(used.is_file(), "the frame used last stays");
+    // The strips job fills what room is left without going over, and the
+    // next trim — the next open — finds nothing to do.
+    fixture.library.prepare_strips(8, None, |_, _, _| {}).unwrap();
+    let filled = fixture.library.cache_usage().unwrap();
+    assert!(filled.strips + filled.posters <= usage.posters + usage.strips / 2, "{filled:?}");
+    assert_eq!(fixture.library.trim_pictures().unwrap(), 0, "no frame made and trimmed at every launch");
+    // Less room than a frame: nothing to make, so no job at the next launch.
+    fixture.library.config.picture_budget_gb = gigabytes(filled.strips + filled.posters + 100);
+    assert!(fixture.library.missing_strip_frames(8, None).unwrap().is_empty());
+
+    // Smaller than the posters alone: every strip goes, then the oldest
+    // posters — not the oldest one a card just showed again.
+    let oldest = age_pictures(&fixture.library, "posters");
+    let shown = session.flights.iter().flat_map(|f| &f.clips)
+        .find(|c| Path::new(c.thumbnail.as_deref().unwrap()) == oldest).unwrap();
+    fixture.library.poster(&shown.id).unwrap();
+    fixture.library.config.picture_budget_gb = gigabytes(usage.posters / 2);
+    fixture.library.trim_pictures().unwrap();
+    let after = fixture.library.cache_usage().unwrap();
+    assert_eq!(after.strips, 0);
+    assert!(after.posters > 0 && after.posters <= usage.posters / 2, "{after:?}");
+    assert!(oldest.is_file(), "the poster shown last stays");
+    // A poster trimmed away is made again when its card shows.
+    let lost = session.flights.iter().flat_map(|f| &f.clips)
+        .find(|c| !Path::new(c.thumbnail.as_deref().unwrap()).is_file()).unwrap();
+    assert!(fixture.library.poster(&lost.id).unwrap().made);
+}
+
+#[test]
+fn stops_making_strips_at_the_pictures_budget() {
+    let (mut fixture, _) = imported();
+    let posters = fixture.library.cache_usage().unwrap().posters;
+    // Room for the posters and a few strip frames (~6 KB each here), not all sixteen.
+    fixture.library.config.picture_budget_gb = gigabytes(posters + 20_000);
+    let prepared = fixture.library.prepare_strips(8, None, |_, _, _| {}).unwrap();
+    assert!(prepared.at_budget);
+    assert!(prepared.made >= 1 && prepared.made < 16, "{}", prepared.made);
+    assert!(fixture.library.cache_usage().unwrap().total() <= posters + 20_000, "never a frame over");
+}
+
+#[test]
+fn saves_both_cache_budgets_and_refuses_one_too_small() {
+    let (mut fixture, _) = imported();
+    fixture.library.set_cache_budgets(4.0, 0.5).unwrap();
+    let saved = Config::load_or_create(&fixture.library.config_directory).unwrap();
+    assert_eq!((saved.proxy_budget_gb, saved.picture_budget_gb), (4.0, 0.5));
+    assert!(matches!(fixture.library.set_cache_budgets(0.0, 1.0), Err(LibraryError::Invalid(_))));
+    assert!(matches!(fixture.library.set_cache_budgets(1.0, f64::NAN), Err(LibraryError::Invalid(_))));
+    assert_eq!(fixture.library.config().proxy_budget_gb, 4.0, "a refused budget changes nothing");
+}
+
+#[test]
 fn empties_only_the_folders_it_made() {
     let (fixture, _) = imported();
     let mine = fixture.library.cache_directory.join("notes.txt");
     std::fs::write(&mine, b"keep me").unwrap();
-    fixture.library.clear_cache().unwrap();
+    fixture.library.clear_cache(&CacheKind::ALL).unwrap();
     assert!(mine.is_file());
 }
 

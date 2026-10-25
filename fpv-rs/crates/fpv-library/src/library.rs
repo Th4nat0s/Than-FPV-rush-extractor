@@ -108,6 +108,14 @@ impl CacheUsage {
     }
 }
 
+/// Marks a cached picture as just used, so the budget's trimming keeps it
+/// over pictures nobody looked at for longer. Best effort: a picture whose
+/// date cannot change is only trimmed sooner.
+fn touch(path: &Path) {
+    let _ = std::fs::File::options().write(true).open(path)
+        .and_then(|file| file.set_modified(std::time::SystemTime::now()));
+}
+
 /// Bytes under a folder, 0 if it is not there.
 fn folder_size(path: &Path) -> u64 {
     let Ok(entries) = std::fs::read_dir(path) else { return 0 };
@@ -134,6 +142,34 @@ pub struct StripsPrepared {
     pub made: usize,
     /// (flight, reason), once per flight.
     pub failed: Vec<(String, String)>,
+    /// It stopped at the pictures' budget with strips still missing.
+    pub at_budget: bool,
+}
+
+/// One kind of what the cache folder holds, each in its own folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CacheKind {
+    /// Playback previews, under the proxy budget.
+    Proxies,
+    /// Hover strips, posters and the editor's frames: the pictures, under
+    /// their own budget.
+    Strips,
+    Posters,
+    Previews,
+}
+
+impl CacheKind {
+    pub const ALL: [CacheKind; 4] = [CacheKind::Proxies, CacheKind::Strips, CacheKind::Posters, CacheKind::Previews];
+
+    fn folder(self) -> &'static str {
+        match self {
+            CacheKind::Proxies => "proxies",
+            CacheKind::Strips => "strips",
+            CacheKind::Posters => "posters",
+            CacheKind::Previews => "preview",
+        }
+    }
 }
 
 /// What a batch export wrote, and what it could not.
@@ -372,6 +408,9 @@ impl Library {
         };
         library.move_posters_into_cache()?;
         library.sweep_orphaned_thumbnails()?;
+        if let Err(error) = library.trim_pictures() {
+            log::warn!("could not bring the pictures under their budget: {error}");
+        }
         if let Err(error) = library.proxy_cache().reconcile() {
             log::warn!("could not reconcile the proxy cache: {error}");
         }
@@ -462,16 +501,87 @@ impl Library {
     /// when shown, strips by the background job, a preview when played — so
     /// nothing is lost but time. Only the folders the library made are
     /// touched, whatever else the cache folder holds. Returns what was freed.
-    pub fn clear_cache(&self) -> Result<CacheUsage> {
-        let freed = self.cache_usage()?;
-        self.proxy_cache().purge_all()?;
-        for name in ["proxies", "strips", "posters", "preview"] {
-            match std::fs::remove_dir_all(self.cache_directory.join(name)) {
+    pub fn clear_cache(&self, kinds: &[CacheKind]) -> Result<CacheUsage> {
+        let usage = self.cache_usage()?;
+        let mut freed = CacheUsage::default();
+        for &kind in kinds {
+            match kind {
+                CacheKind::Proxies => {
+                    self.proxy_cache().purge_all()?;
+                    freed.proxies = usage.proxies;
+                }
+                CacheKind::Strips => freed.strips = usage.strips,
+                CacheKind::Posters => freed.posters = usage.posters,
+                CacheKind::Previews => freed.previews = usage.previews,
+            }
+            match std::fs::remove_dir_all(self.cache_directory.join(kind.folder())) {
                 Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
                 _ => {}
             }
         }
         Ok(freed)
+    }
+
+    /// What a hover-strip frame weighs, on average over those on disk; 0
+    /// before the first.
+    fn strip_frame_size(&self) -> u64 {
+        let Ok(entries) = std::fs::read_dir(self.cache_directory.join(CacheKind::Strips.folder())) else { return 0 };
+        let sizes: Vec<u64> = entries.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.len()).collect();
+        if sizes.is_empty() { 0 } else { sizes.iter().sum::<u64>() / sizes.len() as u64 }
+    }
+
+    /// The pictures' bytes on disk: hover strips, posters, editor frames.
+    fn picture_bytes(&self) -> u64 {
+        [CacheKind::Strips, CacheKind::Posters, CacheKind::Previews].iter()
+            .map(|kind| folder_size(&self.cache_directory.join(kind.folder()))).sum()
+    }
+
+    /// Brings the pictures back under their budget. The editor's frames go
+    /// first — made for one look —, then hover strips, then posters, which
+    /// every card on screen shows; within each, the one used longest ago
+    /// (a cached picture is touched when used again). Whatever goes is made
+    /// again when next wanted. Returns the bytes freed.
+    pub fn trim_pictures(&self) -> Result<u64> {
+        let budget = self.config.picture_budget_bytes();
+        let mut files: Vec<(usize, std::time::SystemTime, u64, PathBuf)> = vec![];
+        for (rank, kind) in [CacheKind::Previews, CacheKind::Strips, CacheKind::Posters].into_iter().enumerate() {
+            let Ok(entries) = std::fs::read_dir(self.cache_directory.join(kind.folder())) else { continue };
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() && metadata.is_file() {
+                    let used = metadata.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    files.push((rank, used, metadata.len(), entry.path()));
+                }
+            }
+        }
+        let mut total: u64 = files.iter().map(|f| f.2).sum();
+        files.sort_by_key(|f| (f.0, f.1));
+        let mut freed = 0;
+        for (_, _, size, path) in files {
+            if total <= budget {
+                break;
+            }
+            std::fs::remove_file(&path)?;
+            total -= size;
+            freed += size;
+        }
+        Ok(freed)
+    }
+
+    /// Sets both budgets and saves them to `config.json`, then brings the
+    /// cache under them at once.
+    pub fn set_cache_budgets(&mut self, proxies_gb: f64, pictures_gb: f64) -> Result<()> {
+        for (what, gb) in [("playback previews", proxies_gb), ("pictures", pictures_gb)] {
+            if !gb.is_finite() || gb < 0.1 {
+                return Err(LibraryError::Invalid(format!("the {what}' budget must be at least 0.1 GB, not {gb}")));
+            }
+        }
+        let config = Config { proxy_budget_gb: proxies_gb, picture_budget_gb: pictures_gb, ..self.config.clone() };
+        config.save(&self.config_directory)?;
+        self.config = config;
+        // Settings is open, so no flight is playing: nothing to pin.
+        self.proxy_cache().evict(&HashSet::new())?;
+        self.trim_pictures()?;
+        Ok(())
     }
 
     pub(crate) fn proxy_cache(&self) -> ProxyCache<'_> {
@@ -1149,6 +1259,7 @@ impl Library {
         let (flight, clips, timeline) = self.flight(flight)?;
         let cached = self.strip_path(&flight, &clips, index);
         if cached.exists() {
+            touch(&cached);
             return Ok(Thumbnail::cached(cached));
         }
         let fraction = (index as f64 + 0.5) / count.max(1) as f64;
@@ -1176,7 +1287,13 @@ impl Library {
     /// The hover-strip frames not on disk yet, across the whole library, the
     /// `first` session's flights first — the one on screen fills before the
     /// rest. Cheap: a file check per frame, no ffmpeg.
+    /// Nothing once the pictures leave no room for another frame (weighed as
+    /// the frames already made do): the job would make one only to take it
+    /// back, at every launch.
     pub fn missing_strip_frames(&self, count: usize, first: Option<&str>) -> Result<Vec<StripFrame>> {
+        if self.picture_bytes() + self.strip_frame_size() >= self.config.picture_budget_bytes() {
+            return Ok(vec![]);
+        }
         let mut sessions = self.store.sessions()?;
         if let Some(first) = first.map(parse).transpose()? {
             sessions.sort_by_key(|s| s.id != first);
@@ -1211,13 +1328,26 @@ impl Library {
         let missing = self.missing_strip_frames(count, first)?;
         let mut prepared = StripsPrepared::default();
         let mut broken: HashSet<String> = HashSet::new();
+        let budget = self.config.picture_budget_bytes();
+        let mut used = self.picture_bytes();
+        // A frame that goes over is taken back: the job stops at the budget,
+        // never a frame over it.
         for (done, frame) in missing.iter().enumerate() {
             progress(done, missing.len(), &frame.label);
             if broken.contains(&frame.flight) {
                 continue;
             }
             match self.filmstrip_frame(&frame.flight, frame.index, count) {
-                Ok(thumbnail) => prepared.made += usize::from(thumbnail.made),
+                Ok(thumbnail) => {
+                    let size = std::fs::metadata(&thumbnail.path).map_or(0, |m| m.len());
+                    if thumbnail.made && used + size > budget {
+                        let _ = std::fs::remove_file(&thumbnail.path);
+                        prepared.at_budget = true;
+                        break;
+                    }
+                    prepared.made += usize::from(thumbnail.made);
+                    used += size;
+                }
                 Err(LibraryError::NotFound(_)) => { broken.insert(frame.flight.clone()); }
                 Err(error) => {
                     broken.insert(frame.flight.clone());
@@ -1687,6 +1817,7 @@ impl Library {
         if let Some(path) = clip.thumbnail_path.as_deref().map(PathBuf::from)
             && path.is_file()
         {
+            touch(&path);
             return Ok(Thumbnail::cached(path));
         }
         let file = self.store.source_file(clip.source_file_id)?

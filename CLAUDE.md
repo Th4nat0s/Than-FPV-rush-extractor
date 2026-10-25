@@ -1034,6 +1034,18 @@ frame-exact boundary editor. Layout:
   every missing poster made twice — a refresh redraws the cards while their posters are being
   made, and each asked again — so `lib/posters.ts` lets a second ask wait for the first,
   answered `made: false` so the Posters task counts each poster once.
+  **Two budgets, and each kind emptied on its own** (2026-10-25, the pilot's request):
+  playback previews keep `proxyBudgetGb` (10, LRU through the proxy index), and the
+  **pictures** — hover strips, posters, editor frames — get `pictureBudgetGb` (2), both set
+  in Settings (`Library::set_cache_budgets`, refused under 0.1 GB, applied at once). Over its
+  budget `trim_pictures` (at open, after a change) removes editor frames first, then strips,
+  then posters — every card on screen shows one —, the least recently used first: a cached
+  strip or poster is *touched* when used again, its date being the only access record kept.
+  The strips job stops at the budget, and a frame that would go over is taken back, never
+  kept; `missing_strip_frames` reports nothing once there is no room for one more frame
+  (weighed as the average frame on disk), so a full cache starts no job at every launch.
+  Settings shows each kind with its own *Empty…* and *Empty All…*
+  (`clear_cache(kinds)`, `CacheKind`).
 - **Hover strips are made ahead of the pointer** (2026-10-20, the pilot's request: on a
   long 4K take, a strip made on hover kept the user waiting). `Library::prepare_strips` makes
   every missing strip frame of the library, the session on screen first, as one "Hover strips"

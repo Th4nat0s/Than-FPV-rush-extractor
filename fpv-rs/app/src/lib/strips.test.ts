@@ -3,14 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Rust's side, played by the test: how many frames are missing, and a
 // prepare_strips call the test finishes by hand.
 let missing: number[] = [];
-let prepares: { first: string | null; finish: () => void }[] = [];
+let prepares: { first: string | null; finish: (atBudget?: boolean) => void }[] = [];
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => path,
   invoke: (command: string, args: { first: string | null }) => {
     if (command === "missing_strips") return Promise.resolve(missing.shift() ?? 0);
     if (command === "prepare_strips") {
       return new Promise((resolve) => {
-        prepares.push({ first: args.first, finish: () => resolve({ made: 24, failed: [] }) });
+        prepares.push({ first: args.first,
+                        finish: (atBudget = false) => resolve({ made: 24, failed: [], atBudget }) });
       });
     }
     return Promise.reject(`unexpected ${command}`);
@@ -48,6 +49,15 @@ describe("prepareStrips", () => {
     prepares[0].finish();
     await done;
     expect(tasks.tasks[0]).toMatchObject({ state: "done", line: "24 frame(s) made" });
+  });
+
+  it("says when it stopped at the pictures' budget", async () => {
+    missing = [48];
+    const done = strips.prepareStrips(null);
+    await settle();
+    prepares[0].finish(true);
+    await done;
+    expect(tasks.tasks[0].line).toBe("24 frame(s) made, stopped at the pictures' budget");
   });
 
   it("never runs two at once, and runs one more pass for what changed meanwhile", async () => {

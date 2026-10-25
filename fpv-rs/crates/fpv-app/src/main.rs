@@ -12,7 +12,7 @@ mod media_server;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use fpv_library::{BulkExport, CacheUsage, Card, Config, DownloadSummary, ExportMode, FreeUpSummary, FlightDeletion, RelocationPreview, RelocationSummary, SessionEdit, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
+use fpv_library::{BulkExport, CacheKind, CacheUsage, Card, Config, DownloadSummary, ExportMode, FreeUpSummary, FlightDeletion, RelocationPreview, RelocationSummary, SessionEdit, FolderView, ImportProgress, ReducePreview, ReduceSummary, ImportSummary, Library, LibraryError,
                   Playback, SegmentProgress, SessionView, Step, StripsPrepared, TagView, Thumbnail, strip_line, detect_cards, ffmpeg_available,
                   tool_directory};
 use serde::Serialize;
@@ -43,6 +43,8 @@ impl App {
             cache_directory: library.cache_directory.clone(),
             folder_pattern: library.config().folder_pattern.clone(),
             ffmpeg_ok: self.ffmpeg_ok,
+            proxy_budget_gb: library.config().proxy_budget_gb,
+            picture_budget_gb: library.config().picture_budget_gb,
         }
     }
 }
@@ -81,6 +83,9 @@ struct Info {
     cache_directory: PathBuf,
     folder_pattern: String,
     ffmpeg_ok: bool,
+    /// The playback previews' budget and the pictures', in GB.
+    proxy_budget_gb: f64,
+    picture_budget_gb: f64,
 }
 
 #[tauri::command]
@@ -343,10 +348,21 @@ async fn cache_usage(app: Shared<'_>) -> Reply<CacheUsage> {
     blocking(&app, move |app| app.library().cache_usage()).await
 }
 
-/// Empties the cache folder; everything in it is made again on demand.
+/// Empties the given kinds of cache; everything in them is made again on demand.
 #[tauri::command]
-async fn clear_cache(app: Shared<'_>) -> Reply<CacheUsage> {
-    blocking(&app, move |app| app.library().clear_cache()).await
+async fn clear_cache(app: Shared<'_>, kinds: Vec<CacheKind>) -> Reply<CacheUsage> {
+    blocking(&app, move |app| app.library().clear_cache(&kinds)).await
+}
+
+/// Sets the playback previews' and the pictures' budgets, saved to
+/// config.json; the cache is brought under them at once.
+#[tauri::command]
+async fn set_cache_budgets(app: Shared<'_>, proxies: f64, pictures: f64) -> Reply<Info> {
+    blocking(&app, move |app| {
+        app.library.write().unwrap_or_else(|poisoned| poisoned.into_inner())
+            .set_cache_budgets(proxies, pictures)?;
+        Ok(app.info())
+    }).await
 }
 
 /// A clip's poster, remade when the cache no longer has it.
@@ -529,7 +545,7 @@ fn main() {
             info, set_media_root, set_folder_pattern, folder_preview, snapshot, cards, import_card, load_import_folder, import_folder_contents,
             segment, reduce_preview, reduce_session, update_session, relocation_preview, move_session, download_session, download_flight, free_up_session, free_up_flight, set_detection_profile, rename_session, delete_session,
             set_flight_title, toggle_like, flight_deletion, delete_flight, update_clip, filmstrip_frame, poster, preview_frame, reveal_file, reveal_session,
-            missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache,
+            missing_strips, prepare_strips, identify_cameras, cache_usage, clear_cache, set_cache_budgets,
             export_flight, export_flights, export_labels, playback, proxy, flight_tags, add_tag, delete_tag, tag_labels,
             add_flight_label, remove_flight_label, flight_label_names,
         ])
