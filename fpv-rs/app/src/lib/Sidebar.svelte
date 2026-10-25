@@ -15,7 +15,7 @@
   import { fit, type Anchor } from "./fit";
   import { runningTask } from "./tasks.svelte";
   import { notify } from "./notices.svelte";
-  import { exportLabels, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
+  import { download, exportLabels, loadImportFolder, moveIntoImportFolder, reduce, segment } from "./sessions";
 
   let { sessions, cards, root, ffmpegOk, onimportcard, onimportfolder,
         onsettings, onchange }: {
@@ -282,6 +282,12 @@
       <button class="plain" role="menuitem" disabled={!!runningTask(`move:${session.id}`)}
               title="Bring its recordings from the earlier import folder into the current one"
               onclick={() => act((s) => (moving = s))}>Move to Import Folder…</button>
+    {/if}
+    {#if inCloud(session) !== "none"}
+      <button class="plain" role="menuitem" disabled={!!runningTask(`download:${session.id}`)}
+              title="Bring its Online Only recordings back onto this computer"
+              onclick={() => act((s) => download(`“${s.name}”`, `download:${s.id}`, (task) => api.downloadSession(task, s.id)))}>
+        Download from the Cloud</button>
     {/if}
     <button class="plain" role="menuitem" onclick={() => act((s) => (editingSession = s))}>Edit Session…</button>
     <button class="plain" role="menuitem" onclick={() => act(startRename)}>Rename</button>

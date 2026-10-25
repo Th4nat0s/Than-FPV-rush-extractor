@@ -165,6 +165,20 @@ pub struct RelocationSummary {
     pub failed: Vec<(String, String)>,
 }
 
+/// How much of a recording a download reads at a time: progress moves on
+/// after each.
+const DOWNLOAD_CHUNK: usize = 8 << 20;
+
+/// What downloading from the cloud drive did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadSummary {
+    pub downloaded: usize,
+    pub bytes: u64,
+    /// [recording, reason]: still only in the cloud.
+    pub failed: Vec<(String, String)>,
+}
+
 /// A session's details as the Edit Session dialog sends them back.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1183,6 +1197,72 @@ impl Library {
         let file = self.store.source_file(parse(file)?)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording {file}")))?;
         Ok(PathBuf::from(file.imported_path))
+    }
+
+    /// Brings a session's recordings that are only in the cloud back onto this
+    /// computer (`download`).
+    pub fn download_session(&self, session: &str, progress: impl FnMut(usize, usize, String))
+        -> Result<DownloadSummary> {
+        let session = self.session(session)?;
+        self.download(self.store.source_files(session.id)?, DOWNLOAD_CHUNK, progress)
+    }
+
+    /// Brings a flight's recordings that are only in the cloud back onto this
+    /// computer (`download`).
+    pub fn download_flight(&self, flight: &str, progress: impl FnMut(usize, usize, String))
+        -> Result<DownloadSummary> {
+        let (_, clips, _) = self.flight(flight)?;
+        let mut files: Vec<SourceFile> = vec![];
+        for clip in &clips {
+            if let Some(file) = self.store.source_file(clip.source_file_id)?
+                && !files.iter().any(|f| f.id == file.id)
+            {
+                files.push(file);
+            }
+        }
+        self.download(files, DOWNLOAD_CHUNK, progress)
+    }
+
+    /// Reads every recording of `files` that is only in the cloud through to
+    /// its end: the File Provider downloads a placeholder on its first read,
+    /// so reading is downloading, and it needs nothing of the drive's own.
+    /// Progress counts bytes, the placeholder's size being the recording's.
+    /// A recording still in the cloud afterwards is reported, not trusted.
+    fn download(&self, files: Vec<SourceFile>, chunk: usize, mut progress: impl FnMut(usize, usize, String))
+        -> Result<DownloadSummary> {
+        let away: Vec<SourceFile> = files.into_iter().filter(|f| self.only_in_cloud(f)).collect();
+        let size = |file: &SourceFile| std::fs::metadata(&file.imported_path).map_or(0, |m| m.len());
+        let total: u64 = away.iter().map(size).sum();
+        let mut summary = DownloadSummary::default();
+        let mut buffer = vec![0u8; chunk];
+        for (index, file) in away.iter().enumerate() {
+            let name = file_name(&file.imported_path);
+            let line = format!("Downloading {name} ({}/{})…", index + 1, away.len());
+            progress(summary.bytes as usize, total as usize, line.clone());
+            let read = (|| -> std::io::Result<u64> {
+                let mut source = std::fs::File::open(&file.imported_path)?;
+                let mut read = 0;
+                loop {
+                    let n = std::io::Read::read(&mut source, &mut buffer)?;
+                    if n == 0 {
+                        return Ok(read);
+                    }
+                    read += n as u64;
+                    progress((summary.bytes + read) as usize, total as usize, line.clone());
+                }
+            })();
+            match read {
+                Ok(_) if self.only_in_cloud(file) =>
+                    summary.failed.push((name, "the cloud drive did not bring it down".into())),
+                Ok(read) => {
+                    summary.downloaded += 1;
+                    summary.bytes += read;
+                }
+                Err(error) => summary.failed.push((name, error.to_string())),
+            }
+        }
+        progress(total as usize, total as usize, format!("{} recording(s) downloaded", summary.downloaded));
+        Ok(summary)
     }
 
     /// One recording per folder the session's recordings sit in, to show in

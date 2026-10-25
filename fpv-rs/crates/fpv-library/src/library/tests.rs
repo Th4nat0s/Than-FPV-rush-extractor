@@ -751,6 +751,52 @@ fn shows_what_is_only_in_the_cloud_and_never_downloads_it_for_a_picture() {
 }
 
 #[test]
+fn downloads_what_is_only_in_the_cloud_by_reading_it_through() {
+    let (mut fixture, session) = imported();
+    // Nothing in the cloud: nothing to do.
+    let summary = fixture.library.download_session(&session.id, |_, _, _| {}).unwrap();
+    assert_eq!((summary.downloaded, summary.bytes, summary.failed.len()), (0, 0, 0));
+
+    // In the cloud until read, as a File Provider placeholder is.
+    fn until_read(path: &Path) -> bool {
+        static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        cloud_marker(path) && ASKED.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
+    }
+    fixture.library.in_cloud = until_read;
+    send_to_cloud(&fixture.library, &session, "GH010043.MP4");
+    let take = fixture.library.recording_path(&session.files.iter().find(|f| f.name == "GH010043.MP4")
+                                              .unwrap().id).unwrap();
+    let size = std::fs::metadata(&take).unwrap().len() as usize;
+    let mut steps = vec![];
+    let summary = fixture.library.download_flight(&session.flights[1].id, |done, total, line| {
+        steps.push((done, total, line));
+    }).unwrap();
+    assert_eq!((summary.downloaded, summary.bytes as usize, summary.failed.len()), (1, size, 0));
+    assert_eq!(steps.first().map(|s| (s.0, s.1, s.2.as_str())),
+               Some((0, size, "Downloading GH010043.MP4 (1/1)…")));
+    assert_eq!(steps.last().map(|s| (s.0, s.1)), Some((size, size)));
+
+    // Through to the end, a chunk at a time, however large the recording.
+    fixture.library.in_cloud = cloud_marker;
+    let file = fixture.library.store.source_file(parse(&session.files.iter()
+        .find(|f| f.name == "GH010043.MP4").unwrap().id).unwrap()).unwrap().unwrap();
+    let mut reads = 0;
+    let summary = fixture.library.download(vec![file], 4096, |_, _, _| reads += 1).unwrap();
+    assert_eq!(summary.failed.len(), 1, "the marker stays: not brought down");
+    assert!(reads > size / 4096, "{reads} progress steps for {size} bytes");
+}
+
+#[test]
+fn says_when_the_cloud_drive_did_not_bring_a_recording_down() {
+    let (mut fixture, session) = imported();
+    fixture.library.in_cloud = cloud_marker;
+    send_to_cloud(&fixture.library, &session, "GH020042.MP4");
+    let summary = fixture.library.download_session(&session.id, |_, _, _| {}).unwrap();
+    assert_eq!(summary.downloaded, 0);
+    assert_eq!(summary.failed, [("GH020042.MP4".to_owned(), "the cloud drive did not bring it down".to_owned())]);
+}
+
+#[test]
 fn makes_the_session_on_screen_first() {
     let (fixture, _) = imported();
     // A second card with footage of its own — the same bytes would be

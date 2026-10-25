@@ -1,8 +1,9 @@
 // What a session's menu and its pane both do: segment it, write its labels.
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { api, bytes, message, type SessionView } from "../api";
+import { api, bytes, message, type DownloadSummary, type SessionView } from "../api";
 import { track } from "./tasks.svelte";
+import { notify } from "./notices.svelte";
 import { confirmResegment } from "./confirm.svelte";
 
 /** Segments the session as a task; resolves to the line to show, or null if
@@ -45,6 +46,20 @@ export async function reduce(session: SessionView): Promise<string> {
     return `${s.recordings} recording(s) cut down to ${s.pieces} piece(s); ${bytes(s.bytesFreed)} moved to the trash.${failed}`;
   } catch (e) {
     return `Cannot reduce: ${message(e)}`;
+  }
+}
+
+/** Brings recordings the cloud drive holds online only back onto this
+ * computer, as a task (`what`: a session's or a flight's name); what could not
+ * be is notified. */
+export async function download(what: string, key: string, run: (task: string) => Promise<DownloadSummary>) {
+  try {
+    const s = await track(`Download ${what}`, run, {
+      key, summary: (s) => `${s.downloaded} downloaded, ${bytes(s.bytes)}${s.failed.length ? `, ${s.failed.length} failed` : ""}`,
+    });
+    for (const [file, why] of s.failed) notify(`Cannot download ${file}: ${why}`);
+  } catch (e) {
+    notify(`Cannot download ${what}: ${message(e)}`);
   }
 }
 

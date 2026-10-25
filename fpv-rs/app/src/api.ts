@@ -147,6 +147,13 @@ export interface RelocationPreview {
   to: string[];
 }
 
+export interface DownloadSummary {
+  downloaded: number;
+  bytes: number;
+  /** [recording, reason]: still only in the cloud. */
+  failed: [string, string][];
+}
+
 export interface RelocationSummary {
   moved: number;
   failed: [string, string][];
@@ -247,6 +254,9 @@ export const api = {
   updateSession: (id: string, edit: SessionEdit) => invoke<void>("update_session", { id, edit }),
   relocationPreview: (session: string) => invoke<RelocationPreview>("relocation_preview", { session }),
   moveSession: (task: string, session: string) => invoke<RelocationSummary>("move_session", { task, session }),
+  downloadSession: (task: string, session: string) =>
+    invoke<DownloadSummary>("download_session", { task, session }),
+  downloadFlight: (task: string, flight: string) => invoke<DownloadSummary>("download_flight", { task, flight }),
   deleteSession: (id: string, keepRecordings: boolean) =>
     invoke<void>("delete_session", { id, keepRecordings }),
   setFlightTitle: (id: string, title: string) => invoke<void>("set_flight_title", { id, title }),
@@ -288,7 +298,7 @@ export const api = {
 };
 
 export function onProgress(event: "import-progress" | "segment-progress" | "export-progress" | "strips-progress"
-                                  | "reduce-progress" | "move-progress",
+                                  | "reduce-progress" | "move-progress" | "download-progress",
                            handler: (progress: Progress) => void): Promise<UnlistenFn> {
   return listen<Progress>(event, (message) => handler(message.payload));
 }

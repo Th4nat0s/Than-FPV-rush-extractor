@@ -968,6 +968,13 @@ frame-exact boundary editor. Layout:
   asked for, and read (so download) as before. `Library.in_cloud` is a plain `fn`, swapped in
   the tests for a `.cloud` marker beside the recording. The badges were seen in the window
   with a build reading that marker; the flag itself only on the pilot's Mac.
+  **Download from the Cloud**, in a session's menu and a card's (`download_session`,
+  `download_flight`), brings them back: the recording is read through to its end — the
+  placeholder's first read is what makes the File Provider download it, so nothing of
+  Proton's is called — as a task counting bytes; one still in the cloud afterwards is
+  notified, not trusted. **Freeing the space again** (Online Only) has no documented call
+  from another app: `fileproviderctl`'s help on the pilot's Mac (first 30 lines) shows no
+  `evict`; until one is found, the Finder's *Online Only (Free Up Space)* does it.
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
   progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,

@@ -54,3 +54,21 @@ describe("segment", () => {
     expect(invoked).toEqual(["segment"]);
   });
 });
+
+describe("download", () => {
+  it("runs as a task and notifies each recording the cloud kept", async () => {
+    const notices = await import("./notices.svelte");
+    const tasks = await import("./tasks.svelte");
+    await sessions.download("“Letz Kwad”", "download:letz", () =>
+      Promise.resolve({ downloaded: 1, bytes: 2_000_000, failed: [["PICT0032.AVI", "the cloud drive did not bring it down"]] }));
+    expect(tasks.tasks[0]).toMatchObject({ title: "Download “Letz Kwad”", state: "done" });
+    expect(tasks.tasks[0].line).toContain("1 downloaded");
+    expect(notices.notices.map((n) => n.text)).toEqual(["Cannot download PICT0032.AVI: the cloud drive did not bring it down"]);
+  });
+
+  it("notifies a download that could not start", async () => {
+    const notices = await import("./notices.svelte");
+    await sessions.download("Flight 3", "download:f", () => Promise.reject("not in the library: flight f"));
+    expect(notices.notices[0].text).toBe("Cannot download Flight 3: not in the library: flight f");
+  });
+});

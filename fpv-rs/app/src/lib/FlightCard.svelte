@@ -2,6 +2,7 @@
   import { api, clock, day, flightName, media, message, type FlightView, type SessionView } from "../api";
   import { batch } from "./tasks.svelte";
   import { notify } from "./notices.svelte";
+  import { download } from "./sessions";
   import { STRIP } from "./strips";
   import { poster as remake } from "./posters";
   import Icon, { type IconName } from "./Icon.svelte";
@@ -167,6 +168,12 @@
           <button class="plain" onclick={() => act(like)}>{flight.liked ? "Unlike" : "Like"}</button>
           <button class="plain" onclick={() => act(onedit)}>Edit boundaries…</button>
           <button class="plain" disabled={exporting || !ffmpegOk} onclick={() => act(onexport)}>Export…</button>
+          {#if flight.cloud}
+            <button class="plain" title="Bring its Online Only recordings back onto this computer"
+                    onclick={() => act(() => download(flightName(flight), `download:${flight.id}`,
+                                                      (task) => api.downloadFlight(task, flight.id)))}>
+              Download from the Cloud</button>
+          {/if}
           <hr />
           <button class="plain danger" onclick={() => act(ondelete)}>Delete Flight…</button>
         </div>
