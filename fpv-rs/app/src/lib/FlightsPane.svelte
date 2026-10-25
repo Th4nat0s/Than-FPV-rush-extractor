@@ -168,9 +168,11 @@
 {/if}
 {#if editing}
   {@const edited = editing}
-  <!-- A boundary edit re-keys the flight's strip: it is remade straight away. -->
+  <!-- A boundary edit re-keys the flight's strip: it is remade straight away.
+       `edited` is read before `editing` is cleared: a {@const} is read again
+       when used, and would be null by then. -->
   <EditorDialog flight={edited.flight}
-                onclose={() => { editing = null; onchange(); prepareStrips(edited.session.id); }} />
+                onclose={() => { const session = edited.session.id; editing = null; onchange(); prepareStrips(session); }} />
 {/if}
 {#if deleting}
   <DeleteFlightDialog flight={deleting} onclose={() => (deleting = null)}
