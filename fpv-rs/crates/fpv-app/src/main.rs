@@ -141,6 +141,17 @@ struct Progress {
     total: usize,
 }
 
+/// A download's `Progress`, with the recording it is on: [n, of].
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    task: String,
+    line: String,
+    done: usize,
+    total: usize,
+    part: [usize; 2],
+}
+
 #[tauri::command]
 async fn import_card(handle: AppHandle, app: Shared<'_>, task: String, folder: PathBuf, name: String,
                      date: Option<String>, delete_originals: bool) -> Reply<ImportSummary> {
@@ -218,8 +229,10 @@ async fn relocation_preview(app: Shared<'_>, session: String) -> Reply<Relocatio
 async fn download_session(handle: AppHandle, app: Shared<'_>, task: String, session: String)
     -> Reply<DownloadSummary> {
     blocking(&app, move |app| {
-        app.library().download_session(&session, |done, total, line| {
-            let _ = handle.emit("download-progress", Progress { task: task.clone(), line, done, total });
+        app.library().download_session(&session, |step| {
+            let _ = handle.emit("download-progress", DownloadProgress {
+                task: task.clone(), line: step.line, done: step.done, total: step.total, part: [step.file, step.files],
+            });
         })
     }).await
 }
@@ -228,8 +241,10 @@ async fn download_session(handle: AppHandle, app: Shared<'_>, task: String, sess
 async fn download_flight(handle: AppHandle, app: Shared<'_>, task: String, flight: String)
     -> Reply<DownloadSummary> {
     blocking(&app, move |app| {
-        app.library().download_flight(&flight, |done, total, line| {
-            let _ = handle.emit("download-progress", Progress { task: task.clone(), line, done, total });
+        app.library().download_flight(&flight, |step| {
+            let _ = handle.emit("download-progress", DownloadProgress {
+                task: task.clone(), line: step.line, done: step.done, total: step.total, part: [step.file, step.files],
+            });
         })
     }).await
 }

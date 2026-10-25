@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { estimate, lastRate, rememberRate, timeLeft } from "./cloudwait";
+import { estimate, Flow, lastRate, rememberRate, timeLeft } from "./cloudwait";
 
 const MB = 1_000_000;
 
@@ -15,15 +15,38 @@ describe("estimate", () => {
   });
 
   it("never claims to be done before it is", () => {
-    const late = estimate(0, 400 * MB, 60_000, 20 * MB);
-    expect(late.fraction).toBe(0.99);
-    expect(late.remaining).toBeCloseTo(0.2);
+    // The last download's speed said 20 s; a minute on, it is past saying.
+    expect(estimate(0, 400 * MB, 60_000, 20 * MB)).toEqual({ fraction: 0.99, remaining: null });
     expect(estimate(400 * MB, 400 * MB, 20_000, null)).toEqual({ fraction: 1, remaining: 0 });
   });
 
   it("says nothing it cannot know", () => {
     expect(estimate(0, 400 * MB, 5_000, null)).toEqual({ fraction: null, remaining: null });
     expect(estimate(0, 0, 5_000, 20 * MB)).toEqual({ fraction: null, remaining: null });
+  });
+});
+
+describe("Flow", () => {
+  it("knows bytes are arriving when they come in over time", () => {
+    const flow = new Flow();
+    expect(flow.see(0, 400 * MB, 1, 0)).toBe(false);
+    expect(flow.see(8 * MB, 400 * MB, 1, 500)).toBe(false);
+    expect(flow.see(16 * MB, 400 * MB, 1, 1500)).toBe(true);
+    // And keeps saying so, even when the next recording opens.
+    expect(flow.see(200 * MB, 400 * MB, 2, 9000)).toBe(true);
+  });
+
+  it("is not fooled by a recording handed over whole, all its bytes at once", () => {
+    // Proton Drive: nothing for 30 s, then the whole file read in a blink.
+    const flow = new Flow();
+    flow.see(0, 400 * MB, 1, 0);
+    for (let at = 30_000, done = 8 * MB; done < 200 * MB; at += 10, done += 8 * MB) {
+      expect(flow.see(done, 400 * MB, 1, at)).toBe(false);
+    }
+    // The second recording, the same way: the first's bytes are not its own.
+    flow.see(200 * MB, 400 * MB, 2, 30_300);
+    expect(flow.see(208 * MB, 400 * MB, 2, 60_000)).toBe(false);
+    expect(flow.see(400 * MB, 400 * MB, 2, 61_000)).toBe(false);
   });
 });
 

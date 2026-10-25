@@ -225,6 +225,19 @@ pub struct DownloadSummary {
     pub failed: Vec<(String, String)>,
 }
 
+/// How far a download from the cloud is: bytes read, and which recording.
+/// A File Provider may hold a recording's first read until all of it is down,
+/// so the bytes can stand still then jump; the recording count still moves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadStep {
+    pub done: usize,
+    pub total: usize,
+    /// 1-based, of `files`.
+    pub file: usize,
+    pub files: usize,
+    pub line: String,
+}
+
 /// A session's details as the Edit Session dialog sends them back.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1368,7 +1381,7 @@ impl Library {
 
     /// Brings a session's recordings that are only in the cloud back onto this
     /// computer (`download`).
-    pub fn download_session(&self, session: &str, progress: impl FnMut(usize, usize, String))
+    pub fn download_session(&self, session: &str, progress: impl FnMut(DownloadStep))
         -> Result<DownloadSummary> {
         let session = self.session(session)?;
         self.download(self.store.source_files(session.id)?, DOWNLOAD_CHUNK, progress)
@@ -1376,7 +1389,7 @@ impl Library {
 
     /// Brings a flight's recordings that are only in the cloud back onto this
     /// computer (`download`).
-    pub fn download_flight(&self, flight: &str, progress: impl FnMut(usize, usize, String))
+    pub fn download_flight(&self, flight: &str, progress: impl FnMut(DownloadStep))
         -> Result<DownloadSummary> {
         self.download(self.flight_files(flight)?, DOWNLOAD_CHUNK, progress)
     }
@@ -1439,7 +1452,7 @@ impl Library {
     /// so reading is downloading, and it needs nothing of the drive's own.
     /// Progress counts bytes, the placeholder's size being the recording's.
     /// A recording still in the cloud afterwards is reported, not trusted.
-    fn download(&self, files: Vec<SourceFile>, chunk: usize, mut progress: impl FnMut(usize, usize, String))
+    fn download(&self, files: Vec<SourceFile>, chunk: usize, mut progress: impl FnMut(DownloadStep))
         -> Result<DownloadSummary> {
         let away: Vec<SourceFile> = files.into_iter().filter(|f| self.only_in_cloud(f)).collect();
         let size = |file: &SourceFile| std::fs::metadata(&file.imported_path).map_or(0, |m| m.len());
@@ -1449,7 +1462,9 @@ impl Library {
         for (index, file) in away.iter().enumerate() {
             let name = file_name(&file.imported_path);
             let line = format!("Downloading {name} ({}/{})…", index + 1, away.len());
-            progress(summary.bytes as usize, total as usize, line.clone());
+            let step = |done: u64| DownloadStep { done: done as usize, total: total as usize,
+                                                  file: index + 1, files: away.len(), line: line.clone() };
+            progress(step(summary.bytes));
             let read = (|| -> std::io::Result<u64> {
                 let mut source = std::fs::File::open(&file.imported_path)?;
                 let mut read = 0;
@@ -1459,7 +1474,7 @@ impl Library {
                         return Ok(read);
                     }
                     read += n as u64;
-                    progress((summary.bytes + read) as usize, total as usize, line.clone());
+                    progress(step(summary.bytes + read));
                 }
             })();
             match read {
@@ -1472,7 +1487,8 @@ impl Library {
                 Err(error) => summary.failed.push((name, error.to_string())),
             }
         }
-        progress(total as usize, total as usize, format!("{} recording(s) downloaded", summary.downloaded));
+        progress(DownloadStep { done: total as usize, total: total as usize, file: away.len(), files: away.len(),
+                                line: format!("{} recording(s) downloaded", summary.downloaded) });
         Ok(summary)
     }
 

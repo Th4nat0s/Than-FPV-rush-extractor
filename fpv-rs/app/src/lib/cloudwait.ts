@@ -1,10 +1,11 @@
 // Waiting for a flight to come down from the cloud drive before it plays:
 // how far along, and how long is left.
 //
-// Bytes read are the measure once they move. But a File Provider may hold the
-// first read of a file until the whole of it is on disk, so a one-file flight
-// can read nothing and then everything: until bytes arrive, the speed of the
-// last download stands in, and the bar never claims to be done.
+// Bytes read are the measure when they move. But a File Provider may hold the
+// first read of a file until the whole of it is on disk — Proton Drive does —
+// so a recording reads nothing and then everything at once: there the window
+// counts recordings instead (`Flow`), and only the speed of earlier downloads
+// says how long is left. The bar never claims to be done before it is.
 
 const RATE_KEY = "cloudDownloadRate";
 
@@ -28,6 +29,32 @@ export function rememberRate(bytes: number, ms: number) {
   }
 }
 
+/** Bytes spread over this long within one recording are really arriving. */
+const SPREAD_MS = 1000;
+
+/** Whether a download's bytes arrive as it goes, or each recording whole at
+ * once. Fed every progress report; once they are seen arriving it says so for
+ * the rest of the download. */
+export class Flow {
+  private file = 0;
+  /** When the first of its bytes was seen. */
+  private first: number | null = null;
+  live = false;
+
+  /** A report: `done` of `total` bytes, on recording `file`, at `at` ms. */
+  see(done: number, total: number, file: number, at: number): boolean {
+    if (file !== this.file) {
+      // Its first report comes before any of its bytes: it does not count.
+      this.file = file;
+      this.first = null;
+    } else if (done < total) {
+      this.first ??= at;
+      if (at - this.first >= SPREAD_MS) this.live = true;
+    }
+    return this.live;
+  }
+}
+
 export interface Wait {
   /** 0–1 for the bar; null when nothing can be said. */
   fraction: number | null;
@@ -44,6 +71,8 @@ export function estimate(done: number, total: number, elapsed: number, rate: num
   if (!speed) return { fraction: done > 0 ? done / total : null, remaining: null };
   // What should be down by now at that speed — never all of it before it is.
   const expected = Math.min(speed * seconds, done >= total ? total : total * 0.99);
+  // A guess from the last download that has run out says nothing more.
+  if (done === 0 && expected >= total * 0.99) return { fraction: expected / total, remaining: null };
   return { fraction: expected / total, remaining: Math.max(0, (total - expected) / speed) };
 }
 

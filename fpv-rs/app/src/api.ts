@@ -209,6 +209,8 @@ export interface Progress {
   line: string;
   done: number;
   total: number;
+  /** A download's recording: [n, of]. */
+  part?: [number, number];
 }
 
 /** A picture in the cache folder; `made` when this call had to make it. */

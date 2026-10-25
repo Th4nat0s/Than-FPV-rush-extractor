@@ -53,6 +53,8 @@ describe("track", () => {
     const task = store.runningTask("segment:alpes")!;
     expect([task.line, task.done, task.total]).toEqual(["Detecting PICT0003.AVI (1/2)…", 1, 2]);
     expect(store.fraction(task)).toBe(0.5);
+    emit("download-progress", { task: id, line: "Downloading GH010042.MP4 (2/3)…", done: 5, total: 9, part: [2, 3] });
+    expect(task.part).toEqual([2, 3]);
     // Another job's progress never lands on this one.
     expect(store.tasks.find((t) => t.title === "Segment “Letz”")!.total).toBe(0);
 

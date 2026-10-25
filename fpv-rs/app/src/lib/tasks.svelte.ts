@@ -15,6 +15,8 @@ export interface Task {
   done: number;
   /** 0 when the job cannot say how far along it is. */
   total: number;
+  /** The item it is on, [n, of], for jobs whose bytes may stand still: downloads. */
+  part?: [number, number];
   state: "running" | "done" | "failed";
   started: number;
   ended: number | null;
@@ -35,6 +37,7 @@ for (const event of ["import-progress", "segment-progress", "export-progress", "
     task.line = payload.line;
     task.done = payload.done;
     task.total = payload.total;
+    task.part = payload.part;
   });
 }
 

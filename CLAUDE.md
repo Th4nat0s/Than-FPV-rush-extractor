@@ -990,11 +990,14 @@ frame-exact boundary editor. Layout:
   request): the card's click (or a figure's) opens `CloudWait` instead of the player — the
   flight's download as a task, a bar and the time left — and the player opens once the
   recordings are here; *Continue in Background* leaves the download in the task bar and the
-  flight unplayed, a failure is notified. The estimate (`lib/cloudwait.ts`, tested) goes by
-  the bytes read once they move; but a File Provider may hold a file's first read until the
-  whole of it is down, so a one-file flight can read nothing then everything — until then
-  the last download's speed (kept in `localStorage`) stands in, and the bar never shows done
-  before it is. Seen in the window with a build simulating a slow drive (the `.cloud`
+  flight unplayed, a failure is notified. **Proton Drive holds a file's first read until the
+  whole of it is down** (the pilot's Mac: 0 bytes, then all of them), so the window shows
+  bytes only once it sees them arrive — spread over a second within one recording
+  (`Flow`, `lib/cloudwait.ts`, tested) — and until then "Video 1 of 2", from the recording
+  index every download step carries (`DownloadStep`, `part` in the event), with a line
+  saying why. The time left comes from the bytes of the recordings already down, else the
+  last download's speed (kept in `localStorage`), and says nothing once that guess has run
+  out; the bar never shows done before it is. Seen in the window with a build simulating a slow drive (the `.cloud`
   marker, 300 ms a chunk); how Proton's own downloads report progress is for the Mac to show.
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
