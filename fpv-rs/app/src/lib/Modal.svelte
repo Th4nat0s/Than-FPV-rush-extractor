@@ -5,7 +5,8 @@
   let { title, width = 480, onclose, children, footer }: {
     title: string;
     width?: number;
-    /** Escape, the backdrop and the ✕ call this; leave it out to make the modal sticky. */
+    /** Escape and the ✕ call this; leave it out to make the modal sticky. A click
+     * outside never closes it: one that misses would lose what was typed. */
     onclose?: () => void;
     children: Snippet;
     footer?: Snippet;
@@ -18,7 +19,7 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose?.()}>
+<div class="backdrop" role="presentation">
   <div class="modal" role="dialog" aria-modal="true" aria-label={title} style:width="{width}px">
     <header>
       <h2>{title}</h2>
