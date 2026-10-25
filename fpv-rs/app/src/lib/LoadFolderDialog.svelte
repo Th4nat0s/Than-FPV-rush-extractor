@@ -6,16 +6,19 @@
   import { paginate } from "./library";
 
   // The import folder's folders, to load one or more in place. A folder the
-  // library already holds whole is shown, greyed, and cannot be picked.
+  // library already holds whole is shown, greyed, and cannot be picked. The
+  // recordings deleted with their flight are named on their folder's row and
+  // loaded again only when that row says so.
   let { root, onload, onclose }: {
     root: string;
-    onload: (folders: string[]) => void;
+    onload: (folders: string[], restore: string[]) => void;
     onclose: () => void;
   } = $props();
 
   let folders = $state<FolderView[] | null>(null);
   let problem = $state<string | null>(null);
   let picked = $state<string[]>([]);
+  let restore = $state<string[]>([]);
   let loadable = $derived((folders ?? []).filter((f) => f.new > 0));
   // Ten a page; what is ticked stays ticked across pages.
   const FOLDERS_PER_PAGE = 10;
@@ -26,9 +29,7 @@
     api.importFolderContents().then((found) => (folders = found)).catch((e) => (problem = message(e)));
   });
 
-  function toggle(name: string) {
-    picked = picked.includes(name) ? picked.filter((p) => p !== name) : [...picked, name];
-  }
+  const toggled = (list: string[], name: string) => list.includes(name) ? list.filter((p) => p !== name) : [...list, name];
 
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 </script>
@@ -46,19 +47,28 @@
     <ul>
       {#each shown.items as folder (folder.name)}
         {@const done = folder.new === 0}
-        <li class:done>
-          <label>
+        <li class:done={done && !folder.deleted.length}>
+          <label class:done>
             <input type="checkbox" disabled={done} checked={picked.includes(folder.name)}
-                   onchange={() => toggle(folder.name)} />
+                   onchange={() => (picked = toggled(picked, folder.name))} />
             <span class="what">
               <span class="name">{folder.name}</span>
               <span class="caption">→ {folder.session}{folder.date ? ` · ${folder.date}` : ""}</span>
             </span>
             <span class="caption count">
-              {!folder.recordings ? "No recordings" : done ? "Already in library"
+              {!folder.recordings ? "No recordings" : done ? (folder.deleted.length ? "Nothing new" : "Already in library")
                     : folder.new === folder.recordings ? plural(folder.recordings, "recording")
                     : `${folder.new} new of ${folder.recordings}`}</span>
           </label>
+          {#if folder.deleted.length}
+            <label class="deleted">
+              <input type="checkbox" checked={restore.includes(folder.name)}
+                     onchange={() => (restore = toggled(restore, folder.name))} />
+              <span class="caption" title={folder.deleted.join("\n")}>
+                {plural(folder.deleted.length, "recording")} deleted with {folder.deleted.length === 1 ? "its flight" : "their flights"}
+                ({folder.deleted.join(", ")}) — load again into {folder.session}</span>
+            </label>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -70,8 +80,9 @@
       <span class="spacer"></span>
     {/if}
     <button onclick={onclose}>Cancel</button>
-    <button class="primary" disabled={!picked.length} onclick={() => onload(picked)}>
-      Load {picked.length > 1 ? `${picked.length} folders` : ""}</button>
+    {@const count = new Set([...picked, ...restore]).size}
+    <button class="primary" disabled={!count} onclick={() => onload(picked, restore)}>
+      Load {count > 1 ? `${count} folders` : ""}</button>
   {/snippet}
 </Modal>
 
@@ -82,7 +93,9 @@
   label { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
   li:hover:not(.done) { background: var(--hover); }
   li.done { opacity: 0.45; }
-  li.done label { cursor: default; }
+  label.done { cursor: default; }
+  .deleted { padding-top: 0; padding-left: 34px; color: var(--warn); }
+  .deleted .caption { color: inherit; }
   input { accent-color: var(--accent); margin: 0; }
   .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

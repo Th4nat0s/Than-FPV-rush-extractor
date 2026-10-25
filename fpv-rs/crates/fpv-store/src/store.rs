@@ -138,6 +138,8 @@ impl LibraryStore {
         let changed = transaction.execute("DELETE FROM flight WHERE id = ?", [Id(flight_id)])?;
         not_found_unless(changed, "flight", flight_id)?;
         for file in files {
+            transaction.execute("INSERT OR IGNORE INTO deletedRecording (path)
+                                 SELECT importedPath FROM sourceFile WHERE id = ?", [Id(*file)])?;
             transaction.execute("DELETE FROM sourceFile WHERE id = ?", [Id(*file)])?;
         }
         transaction.commit()?;
@@ -365,6 +367,25 @@ impl LibraryStore {
 
     /// Where every recording in the library was copied to: a file on disk
     /// that is not among them belongs to no session.
+    /// Where the recordings deleted with a flight were (`delete_flight`).
+    pub fn deleted_paths(&self) -> Result<HashSet<String>> {
+        let db = self.db();
+        let mut statement = db.prepare("SELECT path FROM deletedRecording")?;
+        let rows = statement.query_map([], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Forgets that these recordings were deleted: they are back.
+    pub fn forget_deleted(&self, paths: &[String]) -> Result<()> {
+        let mut db = self.db();
+        let transaction = db.transaction()?;
+        for path in paths {
+            transaction.execute("DELETE FROM deletedRecording WHERE path = ?", [path])?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn imported_paths(&self) -> Result<HashSet<String>> {
         let db = self.db();
         let mut statement = db.prepare("SELECT importedPath FROM sourceFile")?;

@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FlightView, SessionView } from "../api";
 
-// Rust's side: a segment call that answers at once.
+// Rust's side: segment and load calls that answer at once.
 const invoked: string[] = [];
+const args: Record<string, unknown>[] = [];
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => path,
-  invoke: (command: string) => {
+  invoke: (command: string, given: Record<string, unknown>) => {
     invoked.push(command);
-    return command === "segment" ? Promise.resolve("3 flights found") : Promise.reject(`unexpected ${command}`);
+    args.push(given);
+    if (command === "segment") return Promise.resolve("3 flights found");
+    if (command === "load_import_folder") return Promise.resolve({ imported: 2, skipped: 0, failed: 0, flights: 1 });
+    return Promise.reject(`unexpected ${command}`);
   },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
@@ -18,6 +22,7 @@ let confirm: typeof import("./confirm.svelte");
 beforeEach(async () => {
   vi.resetModules();
   invoked.length = 0;
+  args.length = 0;
   confirm = await import("./confirm.svelte");
   sessions = await import("./sessions");
 });
@@ -26,6 +31,18 @@ const flight = (actionCam: boolean) => ({ id: "f", order: 1, actionCam, liked: f
 const session = (flights: FlightView[]) =>
   ({ id: "letz", name: "Letz Kwad", date: null, files: [], flights, segmentable: true, reducible: false, detectionProfile: "standard", location: null, notes: null, labels: [] }) as SessionView;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("loadImportFolder", () => {
+  it("loads again what was deleted with its flight only in the folders asked", async () => {
+    const tasks = await import("./tasks.svelte");
+    await sessions.loadImportFolder(["2026-09-01 Bench"], ["2026-08-23 Letz Kwad GOPRO"]);
+    expect(args[0]).toMatchObject({ folders: ["2026-09-01 Bench"], restore: ["2026-08-23 Letz Kwad GOPRO"] });
+    expect(tasks.tasks[0].title).toBe("Load 2 folders");
+    // A folder only loaded again is still named.
+    await sessions.loadImportFolder([], ["2026-08-23 Letz Kwad GOPRO"]);
+    expect(tasks.tasks[0].title).toBe("Load “2026-08-23 Letz Kwad GOPRO”");
+  });
+});
 
 describe("segment", () => {
   it("asks nothing the first time: there are no flights to lose", async () => {

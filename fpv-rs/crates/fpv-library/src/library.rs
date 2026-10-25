@@ -316,7 +316,11 @@ pub struct FolderView {
     pub date: Option<String>,
     pub recordings: usize,
     /// Recordings the library does not know: 0 is a folder already imported.
+    /// Those deleted with their flight are not counted.
     pub new: usize,
+    /// Recordings that left the library with a deleted flight and are still
+    /// here: loaded again only when asked.
+    pub deleted: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -708,14 +712,19 @@ impl Library {
         let ffmpeg = self.ffmpeg();
         let importer = LibraryImporter::new(&ffmpeg, &self.store);
         let known = self.store.imported_paths()?;
+        let deleted = self.store.deleted_paths()?;
         self.session_folders_on_disk()?.into_iter().map(|folder| {
             let files = importer.discover(&folder)?;
             let name = file_name(&folder.to_string_lossy());
             let (day, session) = fpv_import::session_of_folder(&name);
+            let unknown: Vec<String> = files.iter().map(|f| f.path.to_string_lossy().into_owned())
+                .filter(|path| !known.contains(path)).collect();
+            let (deleted, new): (Vec<String>, Vec<String>) = unknown.into_iter().partition(|path| deleted.contains(path));
             Ok(FolderView {
                 session, date: day.map(|d| d.format("%Y-%m-%d").to_string()),
                 recordings: files.len(),
-                new: files.iter().filter(|f| !known.contains(f.path.to_string_lossy().as_ref())).count(),
+                new: new.len(),
+                deleted: deleted.iter().map(|path| file_name(path)).collect(),
                 name,
             })
         }).collect()
@@ -739,27 +748,40 @@ impl Library {
     /// its name (`session_of_folder`): the folders of one session and day (one
     /// per source) join one session, and a session of that name and day
     /// already in the library is joined. Folders holding nothing new create
-    /// nothing.
-    pub fn load_import_folders(&self, chosen: &[String], mut progress: impl FnMut(ImportEvent))
-        -> Result<ImportSummary> {
+    /// nothing. A recording deleted with its flight is left where it is,
+    /// unless its folder is among `restore`: then it comes back too, into the
+    /// session the folder loads into, beside the flights still there.
+    pub fn load_import_folders(&self, chosen: &[String], restore: &[String],
+                               mut progress: impl FnMut(ImportEvent)) -> Result<ImportSummary> {
         let ffmpeg = self.ffmpeg();
         let importer = LibraryImporter::new(&ffmpeg, &self.store).posters_in(self.posters());
         let folders = self.session_folders_on_disk()?;
-        for name in chosen {
+        for name in chosen.iter().chain(restore) {
             if !folders.iter().any(|f| file_name(&f.to_string_lossy()) == *name) {
                 return Err(LibraryError::NotFound(format!("folder {name} in the import folder")));
             }
         }
         let found: Vec<(PathBuf, Vec<_>)> = folders.into_iter()
-            .filter(|folder| chosen.contains(&file_name(&folder.to_string_lossy())))
+            .filter(|folder| chosen.iter().chain(restore).any(|name| *name == file_name(&folder.to_string_lossy())))
             .map(|folder| Ok((folder.clone(), importer.discover(&folder)?)))
             .collect::<std::io::Result<_>>()?;
         let count = found.iter().map(|(_, files)| files.len()).sum();
         progress(ImportEvent::Discovered { count, sessions: found.len() });
 
         let known = self.store.imported_paths()?;
+        let deleted = self.store.deleted_paths()?;
         let mut summary = ImportSummary::default();
-        for (folder, files) in found {
+        for (folder, mut files) in found {
+            if !restore.contains(&file_name(&folder.to_string_lossy())) {
+                files.retain(|file| {
+                    let gone = deleted.contains(file.path.to_string_lossy().as_ref());
+                    if gone {
+                        summary.skipped += 1;
+                        progress(ImportEvent::Skipped(file.path.clone()));
+                    }
+                    !gone
+                });
+            }
             if files.iter().all(|f| known.contains(f.path.to_string_lossy().as_ref())) {
                 for file in files {
                     summary.skipped += 1;
@@ -780,6 +802,9 @@ impl Library {
                 }
             };
             let report = importer.register_in_place(files, &session, &mut progress)?;
+            let back: Vec<String> = report.imported.iter().map(|file| file.imported_path.clone())
+                .filter(|path| deleted.contains(path)).collect();
+            self.store.forget_deleted(&back)?;
             summary.imported += report.imported.len();
             summary.skipped += report.skipped.len();
             summary.failed += report.failed.len();

@@ -463,6 +463,10 @@ fn deletes_a_flight_with_the_recordings_that_held_only_it() {
     assert!(store.source_files(session.id).unwrap().is_empty());
     assert!(store.tags_in_session(session.id).unwrap().is_empty());
     assert!(store.flight_label_names().unwrap().is_empty());
+    // Remembered, so loading the import folder does not bring it back unasked.
+    assert_eq!(store.deleted_paths().unwrap(), HashSet::from([file.imported_path.clone()]));
+    store.forget_deleted(std::slice::from_ref(&file.imported_path)).unwrap();
+    assert!(store.deleted_paths().unwrap().is_empty());
     // A flight that is not there: nothing happens, and it says so.
     assert!(store.delete_flight(flight.id, &[]).is_err());
 }
@@ -475,6 +479,7 @@ fn deletes_only_the_flight_when_its_recording_stays() {
     store.delete_flight(flight.id, &[]).unwrap();
     assert!(store.flights(session.id).unwrap().is_empty());
     assert_eq!(store.source_files(session.id).unwrap(), [file]);
+    assert!(store.deleted_paths().unwrap().is_empty(), "still in the library");
 }
 
 #[test]

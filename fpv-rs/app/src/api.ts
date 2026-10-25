@@ -134,8 +134,11 @@ export interface FolderView {
   /** YYYY-MM-DD, when its name starts with one. */
   date: string | null;
   recordings: number;
-  /** Recordings the library does not know: 0 is a folder already imported. */
+  /** Recordings the library does not know: 0 is a folder already imported.
+   * Those deleted with their flight are not counted. */
   new: number;
+  /** Recordings deleted with their flight and still here: loaded again only when asked. */
+  deleted: string[];
 }
 
 /** What the Edit Session dialog sends back. */
@@ -265,8 +268,8 @@ export const api = {
   importCard: (task: string, folder: string, name: string, date: string | null, deleteOriginals: boolean) =>
     invoke<ImportSummary>("import_card", { task, folder, name, date, deleteOriginals }),
   importFolderContents: () => invoke<FolderView[]>("import_folder_contents"),
-  loadImportFolder: (task: string, folders: string[]) =>
-    invoke<ImportSummary>("load_import_folder", { task, folders }),
+  loadImportFolder: (task: string, folders: string[], restore: string[]) =>
+    invoke<ImportSummary>("load_import_folder", { task, folders, restore }),
   segment: (task: string, session: string) => invoke<string>("segment", { task, session }),
   reducePreview: (session: string) => invoke<ReducePreview>("reduce_preview", { session }),
   reduceSession: (task: string, session: string) => invoke<ReduceSummary>("reduce_session", { task, session }),

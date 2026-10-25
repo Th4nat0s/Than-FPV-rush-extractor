@@ -243,9 +243,9 @@ fn lists_the_import_folders_and_what_each_holds_that_is_new() {
     let contents = library.import_folder_contents().unwrap();
     assert_eq!(contents, [
         FolderView { name: "2026-08-23 Letz Kwad GOPRO".into(), session: "Letz Kwad".into(),
-                     date: Some("2026-08-23".into()), recordings: 3, new: 0 },
+                     date: Some("2026-08-23".into()), recordings: 3, new: 0, deleted: vec![] },
         FolderView { name: "2026-09-01 Bench".into(), session: "Bench".into(),
-                     date: Some("2026-09-01".into()), recordings: 1, new: 1 },
+                     date: Some("2026-09-01".into()), recordings: 1, new: 1, deleted: vec![] },
     ]);
     // Removed with its videos kept: its folder is new again.
     library.delete_session(&session.id, true).unwrap();
@@ -258,12 +258,12 @@ fn loads_only_the_folders_chosen_and_none_outside_the_import_folder() {
     let library = &fixture.library;
     take_in(&library.root.join("2026-09-01 Bench"), "DJI_0002.MP4", 2);
     take_in(&library.root.join("2026-09-02 Roof"), "DJI_0003.MP4", 3);
-    let summary = library.load_import_folders(&["2026-09-02 Roof".into()], |_| {}).unwrap();
+    let summary = library.load_import_folders(&["2026-09-02 Roof".into()], &[], |_| {}).unwrap();
     assert_eq!(summary.imported, 1);
     let names: Vec<_> = library.snapshot().unwrap().into_iter().map(|s| s.name).collect();
     assert!(names.contains(&"Roof".to_string()) && !names.contains(&"Bench".to_string()), "{names:?}");
     for outside in ["..", "../library", "/tmp", "2026-09-03 Nowhere"] {
-        assert!(matches!(library.load_import_folders(&[outside.into()], |_| {}), Err(LibraryError::NotFound(_))),
+        assert!(matches!(library.load_import_folders(&[outside.into()], &[], |_| {}), Err(LibraryError::NotFound(_))),
                 "{outside}");
     }
 }
@@ -278,7 +278,7 @@ fn loads_recordings_left_in_the_import_folder_where_they_are() {
     let written = std::fs::metadata(&take).unwrap().modified().unwrap();
     library.delete_session(&session.id, true).unwrap();
     let mut copied = 0;
-    let summary = library.load_import_folders(&everything(library), |event| {
+    let summary = library.load_import_folders(&everything(library), &[], |event| {
         if matches!(event, ImportEvent::Copying(_)) { copied += 1; }
     }).unwrap();
     assert_eq!((summary.imported, summary.skipped, summary.failed, summary.flights), (3, 0, 0, 2));
@@ -294,9 +294,42 @@ fn loads_recordings_left_in_the_import_folder_where_they_are() {
     assert!(paths.contains(&take), "registered where it is: {paths:?}");
 
     // Nothing new: nothing happens.
-    let summary = library.load_import_folders(&everything(library), |_| {}).unwrap();
+    let summary = library.load_import_folders(&everything(library), &[], |_| {}).unwrap();
     assert_eq!((summary.imported, summary.skipped), (0, 3));
     assert_eq!(library.snapshot().unwrap().len(), 1);
+}
+
+#[test]
+fn leaves_a_recording_deleted_with_its_flight_unless_asked_to_load_it_again() {
+    // The trash refused the take, or the pilot put it back: it is in the
+    // import folder again, and loading the folder must not undo the deletion.
+    let (fixture, session) = imported();
+    let library = &fixture.library;
+    let take = &session.flights[0];
+    let chapters: Vec<_> = take.clips.iter().map(|c| library.recording_path(&c.file_id).unwrap()).collect();
+    let kept: Vec<_> = chapters.iter().map(|path| std::fs::read(path).unwrap()).collect();
+    library.delete_flight(&take.id).unwrap();
+    for (path, bytes) in chapters.iter().zip(&kept) {
+        std::fs::write(path, bytes).unwrap();
+    }
+    let folder = library.import_folder_contents().unwrap().remove(0);
+    assert_eq!((folder.new, folder.deleted.as_slice()), (0, ["GH010042.MP4".to_owned(), "GH020042.MP4".to_owned()].as_slice()));
+
+    let summary = library.load_import_folders(&everything(library), &[], |_| {}).unwrap();
+    assert_eq!((summary.imported, summary.skipped), (0, 3));
+    assert_eq!(library.snapshot().unwrap()[0].flights.len(), 1);
+
+    // Asked for: back into the session beside the other take, and forgotten.
+    let summary = library.load_import_folders(&[], std::slice::from_ref(&folder.name), |_| {}).unwrap();
+    assert_eq!((summary.imported, summary.flights), (2, 1));
+    let sessions = library.snapshot().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!((sessions[0].id.as_str(), sessions[0].flights.len()), (session.id.as_str(), 2));
+    // Forgotten as deleted: a session later removed with its videos kept
+    // loads back whole.
+    library.delete_session(&session.id, true).unwrap();
+    let folder = library.import_folder_contents().unwrap().remove(0);
+    assert_eq!((folder.new, folder.deleted.len()), (3, 0));
 }
 
 #[test]
@@ -307,7 +340,7 @@ fn files_a_loaded_folder_into_its_session_and_day_or_a_new_one() {
     take_in(&library.root.join("2026-08-23 Letz Kwad DJI"), "DJI_0001.MP4", 1);
     // A folder dropped in by hand: a session of its own, dated from its name.
     take_in(&library.root.join("2026-09-01 Bench"), "DJI_0002.MP4", 2);
-    let summary = library.load_import_folders(&everything(library), |_| {}).unwrap();
+    let summary = library.load_import_folders(&everything(library), &[], |_| {}).unwrap();
     assert_eq!((summary.imported, summary.skipped, summary.flights), (2, 3, 2));
 
     let sessions = library.snapshot().unwrap();

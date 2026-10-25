@@ -173,11 +173,11 @@ async fn import_folder_contents(app: Shared<'_>) -> Reply<Vec<FolderView>> {
 /// "Load from destination folder": the chosen folders' recordings the library
 /// does not know, registered where they are; progress as import events.
 #[tauri::command]
-async fn load_import_folder(handle: AppHandle, app: Shared<'_>, task: String, folders: Vec<String>)
-    -> Reply<ImportSummary> {
+async fn load_import_folder(handle: AppHandle, app: Shared<'_>, task: String, folders: Vec<String>,
+                            restore: Vec<String>) -> Reply<ImportSummary> {
     blocking(&app, move |app| {
         let mut progress = ImportProgress::default();
-        app.library().load_import_folders(&folders, |event| {
+        app.library().load_import_folders(&folders, &restore, |event| {
             let Step { line, done, total } = progress.step(event);
             let _ = handle.emit("import-progress", Progress { task: task.clone(), line, done, total });
         })

@@ -20,13 +20,15 @@ export async function segment(session: SessionView): Promise<string | null> {
 }
 
 /** Registers what the chosen folders of the import folder hold and the
- * library does not, where it is; resolves to what happened. A task, so the
- * bar shows it. */
-export async function loadImportFolder(folders: string[]): Promise<string> {
+ * library does not, where it is — and, for the folders in `restore`, the
+ * recordings deleted with their flight too; resolves to what happened. A
+ * task, so the bar shows it. */
+export async function loadImportFolder(folders: string[], restore: string[] = []): Promise<string> {
+  const all = [...new Set([...folders, ...restore])];
   try {
-    const s = await track(folders.length === 1 ? `Load “${folders[0]}”` : `Load ${folders.length} folders`,
-                          (id) => api.loadImportFolder(id, folders), {
-      key: "import", summary: (s) => `${s.imported} loaded, ${s.skipped} already in library, ${s.failed} failed`,
+    const s = await track(all.length === 1 ? `Load “${all[0]}”` : `Load ${all.length} folders`,
+                          (id) => api.loadImportFolder(id, folders, restore), {
+      key: "import", summary: (s) => `${s.imported} loaded, ${s.skipped} skipped, ${s.failed} failed`,
     });
     return s.imported ? `Loaded ${s.imported} recording(s)${s.flights ? `, ${s.flights} action-cam take(s)` : ""}.`
                       : "Nothing new in the import folder.";

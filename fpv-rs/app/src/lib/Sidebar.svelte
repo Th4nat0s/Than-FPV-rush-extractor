@@ -97,10 +97,10 @@
     notice = done;
   }
 
-  async function load(folders: string[]) {
+  async function load(folders: string[], restore: string[]) {
     choosing = false;
     // The task bar shows the loading; the summary comes when it ends.
-    const done = await loadImportFolder(folders);
+    const done = await loadImportFolder(folders, restore);
     noticeTitle = "Load from Destination Folder";
     notice = done;
   }

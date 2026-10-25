@@ -1153,7 +1153,12 @@ frame-exact boundary editor. Layout:
   flights, leaves them.
 - **Delete Flight…** (2026-10-24, the pilot's request), in a card's ⋯ menu, behind a
   confirmation that names what goes (`Library::flight_deletion`, the same plan
-  `delete_flight` carries out). A **whole DVR recording stays**: only the flight's pointer
+  `delete_flight` carries out). **A file it took along is remembered** (`deletedRecording`, schema `v7`, by
+  path; 2026-10-25, the pilot's request): if the trash refused it or the pilot put it back,
+  *Load from Destination Folder* leaves it where it is, names it on its folder's row
+  ("1 recording deleted with its flight") and loads it only when that row's *load again*
+  is ticked (`load_import_folders(chosen, restore)`) — into the session the folder loads
+  into, beside its other flights — and then forgets it was deleted. A **whole DVR recording stays**: only the flight's pointer
   goes, and a re-segment would find the flight again. A file that held **nothing but this
   flight goes to the trash** with it — a piece a reduction left, an action-cam take and its
   chapters (the pilot named the DVR cases; a take is its file, so it follows the piece's rule).
