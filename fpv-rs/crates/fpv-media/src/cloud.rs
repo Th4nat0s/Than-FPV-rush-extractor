@@ -38,7 +38,13 @@ pub fn only_in_cloud(path: &Path) -> bool {
 /// Provider — Proton Drive, Dropbox, OneDrive, Google Drive — keeps its files
 /// under `~/Library/CloudStorage/` (the pilot's:
 /// `…/Library/CloudStorage/ProtonDrive-…-folder/rushes`).
+/// Only on macOS: elsewhere there is no File Provider to free anything, so
+/// Free Up Space is never offered.
 pub fn on_cloud_drive(path: &Path) -> bool {
+    cfg!(target_os = "macos") && under_cloud_storage(path)
+}
+
+fn under_cloud_storage(path: &Path) -> bool {
     let parts: Vec<_> = path.components().map(|c| c.as_os_str()).collect();
     parts.windows(2).any(|pair| pair[0] == "Library" && pair[1] == "CloudStorage")
 }
@@ -80,10 +86,13 @@ mod tests {
 
     #[test]
     fn knows_a_cloud_drives_folder_by_where_macos_keeps_them() {
-        assert!(on_cloud_drive(Path::new(
-            "/Users/defane/Library/CloudStorage/ProtonDrive-pilot@example.org-folder/rushes/PICT0032.AVI")));
-        assert!(!on_cloud_drive(Path::new("/Users/defane/Videos/FPV Rush/PICT0032.AVI")));
-        assert!(!on_cloud_drive(Path::new("/home/pilot/CloudStorage/PICT0032.AVI")));
+        let proton = Path::new(
+            "/Users/defane/Library/CloudStorage/ProtonDrive-pilot@example.org-folder/rushes/PICT0032.AVI");
+        assert!(under_cloud_storage(proton));
+        assert!(!under_cloud_storage(Path::new("/Users/defane/Videos/FPV Rush/PICT0032.AVI")));
+        assert!(!under_cloud_storage(Path::new("/home/pilot/CloudStorage/PICT0032.AVI")));
+        // Only macOS has File Providers to free anything.
+        assert_eq!(on_cloud_drive(proton), cfg!(target_os = "macos"));
     }
 
     #[test]

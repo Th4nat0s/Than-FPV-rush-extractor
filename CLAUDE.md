@@ -978,8 +978,9 @@ frame-exact boundary editor. Layout:
   (`evictItem`), `fileproviderctl` has no `evict` on the pilot's Mac (grep of its help:
   nothing), so `fpv_media::free_up_space` calls Foundation's
   `evictUbiquitousItemAtURL:error:` (`objc2-foundation`, macOS only), written for iCloud. It
-  is offered only for files on this disk under `~/Library/CloudStorage/` (`on_cloud_drive`,
-  `FileView.freeable`), and trusted only if the file reads `dataless` afterwards; a refusal
+  is offered only on macOS, for files on this disk under `~/Library/CloudStorage/`
+  (`on_cloud_drive`, `FileView.freeable`) — and Download only for a file reading `dataless`,
+  which no other folder can — so neither shows for an import folder no drive manages, and trusted only if the file reads `dataless` afterwards; a refusal
   or a file kept here is notified with its reason, and nothing is ever deleted any other way.
   Checked here: the logic against stand-in drives (freeing, refusing, saying yes and keeping),
   `cargo check --target aarch64-apple-darwin`, and the menus in a build simulating the drive.
