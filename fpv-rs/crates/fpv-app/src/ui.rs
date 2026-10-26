@@ -8,6 +8,52 @@ use fpv_library::{FlightView, SessionView};
 use std::path::PathBuf;
 use std::time::Duration;
 
+#[derive(Clone, Copy)]
+enum MetadataIcon {
+    Dvr,
+    Film,
+}
+
+fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
+    let (area, response) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::hover());
+    let color = ui.visuals().weak_text_color();
+    let stroke = egui::Stroke::new(1.2_f32, color);
+    let body = egui::Rect::from_min_max(
+        area.min + egui::vec2(2.0, 3.0),
+        area.max - egui::vec2(2.0, 2.0),
+    );
+    let painter = ui.painter();
+    match kind {
+        MetadataIcon::Dvr => {
+            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
+            painter.line_segment(
+                [
+                    body.left_top() + egui::vec2(3.0, 3.0),
+                    body.right_top() - egui::vec2(3.0, -3.0),
+                ],
+                stroke,
+            );
+            painter.circle_filled(body.right_bottom() - egui::vec2(3.0, 3.0), 1.2_f32, color);
+        }
+        MetadataIcon::Film => {
+            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
+            let screen = egui::Rect::from_min_max(
+                body.min + egui::vec2(5.0, 2.0),
+                body.max - egui::vec2(5.0, 2.0),
+            );
+            painter.rect_stroke(screen, 0.5, stroke, egui::StrokeKind::Inside);
+            for y in [body.top() + 3.0, body.center().y, body.bottom() - 3.0] {
+                painter.circle_filled(egui::pos2(body.left() + 2.5, y), 0.7_f32, color);
+                painter.circle_filled(egui::pos2(body.right() - 2.5, y), 0.7_f32, color);
+            }
+        }
+    }
+    response.on_hover_text(match kind {
+        MetadataIcon::Dvr => "Recording source",
+        MetadataIcon::Film => "Video format",
+    });
+}
+
 impl App {
     pub(crate) fn about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
@@ -314,7 +360,9 @@ impl App {
             for file in &session.files {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(&file.name);
+                    metadata_icon(ui, MetadataIcon::Dvr);
                     ui.label(&file.source);
+                    metadata_icon(ui, MetadataIcon::Film);
                     ui.label(&file.format);
                     if file.reduced {
                         ui.label("reduced");
@@ -603,8 +651,14 @@ impl App {
             if self.browse.view != View::Sessions {
                 ui.small(&session.name);
             }
-            ui.small(format!("{} · {}", clock(flight.duration), flight.source));
-            ui.small(&flight.format);
+            ui.horizontal(|ui| {
+                metadata_icon(ui, MetadataIcon::Dvr);
+                ui.small(format!("{} · {}", clock(flight.duration), flight.source));
+            });
+            ui.horizontal(|ui| {
+                metadata_icon(ui, MetadataIcon::Film);
+                ui.small(&flight.format);
+            });
             if flight.recordings > 1 {
                 ui.small(format!("Spans {} recordings", flight.recordings));
             }
