@@ -11,8 +11,9 @@ DEST="$ROOT/packaging/resources"
 mkdir -p "$WORK" "$DEST/bin" "$DEST/licenses/ffmpeg"
 ARCHIVE="$WORK/ffmpeg-$VERSION.tar.xz"
 if [ ! -f "$ARCHIVE" ]; then
-    curl --fail --location --retry 3 --connect-timeout 30 \
-        "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$ARCHIVE"
+    curl --fail --location --retry 3 --retry-all-errors --connect-timeout 30 \
+        "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$ARCHIVE.download"
+    mv "$ARCHIVE.download" "$ARCHIVE"
 fi
 if command -v sha256sum >/dev/null; then
     printf '%s  %s\n' "$SHA256" "$ARCHIVE" | sha256sum -c -
