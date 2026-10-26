@@ -2,6 +2,12 @@ name: Native desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        default: all
+        options: [all, linux, macos, windows]
   pull_request:
   push:
     branches: [main, migration/native-egui]
@@ -21,6 +27,7 @@ env:
 
 jobs:
   linux:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux'
     name: Linux ${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -63,6 +70,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos'
     name: macOS universal
     runs-on: macos-latest
     timeout-minutes: 60
@@ -85,6 +93,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows'
     name: Windows x64
     runs-on: windows-latest
     timeout-minutes: 60
