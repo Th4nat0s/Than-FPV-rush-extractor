@@ -1,7 +1,7 @@
 //! Forms keep their drafts while operations run or fail. Confirmation previews
 //! come from the same library methods which perform the destructive action.
 use crate::{
-    App, Reply,
+    ACCENT, App, Reply,
     browse::{clock, flight_name, labels},
 };
 use chrono::{Datelike, Months, NaiveDate};
@@ -1000,7 +1000,7 @@ fn date_picker(
                     let date = first.with_day(day).unwrap();
                     let mut button = egui::Button::new(day.to_string());
                     if *selected == Some(date) {
-                        button = button.fill(egui::Color32::from_rgb(255, 91, 46));
+                        button = button.fill(ACCENT);
                     }
                     if ui.add_sized([28.0, 24.0], button).clicked() {
                         *selected = Some(date);

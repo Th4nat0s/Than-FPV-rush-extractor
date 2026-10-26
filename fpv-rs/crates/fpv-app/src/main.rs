@@ -69,13 +69,24 @@ pub(crate) struct App {
     show_about: bool,
 }
 
+pub(crate) const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 91, 46);
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         let mut style = (*cc.egui_ctx.style()).clone();
         style.spacing.item_spacing = egui::vec2(10.0, 8.0);
         style.spacing.button_padding = egui::vec2(10.0, 6.0);
-        style.visuals.selection.bg_fill = egui::Color32::from_rgb(40, 102, 164);
+        style.visuals.panel_fill = egui::Color32::from_rgb(24, 26, 32);
+        style.visuals.window_fill = egui::Color32::from_rgb(27, 29, 35);
+        style.visuals.extreme_bg_color = egui::Color32::from_rgb(14, 16, 20);
+        style.visuals.faint_bg_color = egui::Color32::from_rgb(34, 36, 43);
+        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(24, 26, 32);
+        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(39, 41, 48);
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(190, 67, 38);
+        style.visuals.widgets.active.bg_fill = ACCENT;
+        style.visuals.selection.bg_fill = ACCENT;
+        style.visuals.hyperlink_color = ACCENT;
         cc.egui_ctx.set_style(style);
         let mut browse: Browse = cc
             .storage
