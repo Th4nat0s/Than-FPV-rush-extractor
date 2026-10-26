@@ -9,6 +9,31 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 impl App {
+    pub(crate) fn about_window(&mut self, ctx: &egui::Context) {
+        if !self.show_about {
+            return;
+        }
+        egui::Window::new("About FPV Rush")
+            .open(&mut self.show_about)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add(
+                        egui::Image::new(&self.splash_texture).max_size(egui::vec2(380.0, 210.0)),
+                    );
+                    ui.heading("FPV Rush");
+                    ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                    ui.hyperlink_to(
+                        "github.com/defane/FPV-rush-extractor",
+                        "https://github.com/defane/FPV-rush-extractor",
+                    );
+                    ui.add_space(8.0);
+                    ui.label("Developers: Claude · Codex · Defane · Thanat0s");
+                });
+            });
+    }
+
     pub(crate) fn splash_window(&mut self, ctx: &egui::Context) {
         let Some(started) = self.splash_started else {
             return;
@@ -73,6 +98,9 @@ impl App {
                                 Some(self.submit("Read cache usage", true, |library, _| {
                                     Ok(Reply::Cache(library.cache_usage()?))
                                 }));
+                        }
+                        if ui.small_button("About").clicked() {
+                            self.show_about = true;
                         }
                     });
                 });

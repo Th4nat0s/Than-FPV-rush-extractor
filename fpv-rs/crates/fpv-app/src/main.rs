@@ -66,6 +66,7 @@ pub(crate) struct App {
     screenshot_requested: bool,
     splash_started: Option<std::time::Instant>,
     splash_texture: egui::TextureHandle,
+    show_about: bool,
 }
 
 impl App {
@@ -127,6 +128,7 @@ impl App {
             screenshot_requested: false,
             splash_started: None,
             splash_texture,
+            show_about: false,
         }
     }
 
@@ -347,6 +349,7 @@ impl eframe::App for App {
         self.player_window(ctx);
         self.dialog_window(ctx);
         self.splash_window(ctx);
+        self.about_window(ctx);
         if let Some(path) = std::env::var_os("FPV_SMOKE_SCREENSHOT") {
             if self.ready && !self.screenshot_requested {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
