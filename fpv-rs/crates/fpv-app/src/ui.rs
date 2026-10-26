@@ -1,5 +1,5 @@
 use crate::{
-    App, Dialog, Reply,
+    ACCENT, App, Dialog, Reply,
     browse::{self, Sort, View, clock, flight_name, page_range},
     day, open_folder,
 };
@@ -526,10 +526,31 @@ impl App {
                 }
             }); }
             let range = page_range(items.len(), &mut self.browse.page, self.browse.page_size);
+            let page_count = items.len().div_ceil(self.browse.page_size).max(1);
             ui.horizontal(|ui| {
-                if ui.add_enabled(self.browse.page > 0, egui::Button::new("Previous")).clicked() { self.browse.page -= 1; }
-                ui.label(format!("Page {} / {} · {} items", self.browse.page + 1, items.len().div_ceil(self.browse.page_size).max(1), items.len()));
-                if ui.add_enabled(range.end < items.len(), egui::Button::new("Next")).clicked() { self.browse.page += 1; }
+                if ui.add_enabled(self.browse.page > 0, egui::Button::new("‹")).clicked() {
+                    self.browse.page -= 1;
+                }
+                for page in browse::visible_pages(self.browse.page, page_count) {
+                    if let Some(page) = page {
+                        let selected = self.browse.page == page;
+                        let mut button = egui::Button::new((page + 1).to_string());
+                        if selected {
+                            button = button.fill(ACCENT);
+                        }
+                        if ui.add_sized([30.0, 28.0], button).clicked() {
+                            self.browse.page = page;
+                        }
+                    } else {
+                        ui.label("…");
+                    }
+                }
+                if ui.add_enabled(range.end < items.len(), egui::Button::new("›")).clicked() {
+                    self.browse.page += 1;
+                }
+                let shown_start = range.start.saturating_add(1).min(items.len());
+                let shown_end = range.end;
+                ui.label(format!("Showing {shown_start}–{shown_end} of {}", items.len()));
                 egui::ComboBox::from_id_salt("page-size").selected_text(self.browse.page_size.to_string()).show_ui(ui, |ui| {
                     for size in [12, 24, 48, 96] { if ui.selectable_value(&mut self.browse.page_size, size, size.to_string()).changed() { self.browse.page = 0; } }
                 });

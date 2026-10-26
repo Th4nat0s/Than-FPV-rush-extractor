@@ -116,6 +116,26 @@ pub fn page_range(total: usize, page: &mut usize, size: usize) -> std::ops::Rang
     start..start.saturating_add(size).min(total)
 }
 
+/// Page indexes to show, with `None` representing an ellipsis.
+pub fn visible_pages(current: usize, total: usize) -> Vec<Option<usize>> {
+    if total <= 7 {
+        return (0..total).map(Some).collect();
+    }
+    let current = current.min(total - 1);
+    let start = current.saturating_sub(2).max(1);
+    let end = current.saturating_add(2).min(total - 2);
+    let mut pages = vec![Some(0)];
+    if start > 1 {
+        pages.push(None);
+    }
+    pages.extend((start..=end).map(Some));
+    if end < total - 2 {
+        pages.push(None);
+    }
+    pages.push(Some(total - 1));
+    pages
+}
+
 pub fn clock(seconds: f64) -> String {
     let seconds = if seconds.is_finite() {
         seconds.max(0.0)
@@ -152,6 +172,31 @@ mod tests {
         page = 5;
         assert_eq!(page_range(25, &mut page, 24), 24..25);
         assert_eq!(page, 1);
+    }
+    #[test]
+    fn visible_pages_include_current_edges_and_ellipses() {
+        assert_eq!(
+            visible_pages(0, 5),
+            [Some(0), Some(1), Some(2), Some(3), Some(4)]
+        );
+        assert_eq!(
+            visible_pages(5, 20),
+            [
+                Some(0),
+                None,
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+                Some(7),
+                None,
+                Some(19)
+            ]
+        );
+        assert_eq!(
+            visible_pages(18, 20),
+            [Some(0), None, Some(16), Some(17), Some(18), Some(19)]
+        );
     }
     #[test]
     fn entered_labels_preserve_spelling_and_ignore_case_duplicates() {
