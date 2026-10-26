@@ -12,6 +12,7 @@ use std::time::Duration;
 enum MetadataIcon {
     Dvr,
     Film,
+    Speaker(bool),
 }
 
 fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
@@ -47,10 +48,50 @@ fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
                 painter.circle_filled(egui::pos2(body.right() - 2.5, y), 0.7_f32, color);
             }
         }
+        MetadataIcon::Speaker(muted) => {
+            let speaker = egui::Rect::from_min_max(
+                body.min + egui::vec2(1.0, 3.0),
+                body.min + egui::vec2(6.0, 10.0),
+            );
+            painter.rect_filled(speaker, 0.5, color);
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(body.left() + 5.0, body.top() + 2.0),
+                    egui::pos2(body.left() + 11.0, body.top()),
+                    egui::pos2(body.left() + 11.0, body.bottom()),
+                    egui::pos2(body.left() + 5.0, body.bottom() - 2.0),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            if muted {
+                painter.line_segment(
+                    [body.right_top(), body.left_bottom() + egui::vec2(2.0, -1.0)],
+                    egui::Stroke::new(1.6_f32, color),
+                );
+            } else {
+                painter.line_segment(
+                    [
+                        egui::pos2(body.left() + 10.5, body.top() + 1.0),
+                        egui::pos2(body.right(), body.center().y),
+                    ],
+                    stroke,
+                );
+                painter.line_segment(
+                    [
+                        egui::pos2(body.right(), body.center().y),
+                        egui::pos2(body.left() + 10.5, body.bottom() - 1.0),
+                    ],
+                    stroke,
+                );
+            }
+        }
     }
     response.on_hover_text(match kind {
         MetadataIcon::Dvr => "Recording source",
         MetadataIcon::Film => "Video format",
+        MetadataIcon::Speaker(true) => "Muted",
+        MetadataIcon::Speaker(false) => "Playback volume",
     });
 }
 
@@ -867,6 +908,10 @@ impl App {
                     viewer.seek_time = None;
                 }
                 ui.label(clock(viewer.player.duration()));
+                metadata_icon(
+                    ui,
+                    MetadataIcon::Speaker(viewer.muted || viewer.volume <= 0.001),
+                );
                 if viewer.muted {
                     ui.small("Muted by settings");
                 } else if ui

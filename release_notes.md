@@ -12,3 +12,4 @@
 - Restore the charcoal/orange palette, DVR/film metadata icons, and numbered orange pagination (#8, #10, #12).
 - Place player tags and figures beside the video, with non-collapsible fullscreen and close controls (#11, #13).
 - Add non-collapsible player fullscreen controls, Escape exit and a close button (#13).
+- Add a speaker icon beside the player volume slider (#15).
