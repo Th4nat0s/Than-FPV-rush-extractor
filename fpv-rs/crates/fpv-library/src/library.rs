@@ -610,6 +610,21 @@ impl Library {
         Ok(())
     }
 
+    pub fn set_video_preferences(
+        &mut self,
+        mute_videos: bool,
+        do_not_show_splash: bool,
+    ) -> Result<()> {
+        let config = Config {
+            mute_videos,
+            do_not_show_splash,
+            ..self.config.clone()
+        };
+        config.save(&self.config_directory)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub(crate) fn proxy_cache(&self) -> ProxyCache<'_> {
         ProxyCache::new(self.cache_directory.join("proxies"), self.config.proxy_budget_bytes(),
                         &self.store)
@@ -1607,8 +1622,17 @@ impl Library {
         let ffmpeg = self.ffmpeg();
         let exporter = ClipExporter::new(&ffmpeg);
         Ok(match mode {
-            ExportMode::Lossless => vec![exporter.export_flight(&timeline.parts, destination)?],
-            ExportMode::Reencode => vec![exporter.export_flight_reencoded(&timeline.parts, destination, None)?],
+            ExportMode::Lossless => vec![exporter.export_flight_with_mute(
+                &timeline.parts,
+                destination,
+                self.config.mute_videos,
+            )?],
+            ExportMode::Reencode => vec![exporter.export_flight_reencoded_with_mute(
+                &timeline.parts,
+                destination,
+                None,
+                self.config.mute_videos,
+            )?],
             ExportMode::Parts => {
                 let stem = destination.file_stem().map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "flight".into());
@@ -1617,7 +1641,12 @@ impl Library {
                     .map(|(index, (clip, file))| {
                         let path = destination.with_file_name(
                             format!("{stem} - part{}.{extension}", index + 1));
-                        Ok(exporter.export_clip(clip, file, &path)?)
+                        Ok(exporter.export_clip_with_mute(
+                            clip,
+                            file,
+                            &path,
+                            self.config.mute_videos,
+                        )?)
                     })
                     .collect::<Result<_>>()?
             }

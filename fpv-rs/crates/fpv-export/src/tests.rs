@@ -68,6 +68,18 @@ fn cuts_losslessly_at_the_frames_own_timestamps() {
 }
 
 #[test]
+fn muted_copy_export_keeps_video_and_drops_audio() {
+    let rate = FrameRate::new(250_000, 10009);
+    let mut file = source("PICT0032.AVI", rate, "mjpeg");
+    file.media.audio_codec = Some("pcm_s16le".into());
+    let (clip, _) = part(&file, 100, 500);
+    let arguments = copy_arguments(&clip, &file, true).unwrap();
+    assert!(arguments.windows(2).any(|w| w == ["-c:v", "copy"]));
+    assert!(arguments.iter().any(|arg| arg == "-an"));
+    assert!(!arguments.iter().any(|arg| arg == "-c:a" || arg == "-c"));
+}
+
+#[test]
 fn writes_the_dvrs_pcm_sound_again_so_it_is_cut_on_the_frame() {
     let ffmpeg = RecordingFfmpeg::default();
     let out = tempfile::tempdir().unwrap();

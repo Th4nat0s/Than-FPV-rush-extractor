@@ -57,6 +57,8 @@ pub(crate) struct Dialog {
     saving: Option<u64>,
     restore: HashSet<String>,
     budgets: [f64; 2],
+    mute_videos: bool,
+    do_not_show_splash: bool,
 }
 
 impl Dialog {
@@ -86,6 +88,8 @@ impl Dialog {
             saving: None,
             restore: HashSet::new(),
             budgets: [10.0, 2.0],
+            mute_videos: false,
+            do_not_show_splash: false,
         }
     }
     pub fn import(folder: Option<PathBuf>, name: String) -> Self {
@@ -102,6 +106,8 @@ impl Dialog {
             path: config.media_root.to_string_lossy().into_owned(),
             name: config.folder_pattern.clone(),
             budgets: [config.proxy_budget_gb, config.picture_budget_gb],
+            mute_videos: config.mute_videos,
+            do_not_show_splash: config.do_not_show_splash,
             ..Self::new(Kind::Settings, "Settings")
         }
     }
@@ -295,6 +301,8 @@ impl App {
                 }
             }
             Kind::Settings => {
+                ui.checkbox(&mut dialog.mute_videos, "Mute videos");
+                ui.checkbox(&mut dialog.do_not_show_splash, "Do not show splash");
                 ui.label("Import folder (existing recordings stay where they are)");
                 ui.text_edit_singleline(&mut dialog.path);
                 if ui.button("Choose folder…").clicked() {
@@ -366,11 +374,13 @@ impl App {
                 if ui.button("Save settings").clicked() {
                     let (path, pattern) = (PathBuf::from(&dialog.path), dialog.name.clone());
                     let budgets = dialog.budgets;
+                    let (mute, hide_splash) = (dialog.mute_videos, dialog.do_not_show_splash);
                     self.viewer = None;
                     dialog.saving = Some(self.submit("Save settings", false, move |library, _| {
                         library.set_folder_pattern(&pattern)?;
                         library.set_media_root(&path)?;
                         library.set_cache_budgets(budgets[0], budgets[1])?;
+                        library.set_video_preferences(mute, hide_splash)?;
                         Ok(Reply::Done("Settings saved".into()))
                     }));
                 }

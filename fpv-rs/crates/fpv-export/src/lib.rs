@@ -52,7 +52,12 @@ impl<'a> ClipExporter<'a> {
     /// One clip, cut losslessly.
     pub fn export_clip(&self, clip: &Clip, file: &SourceFile, destination: &Path)
         -> Result<PathBuf, ExportError> {
-        let mut arguments = copy_arguments(clip, file)?;
+        self.export_clip_with_mute(clip, file, destination, false)
+    }
+
+    pub fn export_clip_with_mute(&self, clip: &Clip, file: &SourceFile, destination: &Path, mute: bool)
+        -> Result<PathBuf, ExportError> {
+        let mut arguments = copy_arguments(clip, file, mute)?;
         arguments.extend(["-y".into(), destination.to_string_lossy().into_owned()]);
         Ok(run_writing(self.ffmpeg, &arguments, destination)?)
     }
@@ -60,9 +65,12 @@ impl<'a> ClipExporter<'a> {
     /// A whole flight, which may be spread over consecutive recordings. Parts
     /// are cut first and then concatenated, both with `-c copy`.
     pub fn export_flight(&self, parts: &[Part], destination: &Path) -> Result<PathBuf, ExportError> {
+        self.export_flight_with_mute(parts, destination, false)
+    }
+    pub fn export_flight_with_mute(&self, parts: &[Part], destination: &Path, mute: bool) -> Result<PathBuf, ExportError> {
         match parts {
             [] => return Err(ExportError::NothingToExport),
-            [(clip, file)] => return self.export_clip(clip, file, destination),
+            [(clip, file)] => return self.export_clip_with_mute(clip, file, destination, mute),
             _ => {}
         }
         for pair in parts.windows(2) {
@@ -73,7 +81,7 @@ impl<'a> ClipExporter<'a> {
         }
         let workspace = Workspace::beside(destination, "fpv-export")?;
         let list = self.cut(parts, workspace.path(), destination, |(clip, file)| {
-            copy_arguments(clip, file)
+            copy_arguments(clip, file, mute)
         })?;
         Ok(run_writing(self.ffmpeg, &concat_arguments(&list, destination), destination)?)
     }
@@ -89,10 +97,14 @@ impl<'a> ClipExporter<'a> {
     /// *after* concatenation ran 60 s of PICT0031 into 49 (measured).
     pub fn export_flight_reencoded(&self, parts: &[Part], destination: &Path,
                                    target: Option<FrameRate>) -> Result<PathBuf, ExportError> {
+        self.export_flight_reencoded_with_mute(parts, destination, target, false)
+    }
+    pub fn export_flight_reencoded_with_mute(&self, parts: &[Part], destination: &Path,
+                                   target: Option<FrameRate>, mute: bool) -> Result<PathBuf, ExportError> {
         match parts {
             [] => return Err(ExportError::NothingToExport),
             // One recording, nothing to reconcile: stay lossless.
-            [(clip, file)] => return self.export_clip(clip, file, destination),
+            [(clip, file)] => return self.export_clip_with_mute(clip, file, destination, mute),
             _ => {}
         }
         let rate = target.unwrap_or_else(|| FrameRate::dominant(parts));
@@ -102,14 +114,15 @@ impl<'a> ClipExporter<'a> {
                 return Err(ExportError::NotAllIntra(file.media.video_codec.clone()));
             }
             let (start, duration) = span(clip, file);
-            Ok(vec![
+            let mut arguments = vec![
                 "-hide_banner".into(), "-loglevel".into(), "error".into(),
                 "-i".into(), file.imported_path.clone(),
                 "-ss".into(), seconds_argument(start), "-t".into(), seconds_argument(duration),
                 "-vf".into(), format!("fps={}/{}", rate.numerator, rate.denominator),
                 "-c:v".into(), "mjpeg".into(), "-q:v".into(), "2".into(),
-                "-c:a".into(), "copy".into(),
-            ])
+            ];
+            arguments.extend(if mute { vec!["-an".into()] } else { vec!["-c:a".into(), "copy".into()] });
+            Ok(arguments)
         })?;
         Ok(run_writing(self.ffmpeg, &concat_arguments(&list, destination), destination)?)
     }
@@ -141,7 +154,7 @@ fn span(clip: &Clip, file: &SourceFile) -> (f64, f64) {
     (start, rate.seconds(clip.end_frame) - start)
 }
 
-fn copy_arguments(clip: &Clip, file: &SourceFile) -> Result<Vec<String>, ExportError> {
+fn copy_arguments(clip: &Clip, file: &SourceFile, mute: bool) -> Result<Vec<String>, ExportError> {
     if !file.media.is_all_intra() && clip.start_frame != 0 {
         return Err(ExportError::NotAllIntra(file.media.video_codec.clone()));
     }
@@ -168,11 +181,13 @@ fn copy_arguments(clip: &Clip, file: &SourceFile) -> Result<Vec<String>, ExportE
     // cut's sound started at the next packet yet played from the first frame,
     // up to a tenth of a second early (99 ms on PICT0031, measured). PCM in,
     // PCM out holds the very same samples, now cut on the frame.
-    match file.media.audio_codec.as_deref() {
+    if mute {
+        arguments.extend(["-c:v".into(), "copy".into(), "-an".into()]);
+    } else { match file.media.audio_codec.as_deref() {
         Some(codec) if codec.starts_with("pcm_") && file.media.is_all_intra() =>
             arguments.extend(["-c:v".into(), "copy".into(), "-c:a".into(), codec.into()]),
         _ => arguments.extend(["-c".into(), "copy".into()]),
-    }
+    }}
     Ok(arguments)
 }
 
