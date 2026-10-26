@@ -11,3 +11,4 @@
 - Reduce player startup/seek buffering with indexed decoding, retain sequential recovery, and enable FFmpeg's internal codec-header extraction and EV300D ADPCM decoder (#16).
 - Restore the charcoal/orange palette, DVR/film metadata icons, and numbered orange pagination (#8, #10, #12).
 - Place player tags and figures beside the video, with non-collapsible fullscreen and close controls (#11, #13).
+- Add non-collapsible player fullscreen controls, Escape exit and a close button (#13).

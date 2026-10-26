@@ -36,6 +36,7 @@ struct Viewer {
     figure: String,
     label: String,
     volume: f32,
+    fullscreen: bool,
     seek_time: Option<f64>,
 }
 
@@ -272,6 +273,7 @@ impl App {
                                     figure: String::new(),
                                     label: String::new(),
                                     volume: 1.0,
+                                    fullscreen: false,
                                     seek_time: None,
                                 });
                             }

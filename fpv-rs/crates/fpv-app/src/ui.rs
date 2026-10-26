@@ -779,22 +779,65 @@ impl App {
             }
         }
         let mut open = true;
-        egui::Window::new(flight_name(&viewer.flight))
+        let fullscreen = viewer.fullscreen;
+        let mut window = egui::Window::new(flight_name(&viewer.flight))
             .id(egui::Id::new("player"))
-            .open(&mut open)
-            .default_width(1200.0)
-            .default_height(760.0)
-            .resizable(true)
-            .show(ctx, |ui| self.player_contents(ui, &mut viewer));
+            .collapsible(false)
+            .resizable(!fullscreen);
+        if fullscreen {
+            window = window.title_bar(false).fixed_rect(ctx.content_rect());
+        } else {
+            window = window
+                .open(&mut open)
+                .default_width(1200.0)
+                .default_height(760.0);
+        }
+        let mut close_requested = false;
+        window.show(ctx, |ui| {
+            self.player_contents(ui, &mut viewer, &mut close_requested, ctx)
+        });
+        if close_requested {
+            open = false;
+        }
+        if viewer.fullscreen && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+            viewer.fullscreen = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        }
         if open {
             if !viewer.player.paused() && !viewer.player.ended() || viewer.player.buffering() {
                 ctx.request_repaint_after(Duration::from_millis(16));
             }
             self.viewer = Some(viewer);
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         }
     }
 
-    fn player_contents(&mut self, ui: &mut egui::Ui, viewer: &mut Viewer) {
+    fn player_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        viewer: &mut Viewer,
+        close_requested: &mut bool,
+        ctx: &egui::Context,
+    ) {
+        ui.horizontal(|ui| {
+            if ui
+                .button(if viewer.fullscreen {
+                    "Exit full screen"
+                } else {
+                    "Full screen"
+                })
+                .clicked()
+            {
+                viewer.fullscreen = !viewer.fullscreen;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(viewer.fullscreen));
+            }
+            if ui.button("×").on_hover_text("Close player").clicked() {
+                *close_requested = true;
+            }
+            ui.label(flight_name(&viewer.flight));
+        });
+        ui.separator();
         let available = ui.available_size();
         let side_width = 300.0_f32.min(available.x * 0.42);
         let left_width = (available.x - side_width - 12.0).max(260.0);
@@ -844,7 +887,11 @@ impl App {
                         egui::Image::new(texture)
                             .max_size(egui::vec2(
                                 ui.available_width(),
-                                480.0,
+                                if viewer.fullscreen {
+                                    available.y - 80.0
+                                } else {
+                                    480.0
+                                },
                             ))
                             .maintain_aspect_ratio(true),
                     );
