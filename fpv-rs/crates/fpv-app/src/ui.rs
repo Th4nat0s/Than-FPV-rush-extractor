@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 impl App {
-    fn splash_window(&mut self, ctx: &egui::Context) {
+    pub(crate) fn splash_window(&mut self, ctx: &egui::Context) {
         let Some(started) = self.splash_started else {
             return;
         };
