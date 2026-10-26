@@ -8,3 +8,4 @@
 - Add an About window with the Letz Kwad logo, project URL, and developer credits (#7).
 - Use calendar date pickers for recording imports and session edits (#6).
 - Keep the Letz Kwad logo and credits visible in About and remove duplicate splash title text (#7).
+- Reduce player startup/seek buffering with indexed decoding, retain sequential recovery, and enable FFmpeg's internal codec-header extraction and EV300D ADPCM decoder (#16).

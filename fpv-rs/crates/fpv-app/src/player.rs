@@ -44,6 +44,7 @@ struct State {
     warnings: Mutex<Vec<String>>,
     base: f64,
     duration: f64,
+    requested_at: Instant,
     volume: Mutex<f32>,
     video_done: AtomicBool,
     context: eframe::egui::Context,
@@ -134,6 +135,7 @@ impl Player {
             warnings: Mutex::new(vec![]),
             base: at,
             duration,
+            requested_at: Instant::now(),
             volume: Mutex::new(1.0),
             video_done: AtomicBool::new(false),
             context: context.clone(),
@@ -372,18 +374,17 @@ impl Drop for Process {
     }
 }
 
-fn input(part: &NativeSegment, skip: f64, duration: f64) -> Vec<String> {
+fn input(part: &NativeSegment, skip: f64, duration: f64, output_seek: bool) -> Vec<String> {
     let mut arguments = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
-    if part.all_intra {
+    if !output_seek {
         arguments.extend(["-ss".into(), seconds_argument(part.segment.start + skip)]);
     }
     arguments.extend([
         "-i".into(),
         part.segment.path.to_string_lossy().into_owned(),
     ]);
-    if !part.all_intra {
-        // Input-side AVI seeking can land in an H.264 GOP without its SPS/PPS.
-        // Decode from the start for long-GOP sources so seeking still yields frames.
+    if output_seek {
+        // Retry from the stream start if a broken index makes input seeking fail.
         arguments.extend(["-ss".into(), seconds_argument(part.segment.start + skip)]);
     }
     arguments.extend(["-t".into(), seconds_argument(duration)]);
@@ -400,58 +401,80 @@ fn decode_video(
             break;
         }
         let (width, height) = dimensions(part.width, part.height);
-        let mut args = input(part, skip, length);
-        args.extend([
-            "-an".into(),
-            "-vf".into(),
-            format!("fps={DISPLAY_RATE},scale={width}:{height}"),
-            "-pix_fmt".into(),
-            "rgb24".into(),
-            "-f".into(),
-            "rawvideo".into(),
-            "pipe:1".into(),
-        ]);
-        let mut process = Process::open(state, tools.as_deref(), &args)?;
-        let mut index = 0;
-        loop {
-            if state.stop.load(Ordering::Relaxed) {
-                return Ok(());
+        let input_time = part.segment.start + skip;
+        let retry_from_start = !part.all_intra && input_time > 0.0;
+        let attempts = if retry_from_start { 2 } else { 1 };
+        let mut decoded = false;
+        for attempt in 0..attempts {
+            let output_seek = attempt > 0;
+            let mut args = input(part, skip, length, output_seek);
+            args.extend([
+                "-an".into(),
+                "-vf".into(),
+                format!("fps={DISPLAY_RATE},scale={width}:{height}"),
+                "-pix_fmt".into(),
+                "rgb24".into(),
+                "-f".into(),
+                "rawvideo".into(),
+                "pipe:1".into(),
+            ]);
+            let mut process = Process::open(state, tools.as_deref(), &args)?;
+            let mut index = 0;
+            loop {
+                if state.stop.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+                if state
+                    .frames
+                    .lock()
+                    .map(|frames| frames.len() >= 4)
+                    .unwrap_or(true)
+                {
+                    std::thread::sleep(Duration::from_millis(4));
+                    continue;
+                }
+                let mut rgb = vec![0; width * height * 3];
+                match process.stdout.read_exact(&mut rgb) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == ErrorKind::UnexpectedEof => break,
+                    Err(error) => return Err(error.to_string()),
+                }
+                decoded = true;
+                let frame = VideoFrame {
+                    at: part.segment.offset + skip + index as f64 / DISPLAY_RATE,
+                    width,
+                    height,
+                    rgb,
+                };
+                if let Ok(mut frames) = state.frames.lock() {
+                    frames.push_back(frame);
+                }
+                if let Ok(mut clock) = state.clock.lock()
+                    && clock.start.is_none()
+                {
+                    let now = Instant::now();
+                    log::debug!(
+                        "First video frame at {:.3}s after {:?} (fallback: {output_seek})",
+                        state.base,
+                        state.requested_at.elapsed()
+                    );
+                    clock.start = Some(now);
+                    clock.paused_at = state.paused.load(Ordering::Relaxed).then_some(now);
+                }
+                state.context.request_repaint();
+                index += 1;
             }
-            if state
-                .frames
-                .lock()
-                .map(|frames| frames.len() >= 4)
-                .unwrap_or(true)
-            {
-                std::thread::sleep(Duration::from_millis(4));
-                continue;
+            let result = process.finish();
+            if decoded {
+                result?;
+                break;
             }
-            let mut rgb = vec![0; width * height * 3];
-            match process.stdout.read_exact(&mut rgb) {
-                Ok(()) => {}
-                Err(error) if error.kind() == ErrorKind::UnexpectedEof => break,
-                Err(error) => return Err(error.to_string()),
+            if attempt + 1 == attempts {
+                result?;
+                return Err("ffmpeg produced no video frames".into());
             }
-            let frame = VideoFrame {
-                at: part.segment.offset + skip + index as f64 / DISPLAY_RATE,
-                width,
-                height,
-                rgb,
-            };
-            if let Ok(mut frames) = state.frames.lock() {
-                frames.push_back(frame);
-            }
-            if let Ok(mut clock) = state.clock.lock()
-                && clock.start.is_none()
-            {
-                let now = Instant::now();
-                clock.start = Some(now);
-                clock.paused_at = state.paused.load(Ordering::Relaxed).then_some(now);
-            }
-            state.context.request_repaint();
-            index += 1;
+            log::debug!("Indexed seek produced no frame; retrying from the stream start");
         }
-        process.finish()?;
     }
     Ok(())
 }
@@ -548,7 +571,7 @@ fn decode_audio(
         let target = (length * rate as f64).ceil() as usize * channels;
         let mut written = 0;
         let mut process = if part.has_audio {
-            let mut args = input(part, skip, length);
+            let mut args = input(part, skip, length, false);
             args.extend([
                 "-vn".into(),
                 "-ac".into(),
@@ -648,18 +671,23 @@ mod tests {
         assert_eq!((rest[0].1, rest[0].2), (0.0, 60.0));
         let rest: Vec<_> = remaining(&parts, 11.0).collect();
         assert_eq!((rest[0].1, rest[0].2), (10.0, 50.0));
-        let args = input(rest[0].0, rest[0].1, rest[0].2);
+        let args = input(rest[0].0, rest[0].1, rest[0].2, false);
         let seek = args.iter().position(|arg| arg == "-ss").unwrap();
         let input_index = args.iter().position(|arg| arg == "-i").unwrap();
         assert_eq!(args[seek + 1], seconds_argument(10.0));
-        assert!(
-            seek < input_index,
-            "all-intra footage uses fast input-side seeking"
-        );
+        assert!(seek < input_index, "fast seeks use input-side seeking");
 
         let mut long_gop = rest[0].0.clone();
         long_gop.all_intra = false;
-        let args = input(&long_gop, rest[0].1, rest[0].2);
+        let args = input(&long_gop, rest[0].1, rest[0].2, false);
+        let fast_seek = args.iter().position(|arg| arg == "-ss").unwrap();
+        let fast_input_index = args.iter().position(|arg| arg == "-i").unwrap();
+        assert!(
+            fast_seek < fast_input_index,
+            "long-GOP playback first tries fast index seeking"
+        );
+
+        let args = input(&long_gop, rest[0].1, rest[0].2, true);
         let seek = args.iter().position(|arg| arg == "-ss").unwrap();
         let input_index = args.iter().position(|arg| arg == "-i").unwrap();
         assert!(
@@ -676,6 +704,71 @@ mod tests {
 
     fn test_tools() -> Option<PathBuf> {
         std::env::var_os("FPV_TEST_BUNDLED_TOOLS").map(PathBuf::from)
+    }
+
+    #[test]
+    fn h264_indexed_seek_recovers_headers_without_replaying_the_take() {
+        // This AVI stores SPS/PPS only in its first packet, like EV300D DVRs.
+        // A minimal FFmpeg without extract_extradata cannot decode after a seek.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/h264-initial-headers.avi");
+        let part = NativeSegment {
+            segment: Segment {
+                path,
+                start: 1.0,
+                end: 3.0,
+                offset: 0.0,
+            },
+            width: 64,
+            height: 48,
+            has_audio: false,
+            all_intra: false,
+        };
+        let tools = test_tools();
+        let frame = |output_seek| {
+            let mut args = input(&part, 0.52, 1.0, output_seek);
+            args.extend([
+                "-an".into(),
+                "-vf".into(),
+                "fps=30,scale=64:48".into(),
+                "-frames:v".into(),
+                "1".into(),
+                "-pix_fmt".into(),
+                "rgb24".into(),
+                "-f".into(),
+                "rawvideo".into(),
+                "pipe:1".into(),
+            ]);
+            let output = FfmpegTool::Ffmpeg
+                .command(tools.as_deref())
+                .args(&args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "indexed seek must decode without a slow replay: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.stdout.len(), 64 * 48 * 3);
+            output.stdout
+        };
+        let expected = frame(true);
+        assert_eq!(frame(false), expected, "seek must return the source frame");
+        let player = Player::new(vec![part], tools, 0.52, eframe::egui::Context::default());
+        player.pause(true);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(frame) = player.frame() {
+                assert_eq!(frame.rgb, expected);
+                assert!(!player.buffering());
+                break;
+            }
+            assert!(Instant::now() < deadline, "{:?}", player.warnings());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(player.state.frames.lock().unwrap().len() <= 4);
+        assert_eq!(player.position(), 0.52);
     }
 
     #[test]

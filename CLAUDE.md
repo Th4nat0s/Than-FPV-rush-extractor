@@ -86,6 +86,10 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   corresponding unmodified source, LGPL license and the exact build recipe in
   every package. No libav* library is linked into Rust. The optional CLI proxy
   uses built-in MPEG-4/AAC; the GUI does not transcode playback proxies.
+- Bundled FFmpeg must enable its internal `extract_extradata` bitstream filter:
+  stream probing needs it to retain H.264/HEVC headers before indexed seeks.
+  The player tries input-side seeking, with a sequential fallback if no video
+  frame is emitted. See `docs/player-buffering.md` and the generated AVI fixture.
 - **SQLite through rusqlite** (`bundled`), on the schema GRDB created for the macOS app (§3.3).
 - **Frame analysis in plain portable code, no SIMD library, no OpenCV** (§9.7). The detector's
   metrics are a per-block Laplacian variance, a lag-1 correlation and a correlation on a
