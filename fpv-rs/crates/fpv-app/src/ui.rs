@@ -775,12 +775,7 @@ impl App {
                     ui.label(&task.label);
                     ui.label(&task.line);
                 }
-                if !self.notices.is_empty() {
-                    ui.colored_label(
-                        Color32::LIGHT_RED,
-                        format!("{} notification(s)", self.notices.len()),
-                    );
-                }
+                ui.label(format!("{} notification(s)", self.notices.len()));
             });
             if self.show_tasks {
                 egui::ScrollArea::vertical()
@@ -820,31 +815,21 @@ impl App {
                                 );
                             }
                         }
+                        if !self.notices.is_empty() {
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.heading("Notifications");
+                                if ui.small_button("Dismiss all").clicked() {
+                                    self.notices.clear();
+                                }
+                            });
+                            for notice in &self.notices {
+                                ui.colored_label(Color32::LIGHT_RED, notice);
+                            }
+                        }
                     });
             }
         });
-        if !self.notices.is_empty() {
-            let mut open = true;
-            egui::Window::new("Notifications")
-                .open(&mut open)
-                .default_width(460.0)
-                .show(ctx, |ui| {
-                    egui::ScrollArea::vertical()
-                        .max_height(200.0)
-                        .show(ui, |ui| {
-                            for notice in &self.notices {
-                                ui.label(notice);
-                                ui.separator();
-                            }
-                        });
-                    if ui.button("Dismiss").clicked() {
-                        self.notices.clear();
-                    }
-                });
-            if !open {
-                self.notices.clear();
-            }
-        }
     }
 }
 
