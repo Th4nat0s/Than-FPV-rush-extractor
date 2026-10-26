@@ -64,6 +64,8 @@ pub(crate) struct App {
     show_tasks: bool,
     exit_after: Option<std::time::Instant>,
     screenshot_requested: bool,
+    splash_started: Option<std::time::Instant>,
+    splash_texture: egui::TextureHandle,
 }
 
 impl App {
@@ -83,6 +85,21 @@ impl App {
             .ok()
             .and_then(|text| text.parse::<u64>().ok())
             .map(|seconds| std::time::Instant::now() + Duration::from_secs(seconds));
+        let splash_image = image::load_from_memory(include_bytes!(
+            "../../../../docs/logo-letz_kwad-full-transparent.png"
+        ))
+        .expect("bundled splash logo is a valid image")
+        .to_rgba8();
+        let splash_pixels = egui::ColorImage::from_rgba_unmultiplied(
+            [
+                splash_image.width() as usize,
+                splash_image.height() as usize,
+            ],
+            splash_image.as_raw(),
+        );
+        let splash_texture =
+            cc.egui_ctx
+                .load_texture("splash-logo", splash_pixels, egui::TextureOptions::LINEAR);
         Self {
             worker: Worker::start(cc.egui_ctx.clone()),
             sessions: vec![],
@@ -108,6 +125,8 @@ impl App {
             show_tasks: false,
             exit_after,
             screenshot_requested: false,
+            splash_started: None,
+            splash_texture,
         }
     }
 
@@ -165,6 +184,9 @@ impl App {
                 } => {
                     self.sessions = sessions;
                     self.config = config;
+                    if !self.config.do_not_show_splash {
+                        self.splash_started = Some(std::time::Instant::now());
+                    }
                     self.config_directory = config_directory;
                     self.cache_directory = cache_directory;
                     self.tools = tools;
@@ -324,6 +346,7 @@ impl eframe::App for App {
         self.browser(ctx);
         self.player_window(ctx);
         self.dialog_window(ctx);
+        self.splash_window(ctx);
         if let Some(path) = std::env::var_os("FPV_SMOKE_SCREENSHOT") {
             if self.ready && !self.screenshot_requested {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));

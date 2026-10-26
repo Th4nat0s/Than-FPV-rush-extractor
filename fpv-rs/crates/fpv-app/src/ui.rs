@@ -9,6 +9,39 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 impl App {
+    fn splash_window(&mut self, ctx: &egui::Context) {
+        let Some(started) = self.splash_started else {
+            return;
+        };
+        if started.elapsed() >= Duration::from_millis(1500) {
+            self.splash_started = None;
+            return;
+        }
+        let mut close = false;
+        egui::Window::new("FPV Rush")
+            .id(egui::Id::new("startup-splash"))
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add(
+                        egui::Image::new(&self.splash_texture).max_size(egui::vec2(420.0, 240.0)),
+                    );
+                    ui.label("FPV Rush");
+                    if ui.button("Close").clicked() {
+                        close = true;
+                    }
+                });
+            });
+        if close {
+            self.splash_started = None;
+        } else {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+    }
+
     fn open_import(&mut self, folder: Option<PathBuf>, name: String) {
         self.dialog = Some(Dialog::import(folder, name));
     }
