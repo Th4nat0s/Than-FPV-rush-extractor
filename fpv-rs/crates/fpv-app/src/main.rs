@@ -65,11 +65,21 @@ pub(crate) struct App {
     exit_after: Option<std::time::Instant>,
     screenshot_requested: bool,
     splash_started: Option<std::time::Instant>,
+    splash_exit_started: Option<std::time::Instant>,
     splash_texture: egui::TextureHandle,
     show_about: bool,
 }
 
 pub(crate) const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 91, 46);
+
+fn splash_image() -> image::RgbaImage {
+    image::load_from_memory(include_bytes!(
+        "../../../../docs/logo-letz_kwad-full-transparent.png"
+    ))
+    .expect("bundled splash logo is a valid image")
+    .thumbnail(512, 512)
+    .to_rgba8()
+}
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -97,11 +107,7 @@ impl App {
             .ok()
             .and_then(|text| text.parse::<u64>().ok())
             .map(|seconds| std::time::Instant::now() + Duration::from_secs(seconds));
-        let splash_image = image::load_from_memory(include_bytes!(
-            "../../../../docs/logo-letz_kwad-full-transparent.png"
-        ))
-        .expect("bundled splash logo is a valid image")
-        .to_rgba8();
+        let splash_image = splash_image();
         let splash_pixels = egui::ColorImage::from_rgba_unmultiplied(
             [
                 splash_image.width() as usize,
@@ -138,6 +144,7 @@ impl App {
             exit_after,
             screenshot_requested: false,
             splash_started: None,
+            splash_exit_started: None,
             splash_texture,
             show_about: false,
         }
@@ -456,4 +463,16 @@ fn main() -> eframe::Result {
         },
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
+}
+
+#[cfg(test)]
+mod branding_tests {
+    #[test]
+    fn branded_logo_fits_the_software_renderer_and_retains_transparency() {
+        let image = super::splash_image();
+        assert!(image.width() > 0 && image.width() <= 512);
+        assert!(image.height() > 0 && image.height() <= 512);
+        assert!(image.pixels().any(|pixel| pixel[3] == 0));
+        assert!(image.pixels().any(|pixel| pixel[3] == 255));
+    }
 }
