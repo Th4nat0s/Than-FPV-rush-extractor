@@ -36,6 +36,7 @@ struct Viewer {
     figure: String,
     label: String,
     volume: f32,
+    seek_time: Option<f64>,
 }
 
 pub(crate) struct App {
@@ -229,6 +230,7 @@ impl App {
                                     figure: String::new(),
                                     label: String::new(),
                                     volume: 1.0,
+                                    seek_time: None,
                                 });
                             }
                         }

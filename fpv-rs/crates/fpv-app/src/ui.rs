@@ -632,15 +632,17 @@ impl App {
                         viewer.player.pause(!viewer.player.paused());
                     }
                     ui.label(clock(viewer.player.position()));
-                    let mut time = viewer.player.position();
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut time, 0.0..=viewer.player.duration())
-                                .show_value(false),
-                        )
-                        .changed()
-                    {
+                    let mut time = viewer.seek_time.unwrap_or_else(|| viewer.player.position());
+                    let seek = ui.add(
+                        egui::Slider::new(&mut time, 0.0..=viewer.player.duration())
+                            .show_value(false),
+                    );
+                    if seek.dragged() {
+                        viewer.seek_time = Some(time);
+                    }
+                    if seek.drag_stopped() || (seek.changed() && !seek.dragged()) {
                         viewer.player.seek(time);
+                        viewer.seek_time = None;
                     }
                     ui.label(clock(viewer.player.duration()));
                     if ui
