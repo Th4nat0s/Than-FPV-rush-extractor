@@ -28,8 +28,9 @@ runs. Certificate-based signing/notarization is not configured by this pipeline.
 
 ## Build and run
 
-Install stable Rust through rustup and a C compiler. The product's UI is Rust;
-SQLite and the separate FFmpeg tools are C dependencies.
+Install stable Rust through rustup and a C compiler. The product's UI is native
+Rust with eframe/egui; there is no Tauri, webview, JavaScript build, or browser
+runtime. SQLite and the separate FFmpeg tools are C dependencies.
 
 Linux development dependencies on Debian/Ubuntu:
 
@@ -106,7 +107,15 @@ Online Only files are marked, pictures never hydrate them implicitly, and
 playing a flight first downloads its missing recordings with progress.
 Session/flight menus offer Download and, on supported macOS cloud drives,
 Free Up Space. Settings exposes separate preview/picture budgets and cache
-cleanup by category.
+cleanup by category. The import and session-edit dialogs use a calendar date
+picker; the flying date remains optional for action-camera imports.
+
+Long-running work appears in a collapsible Tasks panel along the bottom of the
+main window, where progress, notifications, and task logs stay available
+without floating notification windows. Settings includes Mute videos, which
+silences player playback and exported video, and the splash-screen preference.
+The About window displays the Letz Kwad logo, project link, and developer
+credits.
 
 Segment analyzes DVR recordings only. Picture statistics determine boundaries,
 independently of OSD or armed state. It joins flights continuing into the next
@@ -127,6 +136,14 @@ or export accuracy. Audio drives the playback clock when an output device is
 available; silent playback remains possible without one. The decoder is
 software-based in this migration, so very large HEVC takes may buffer more than
 the previous hardware-backed WebView player.
+Indexed seeking avoids decoding from the beginning; a sequential fallback handles
+inputs whose indexes still fail. See [buffering measurements](docs/player-buffering.md).
+
+In the player, playback and video are on the left while flight tags and figures
+are on the right. The player cannot be collapsed; its controls include a
+fullscreen toggle, Escape to exit fullscreen, and an X close button. Mute videos
+also silences player audio, in which case the volume slider is replaced by a
+muted indicator.
 
 Space plays/pauses; Left/Right seek five seconds; I marks the start of a figure.
 Enter in the figure-name field records a point or completes the marked range.
