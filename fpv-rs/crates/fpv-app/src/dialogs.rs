@@ -3,8 +3,8 @@
 use crate::{
     App, Reply,
     browse::{clock, flight_name, labels},
-    day,
 };
+use chrono::{Datelike, Months, NaiveDate};
 use eframe::egui;
 use fpv_library::{
     CacheKind, CacheUsage, Config, ExportMode, FlightDeletion, FlightView, FolderView,
@@ -37,7 +37,9 @@ pub(crate) struct Dialog {
     title: String,
     id: String,
     name: String,
-    date: String,
+    date: Option<NaiveDate>,
+    calendar_month: NaiveDate,
+    date_picker_open: bool,
     location: String,
     notes: String,
     labels: String,
@@ -68,7 +70,9 @@ impl Dialog {
             title: title.into(),
             id: String::new(),
             name: String::new(),
-            date: String::new(),
+            date: None,
+            calendar_month: chrono::Local::now().date_naive().with_day(1).unwrap(),
+            date_picker_open: false,
             location: String::new(),
             notes: String::new(),
             labels: String::new(),
@@ -115,7 +119,19 @@ impl Dialog {
         Self {
             id: session.id.clone(),
             name: session.name.clone(),
-            date: day(&session.date),
+            date: session
+                .date
+                .as_ref()
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.with_timezone(&chrono::Local).date_naive()),
+            calendar_month: session
+                .date
+                .as_ref()
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.with_timezone(&chrono::Local).date_naive())
+                .unwrap_or_else(|| chrono::Local::now().date_naive())
+                .with_day(1)
+                .unwrap(),
             location: session.location.clone().unwrap_or_default(),
             notes: session.notes.clone().unwrap_or_default(),
             labels: session.labels.join(", "),
@@ -270,8 +286,14 @@ impl App {
                 }
                 ui.label("Session name (use an existing name to add takes to it)");
                 ui.text_edit_singleline(&mut dialog.name);
-                ui.label("Flying date, YYYY-MM-DD (optional for action cams)");
-                ui.text_edit_singleline(&mut dialog.date);
+                date_picker(
+                    ui,
+                    "Flying date (optional for action cams)",
+                    &mut dialog.date,
+                    &mut dialog.calendar_month,
+                    &mut dialog.date_picker_open,
+                    true,
+                );
                 ui.small(format!("Copies go to {}", self.config.media_root.display()));
                 ui.checkbox(
                     &mut dialog.flag,
@@ -287,7 +309,7 @@ impl App {
                     let (path, name, date, delete) = (
                         PathBuf::from(&dialog.path),
                         dialog.name.clone(),
-                        optional(&dialog.date),
+                        format_date(dialog.date),
                         dialog.flag,
                     );
                     dialog.saving = Some(self.submit("Import recordings", false, move |library, progress| {
@@ -390,7 +412,14 @@ impl App {
             }
             Kind::Session => {
                 field(ui, "Name", &mut dialog.name);
-                field(ui, "Flying day (YYYY-MM-DD)", &mut dialog.date);
+                date_picker(
+                    ui,
+                    "Flying day",
+                    &mut dialog.date,
+                    &mut dialog.calendar_month,
+                    &mut dialog.date_picker_open,
+                    true,
+                );
                 field(ui, "Location", &mut dialog.location);
                 ui.label("Notes");
                 ui.text_edit_multiline(&mut dialog.notes);
@@ -399,7 +428,7 @@ impl App {
                     let id = dialog.id.clone();
                     let edit = SessionEdit {
                         name: dialog.name.clone(),
-                        date: optional(&dialog.date),
+                        date: format_date(dialog.date),
                         location: dialog.location.clone(),
                         notes: dialog.notes.clone(),
                         labels: labels(&dialog.labels),
@@ -911,6 +940,111 @@ fn field(ui: &mut egui::Ui, label: &str, text: &mut String) {
     ui.label(label);
     ui.text_edit_singleline(text);
 }
-fn optional(text: &str) -> Option<String> {
-    (!text.trim().is_empty()).then(|| text.trim().to_owned())
+
+fn date_picker(
+    ui: &mut egui::Ui,
+    label: &str,
+    selected: &mut Option<NaiveDate>,
+    month: &mut NaiveDate,
+    open: &mut bool,
+    allow_clear: bool,
+) {
+    ui.label(label);
+    let button_label = selected
+        .map(|date| date.format("%a, %b %d, %Y").to_string())
+        .unwrap_or_else(|| "Choose date…".to_owned());
+    if ui.button(button_label).clicked() {
+        *open = !*open;
+        if let Some(date) = selected {
+            *month = date.with_day(1).unwrap();
+        }
+    }
+    if !*open {
+        return;
+    }
+
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            if ui.small_button("‹").clicked()
+                && let Some(previous) = month.checked_sub_months(Months::new(1))
+            {
+                *month = previous;
+            }
+            ui.label(month.format("%B %Y").to_string());
+            if ui.small_button("›").clicked()
+                && let Some(next) = month.checked_add_months(Months::new(1))
+            {
+                *month = next;
+            }
+            if allow_clear && selected.is_some() && ui.small_button("Clear").clicked() {
+                *selected = None;
+                *open = false;
+            }
+        });
+        egui::Grid::new(format!("calendar-{label}"))
+            .num_columns(7)
+            .show(ui, |ui| {
+                for weekday in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] {
+                    ui.weak(weekday);
+                }
+                ui.end_row();
+
+                let first = month.with_day(1).unwrap();
+                let leading = first.weekday().num_days_from_monday();
+                for _ in 0..leading {
+                    ui.label("");
+                }
+                let next_month = first.checked_add_months(Months::new(1)).unwrap();
+                let last_day = (next_month - chrono::Duration::days(1)).day();
+                for day in 1..=last_day {
+                    let date = first.with_day(day).unwrap();
+                    let mut button = egui::Button::new(day.to_string());
+                    if *selected == Some(date) {
+                        button = button.fill(egui::Color32::from_rgb(255, 91, 46));
+                    }
+                    if ui.add_sized([28.0, 24.0], button).clicked() {
+                        *selected = Some(date);
+                        *open = false;
+                    }
+                    if (leading + day) % 7 == 0 {
+                        ui.end_row();
+                    }
+                }
+            });
+    });
+}
+
+fn format_date(date: Option<NaiveDate>) -> Option<String> {
+    date.map(|date| date.format("%Y-%m-%d").to_string())
+}
+
+#[cfg(test)]
+mod date_picker_tests {
+    use super::*;
+
+    #[test]
+    fn formats_selected_day_for_the_library_and_preserves_clear() {
+        assert_eq!(
+            format_date(Some(NaiveDate::from_ymd_opt(2024, 2, 29).unwrap())),
+            Some("2024-02-29".into())
+        );
+        assert_eq!(format_date(None), None);
+    }
+
+    #[test]
+    fn calendar_month_length_handles_leap_years_and_year_boundaries() {
+        let february = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
+        let next = february.checked_add_months(Months::new(1)).unwrap();
+        assert_eq!((next - chrono::Duration::days(1)).day(), 29);
+
+        let december = NaiveDate::from_ymd_opt(2025, 12, 1).unwrap();
+        assert_eq!(
+            december.checked_add_months(Months::new(1)).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()
+        );
+        assert_eq!(
+            december.checked_sub_months(Months::new(1)).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 11, 1).unwrap()
+        );
+    }
 }
