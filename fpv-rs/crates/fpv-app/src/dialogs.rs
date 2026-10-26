@@ -1006,7 +1006,7 @@ fn date_picker(
                         *selected = Some(date);
                         *open = false;
                     }
-                    if (leading + day) % 7 == 0 {
+                    if (leading + day).is_multiple_of(7) {
                         ui.end_row();
                     }
                 }
