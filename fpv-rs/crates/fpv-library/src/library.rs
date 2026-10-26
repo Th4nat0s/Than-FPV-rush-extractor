@@ -1911,6 +1911,20 @@ impl Library {
         self.store.update_clip(&Clip { thumbnail_path: Some(path.to_string_lossy().into_owned()), ..clip })?;
         Ok(Thumbnail::made(path))
     }
+
+    /// Rebuilds a poster after the UI found that the cached image cannot be decoded.
+    pub fn remake_poster(&self, clip_id: &str) -> Result<Thumbnail> {
+        let clip = self.store.clip(parse(clip_id)?)?
+            .ok_or_else(|| LibraryError::NotFound(format!("clip {clip_id}")))?;
+        if let Some(path) = clip.thumbnail_path.as_deref() {
+            let _ = std::fs::remove_file(path);
+        }
+        self.store.update_clip(&Clip {
+            thumbnail_path: None,
+            ..clip
+        })?;
+        self.poster(clip_id)
+    }
 }
 
 /// A picture from the cache folder, and whether this call had to make it —

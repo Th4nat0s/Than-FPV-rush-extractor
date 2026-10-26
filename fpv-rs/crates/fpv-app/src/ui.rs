@@ -459,6 +459,20 @@ impl App {
                         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                         Color32::WHITE,
                     );
+                } else if self.images.failed(&path)
+                    && !flight.cloud
+                    && self.ffmpeg_ok
+                    && self.requested.insert(format!("repair:{key}"))
+                    && let Some(clip) = flight.clips.first()
+                {
+                    let id = clip.id.clone();
+                    let key = key.clone();
+                    self.submit("Rebuild poster", true, move |library, _| {
+                        Ok(Reply::Image {
+                            key,
+                            thumbnail: library.remake_poster(&id)?,
+                        })
+                    });
                 }
             } else if !flight.cloud
                 && self.ffmpeg_ok

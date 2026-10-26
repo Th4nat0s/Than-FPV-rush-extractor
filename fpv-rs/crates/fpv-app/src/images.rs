@@ -71,4 +71,8 @@ impl Images {
         }
         None
     }
+
+    pub fn failed(&self, path: &str) -> bool {
+        self.failed.contains(path)
+    }
 }
