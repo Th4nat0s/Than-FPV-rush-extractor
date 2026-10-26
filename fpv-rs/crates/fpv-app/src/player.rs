@@ -90,6 +90,7 @@ impl State {
             for child in children.iter() {
                 if let Ok(mut child) = child.lock() {
                     let _ = child.kill();
+                    let _ = child.wait();
                 }
             }
         }

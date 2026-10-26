@@ -972,6 +972,52 @@ frame-exact boundary editor. Layout:
   (`free_name`), and removes the folders it emptied. Posters, strips and proxies are keyed by
   IDs in the cache and need nothing. Tested on a GoPro card after a change of import folder;
   the cross-disk copy branch is not exercised by a test (one disk here).
+  **The import folder may sit in a cloud drive** (2026-10-25: the pilot's is in Proton Drive,
+  on the Mac). Proton Drive goes through Apple's File Provider: a file made *Online Only*
+  stays a placeholder — name, size, dates — and **the first read downloads it whole**. The
+  placeholder carries `UF_DATALESS` (0x40000000) in its BSD flags — `ls -lO` prints
+  `compressed,dataless` on the pilot's Online Only file and `-` on a downloaded one — so
+  `fpv_media::only_in_cloud` costs one `stat` and downloads nothing; `false` off macOS
+  (Proton Drive has no Linux sync client yet). Cards say *In the cloud*, the session list
+  *in the cloud* / *partly in the cloud* (`FileView.cloud`, `FlightView.cloud`, `inCloud`).
+  **What only looks at footage never downloads it:** the hover-strip job skips such flights,
+  a strip frame or a lost poster is refused (`LibraryError::InCloud`, which the cards ignore),
+  and `identify_cameras` leaves the take for a later run — otherwise opening the app would
+  have pulled the whole library back down. Playing, exporting, segmenting and reducing are
+  asked for, and read (so download) as before. `Library.in_cloud` is a plain `fn`, swapped in
+  the tests for a `.cloud` marker beside the recording. The badges were seen in the window
+  with a build reading that marker; the flag itself only on the pilot's Mac.
+  **Download from the Cloud**, in a session's menu and a card's (`download_session`,
+  `download_flight`), brings them back: the recording is read through to its end — the
+  placeholder's first read is what makes the File Provider download it, so nothing of
+  Proton's is called — as a task counting bytes; one still in the cloud afterwards is
+  notified, not trusted. **Free Up Space**, in the same menus (`free_up_session`,
+  `free_up_flight`), makes them Online Only again — **not a documented path, tried at the
+  pilot's choice (2026-10-25)**: eviction belongs to the provider's own extension
+  (`evictItem`), `fileproviderctl` has no `evict` on the pilot's Mac (grep of its help:
+  nothing), so `fpv_media::free_up_space` calls Foundation's
+  `evictUbiquitousItemAtURL:error:` (`objc2-foundation`, macOS only), written for iCloud. It
+  is offered only on macOS, for files on this disk under `~/Library/CloudStorage/`
+  (`on_cloud_drive`, `FileView.freeable`) — and Download only for a file reading `dataless`,
+  which no other folder can — so neither shows for an import folder no drive manages, and trusted only if the file reads `dataless` afterwards; a refusal
+  or a file kept here is notified with its reason, and nothing is ever deleted any other way.
+  Checked here: the logic against stand-in drives (freeing, refusing, saying yes and keeping),
+  `cargo check --target aarch64-apple-darwin`, and the menus in a build simulating the drive.
+  **Verified by the pilot on their Mac, on Proton Drive (2026-10-25): it works** — the
+  iCloud call frees a third-party File Provider's file too.
+  **Playing a flight still in the cloud waits for it first** (2026-10-25, the pilot's
+  request): the card's click (or a figure's) opens `CloudWait` instead of the player — the
+  flight's download as a task, a bar and the time left — and the player opens once the
+  recordings are here; *Continue in Background* leaves the download in the task bar and the
+  flight unplayed, a failure is notified. **Proton Drive holds a file's first read until the
+  whole of it is down** (the pilot's Mac: 0 bytes, then all of them), so the window shows
+  bytes only once it sees them arrive — spread over a second within one recording
+  (`Flow`, `lib/cloudwait.ts`, tested) — and until then "Video 1 of 2", from the recording
+  index every download step carries (`DownloadStep`, `part` in the event), with a line
+  saying why. The time left comes from the bytes of the recordings already down, else the
+  last download's speed (kept in `localStorage`), and says nothing once that guess has run
+  out; the bar never shows done before it is. Seen in the window with a build simulating a slow drive (the `.cloud`
+  marker, 300 ms a chunk); how Proton's own downloads report progress is for the Mac to show.
 - **Batch export** (2026-10-19): *Select* in a session's header ticks cards, *Export N…* writes
   them all into one chosen folder through `Library::export_flights` — one after the other,
   progress as `export-progress` events, each under `<session> — <title>` (`.avi` for DVR,
@@ -1020,6 +1066,18 @@ frame-exact boundary editor. Layout:
   every missing poster made twice — a refresh redraws the cards while their posters are being
   made, and each asked again — so `lib/posters.ts` lets a second ask wait for the first,
   answered `made: false` so the Posters task counts each poster once.
+  **Two budgets, and each kind emptied on its own** (2026-10-25, the pilot's request):
+  playback previews keep `proxyBudgetGb` (10, LRU through the proxy index), and the
+  **pictures** — hover strips, posters, editor frames — get `pictureBudgetGb` (2), both set
+  in Settings (`Library::set_cache_budgets`, refused under 0.1 GB, applied at once). Over its
+  budget `trim_pictures` (at open, after a change) removes editor frames first, then strips,
+  then posters — every card on screen shows one —, the least recently used first: a cached
+  strip or poster is *touched* when used again, its date being the only access record kept.
+  The strips job stops at the budget, and a frame that would go over is taken back, never
+  kept; `missing_strip_frames` reports nothing once there is no room for one more frame
+  (weighed as the average frame on disk), so a full cache starts no job at every launch.
+  Settings shows each kind with its own *Empty…* and *Empty All…*
+  (`clear_cache(kinds)`, `CacheKind`).
 - **Hover strips are made ahead of the pointer** (2026-10-20, the pilot's request: on a
   long 4K take, a strip made on hover kept the user waiting). `Library::prepare_strips` makes
   every missing strip frame of the library, the session on screen first, as one "Hover strips"
@@ -1078,7 +1136,7 @@ frame-exact boundary editor. Layout:
   session; liked only — and every grid sorts (newest, oldest, longest) and pages (12/24/48/96,
   the size kept in `localStorage`); only the page on screen makes its posters. The sidebar's
   sessions and the Load-from-folder dialog's folders page too (10 each, `CompactPager`,
-  2026-10-23): the sidebar's page follows the session opened from elsewhere (`pageOf`), but
+  2026-10-23; page numbers between its arrows since 2026-10-25, the range on hover): the sidebar's page follows the session opened from elsewhere (`pageOf`), but
   only when that session changes — a library refresh, which every ending task causes, must not
   pull the viewer back from the page they turned to. All of it is
   computed in the window from the snapshot (`lib/library.ts`, `lib/browse.svelte.ts`, both
@@ -1088,7 +1146,9 @@ frame-exact boundary editor. Layout:
   session's, a card's, Import Folder's arrow) is placed by `fitMenu` (`lib/fit.ts`, tested):
   measured once rendered, below its anchor or above it when the window has no room — a
   session low in the list had its menu cut off (the pilot's report, 2026-10-24) — and never
-  past the window's edges. Escape closes them. **Flight tags**
+  past the window's edges. Escape closes them. A dialog, though, closes only with ✕, Escape or its
+  buttons — never on a click outside it (2026-10-25, the pilot's call), which lost what was
+  typed or the player at a stray click. **Flight tags**
   ("freestyle", "gates") are free labels on a whole flight, beside the figure tags that mark a
   moment: table `flightLabel` (schema `v5`), one label per flight whatever its case, the
   spelling first used naming it in suggestions; edited in the player. In the code they are
@@ -1112,7 +1172,12 @@ frame-exact boundary editor. Layout:
   flights, leaves them.
 - **Delete Flight…** (2026-10-24, the pilot's request), in a card's ⋯ menu, behind a
   confirmation that names what goes (`Library::flight_deletion`, the same plan
-  `delete_flight` carries out). A **whole DVR recording stays**: only the flight's pointer
+  `delete_flight` carries out). **A file it took along is remembered** (`deletedRecording`, schema `v7`, by
+  path; 2026-10-25, the pilot's request): if the trash refused it or the pilot put it back,
+  *Load from Destination Folder* leaves it where it is, names it on its folder's row
+  ("1 recording deleted with its flight") and loads it only when that row's *load again*
+  is ticked (`load_import_folders(chosen, restore)`) — into the session the folder loads
+  into, beside its other flights — and then forgets it was deleted. A **whole DVR recording stays**: only the flight's pointer
   goes, and a re-segment would find the flight again. A file that held **nothing but this
   flight goes to the trash** with it — a piece a reduction left, an action-cam take and its
   chapters (the pilot named the DVR cases; a take is its file, so it follows the piece's rule).

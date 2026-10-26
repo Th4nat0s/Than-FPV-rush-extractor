@@ -229,6 +229,9 @@ impl App {
                     if file.reduced {
                         ui.label("reduced");
                     }
+                    if file.cloud {
+                        ui.label("Online Only");
+                    }
                     if let Some(folder) = &file.elsewhere {
                         ui.label("elsewhere").on_hover_text(folder);
                     }
@@ -246,6 +249,26 @@ impl App {
     }
 
     fn session_menu(&mut self, ui: &mut egui::Ui, session: &SessionView) {
+        if ui
+            .add_enabled(
+                session.files.iter().any(|file| file.cloud),
+                egui::Button::new("Download recordings"),
+            )
+            .clicked()
+        {
+            self.download_cloud(session.id.clone(), true);
+            ui.close();
+        }
+        if ui
+            .add_enabled(
+                session.files.iter().any(|file| file.freeable),
+                egui::Button::new("Free up cloud space…"),
+            )
+            .clicked()
+        {
+            self.dialog = Some(Dialog::free_session(session));
+            ui.close();
+        }
         if ui.button("Edit session…").clicked() {
             self.dialog = Some(Dialog::session(session));
             ui.close();
@@ -404,7 +427,8 @@ impl App {
                 ui.allocate_exact_size(egui::vec2(width, width * 0.62), egui::Sense::click());
             ui.painter()
                 .rect_filled(rect, 4.0, Color32::from_rgb(22, 28, 37));
-            if response.hovered()
+            if !flight.cloud
+                && response.hovered()
                 && self.ffmpeg_ok
                 && self.tasks.iter().filter(|t| t.running).count() < 12
                 && let Some(pointer) = response.hover_pos()
@@ -436,7 +460,8 @@ impl App {
                         Color32::WHITE,
                     );
                 }
-            } else if self.ffmpeg_ok
+            } else if !flight.cloud
+                && self.ffmpeg_ok
                 && self.requested.insert(key.clone())
                 && let Some(clip) = flight.clips.first()
             {
@@ -482,6 +507,9 @@ impl App {
             if flight.reduced {
                 ui.small("Reduced DVR footage");
             }
+            if flight.cloud {
+                ui.small("Online Only · downloads when played");
+            }
             ui.small(
                 flight
                     .labels
@@ -513,6 +541,20 @@ impl App {
                 }
                 ui.add_enabled_ui(!self.busy(), |ui| {
                     ui.menu_button("…", |ui| {
+                        if ui
+                            .add_enabled(flight.cloud, egui::Button::new("Download recordings"))
+                            .clicked()
+                        {
+                            self.download_cloud(flight.id.clone(), false);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(flight.freeable, egui::Button::new("Free up cloud space…"))
+                            .clicked()
+                        {
+                            self.dialog = Some(Dialog::free_flight(flight));
+                            ui.close();
+                        }
                         if ui.button("Edit title…").clicked() {
                             self.dialog = Some(Dialog::title(flight));
                             ui.close();
@@ -705,8 +747,10 @@ impl App {
                 }
             });
         if open {
+            if !viewer.player.paused() && !viewer.player.ended() || viewer.player.buffering() {
+                ctx.request_repaint_after(Duration::from_millis(16));
+            }
             self.viewer = Some(viewer);
-            ctx.request_repaint_after(Duration::from_millis(16));
         }
     }
 
@@ -765,6 +809,16 @@ impl App {
                                     );
                                 }
                             });
+                            if !task.log.is_empty() {
+                                ui.collapsing(
+                                    format!("Details: {} #{}", task.label, task.id),
+                                    |ui| {
+                                        for line in &task.log {
+                                            ui.small(line);
+                                        }
+                                    },
+                                );
+                            }
                         }
                     });
             }
@@ -791,5 +845,47 @@ impl App {
                 self.notices.clear();
             }
         }
+    }
+}
+
+impl App {
+    fn download_cloud(&mut self, id: String, session: bool) {
+        self.submit("Download from cloud", false, move |library, progress| {
+            let report = if session {
+                library.download_session(&id, |step| {
+                    progress.count(
+                        if step.done == step.total {
+                            step.files
+                        } else {
+                            step.file.saturating_sub(1)
+                        },
+                        step.files,
+                        step.line,
+                    )
+                })?
+            } else {
+                library.download_flight(&id, |step| {
+                    progress.count(
+                        if step.done == step.total {
+                            step.files
+                        } else {
+                            step.file.saturating_sub(1)
+                        },
+                        step.files,
+                        step.line,
+                    )
+                })?
+            };
+            if !report.failed.is_empty() {
+                return Err(fpv_library::LibraryError::Invalid(format!(
+                    "{} downloaded; failed: {:?}",
+                    report.downloaded, report.failed
+                )));
+            }
+            Ok(Reply::Done(format!(
+                "Downloaded {} recordings",
+                report.downloaded
+            )))
+        });
     }
 }

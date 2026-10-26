@@ -20,6 +20,9 @@ pub struct Config {
     pub media_root: PathBuf,
     /// The playback proxy cache's budget, least recently used evicted first.
     pub proxy_budget_gb: f64,
+    /// The pictures' budget: hover strips, posters and the editor's frames
+    /// together (`Library::trim_pictures`).
+    pub picture_budget_gb: f64,
     /// How each session's folder is named in the import folder, from
     /// `{date}`, `{session}` and `{source}` — see `fpv_import::FolderPattern`.
     pub folder_pattern: String,
@@ -31,6 +34,7 @@ impl Default for Config {
             media_root: dirs::video_dir().or_else(dirs::home_dir)
                 .unwrap_or_else(|| PathBuf::from(".")).join("FPV Rush"),
             proxy_budget_gb: 10.0,
+            picture_budget_gb: 2.0,
             folder_pattern: fpv_import::FolderPattern::DEFAULT.into(),
         }
     }
@@ -78,6 +82,10 @@ impl Config {
     pub fn proxy_budget_bytes(&self) -> i64 {
         (self.proxy_budget_gb.max(0.0) * (1u64 << 30) as f64) as i64
     }
+
+    pub fn picture_budget_bytes(&self) -> u64 {
+        (self.picture_budget_gb.max(0.0) * (1u64 << 30) as f64) as u64
+    }
 }
 
 #[cfg(test)]
@@ -97,6 +105,7 @@ mod tests {
         assert_eq!(edited.media_root, PathBuf::from("/data/fpv"));
         assert_eq!(edited.proxy_budget_gb, 10.0); // a missing key keeps its default
         assert_eq!(edited.proxy_budget_bytes(), 10 << 30);
+        assert_eq!(edited.picture_budget_bytes(), 2 << 30);
     }
 
     #[test]

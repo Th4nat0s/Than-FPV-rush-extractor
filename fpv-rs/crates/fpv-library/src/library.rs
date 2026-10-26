@@ -35,6 +35,9 @@ pub enum LibraryError {
     NotFound(String),
     #[error("{0}")]
     Invalid(String),
+    /// Left in the cloud rather than downloaded for a picture.
+    #[error("{0} is only in the cloud: download it first")]
+    InCloud(String),
 }
 
 pub type Result<T> = std::result::Result<T, LibraryError>;
@@ -114,6 +117,14 @@ impl CacheUsage {
     }
 }
 
+/// Marks a cached picture as just used, so the budget's trimming keeps it
+/// over pictures nobody looked at for longer. Best effort: a picture whose
+/// date cannot change is only trimmed sooner.
+fn touch(path: &Path) {
+    let _ = std::fs::File::options().write(true).open(path)
+        .and_then(|file| file.set_modified(std::time::SystemTime::now()));
+}
+
 /// Bytes under a folder, 0 if it is not there.
 fn folder_size(path: &Path) -> u64 {
     let Ok(entries) = std::fs::read_dir(path) else { return 0 };
@@ -140,6 +151,34 @@ pub struct StripsPrepared {
     pub made: usize,
     /// (flight, reason), once per flight.
     pub failed: Vec<(String, String)>,
+    /// It stopped at the pictures' budget with strips still missing.
+    pub at_budget: bool,
+}
+
+/// One kind of what the cache folder holds, each in its own folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CacheKind {
+    /// Playback previews, under the proxy budget.
+    Proxies,
+    /// Hover strips, posters and the editor's frames: the pictures, under
+    /// their own budget.
+    Strips,
+    Posters,
+    Previews,
+}
+
+impl CacheKind {
+    pub const ALL: [CacheKind; 4] = [CacheKind::Proxies, CacheKind::Strips, CacheKind::Posters, CacheKind::Previews];
+
+    fn folder(self) -> &'static str {
+        match self {
+            CacheKind::Proxies => "proxies",
+            CacheKind::Strips => "strips",
+            CacheKind::Posters => "posters",
+            CacheKind::Previews => "preview",
+        }
+    }
 }
 
 /// What a batch export wrote, and what it could not.
@@ -169,6 +208,43 @@ pub struct RelocationSummary {
     pub moved: usize,
     /// [recording, reason]: left where it was.
     pub failed: Vec<(String, String)>,
+}
+
+/// What freeing space on a cloud drive did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeUpSummary {
+    pub freed: usize,
+    pub bytes: u64,
+    /// [recording, reason]: still on this disk.
+    pub failed: Vec<(String, String)>,
+}
+
+/// How much of a recording a download reads at a time: progress moves on
+/// after each.
+const DOWNLOAD_CHUNK: usize = 8 << 20;
+
+/// What downloading from the cloud drive did.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadSummary {
+    pub downloaded: usize,
+    pub bytes: u64,
+    /// [recording, reason]: still only in the cloud.
+    pub failed: Vec<(String, String)>,
+}
+
+/// How far a download from the cloud is: bytes read, and which recording.
+/// A File Provider may hold a recording's first read until all of it is down,
+/// so the bytes can stand still then jump; the recording count still moves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadStep {
+    pub done: usize,
+    pub total: usize,
+    /// 1-based, of `files`.
+    pub file: usize,
+    pub files: usize,
+    pub line: String,
 }
 
 /// A session's details as the Edit Session dialog sends them back.
@@ -249,7 +325,11 @@ pub struct FolderView {
     pub date: Option<String>,
     pub recordings: usize,
     /// Recordings the library does not know: 0 is a folder already imported.
+    /// Those deleted with their flight are not counted.
     pub new: usize,
+    /// Recordings that left the library with a deleted flight and are still
+    /// here: loaded again only when asked.
+    pub deleted: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -280,6 +360,28 @@ pub struct Library {
     pub store: LibraryStore,
     config: Config,
     tools: Option<PathBuf>,
+    /// The cloud drive the import folder may sit in; the tests stand in their
+    /// own, there being no File Provider on Linux.
+    cloud: CloudDrive,
+}
+
+/// What the library asks of a cloud drive, as plain functions so the tests
+/// can stand in for one.
+#[derive(Clone, Copy)]
+struct CloudDrive {
+    /// Online Only: reading it downloads it (`fpv_media::only_in_cloud`).
+    only_in_cloud: fn(&Path) -> bool,
+    /// In a cloud drive's folder at all (`fpv_media::on_cloud_drive`).
+    on_drive: fn(&Path) -> bool,
+    /// Makes it Online Only again (`fpv_media::free_up_space`).
+    free_up_space: fn(&Path) -> std::io::Result<()>,
+}
+
+impl Default for CloudDrive {
+    fn default() -> Self {
+        Self { only_in_cloud: fpv_media::only_in_cloud, on_drive: fpv_media::on_cloud_drive,
+               free_up_space: fpv_media::free_up_space }
+    }
 }
 
 impl Library {
@@ -328,9 +430,13 @@ impl Library {
         let library = Self {
             root: config.media_root.clone(), config_directory: config_directory.to_path_buf(),
             cache_directory: cache_directory.to_path_buf(), store, config, tools,
+            cloud: CloudDrive::default(),
         };
         library.move_posters_into_cache()?;
         library.sweep_orphaned_thumbnails()?;
+        if let Err(error) = library.trim_pictures() {
+            log::warn!("could not bring the pictures under their budget: {error}");
+        }
         if let Err(error) = library.proxy_cache().reconcile() {
             log::warn!("could not reconcile the proxy cache: {error}");
         }
@@ -393,7 +499,7 @@ impl Library {
         let mut named = 0;
         for file in self.store.unidentified_cameras()? {
             let path = Path::new(&file.imported_path);
-            if !path.is_file() {
+            if !path.is_file() || self.only_in_cloud(&file) {
                 continue;
             }
             let camera = match probe.probe(path) {
@@ -421,16 +527,87 @@ impl Library {
     /// when shown, strips by the background job, a preview when played — so
     /// nothing is lost but time. Only the folders the library made are
     /// touched, whatever else the cache folder holds. Returns what was freed.
-    pub fn clear_cache(&self) -> Result<CacheUsage> {
-        let freed = self.cache_usage()?;
-        self.proxy_cache().purge_all()?;
-        for name in ["proxies", "strips", "posters", "preview"] {
-            match std::fs::remove_dir_all(self.cache_directory.join(name)) {
+    pub fn clear_cache(&self, kinds: &[CacheKind]) -> Result<CacheUsage> {
+        let usage = self.cache_usage()?;
+        let mut freed = CacheUsage::default();
+        for &kind in kinds {
+            match kind {
+                CacheKind::Proxies => {
+                    self.proxy_cache().purge_all()?;
+                    freed.proxies = usage.proxies;
+                }
+                CacheKind::Strips => freed.strips = usage.strips,
+                CacheKind::Posters => freed.posters = usage.posters,
+                CacheKind::Previews => freed.previews = usage.previews,
+            }
+            match std::fs::remove_dir_all(self.cache_directory.join(kind.folder())) {
                 Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
                 _ => {}
             }
         }
         Ok(freed)
+    }
+
+    /// What a hover-strip frame weighs, on average over those on disk; 0
+    /// before the first.
+    fn strip_frame_size(&self) -> u64 {
+        let Ok(entries) = std::fs::read_dir(self.cache_directory.join(CacheKind::Strips.folder())) else { return 0 };
+        let sizes: Vec<u64> = entries.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.len()).collect();
+        if sizes.is_empty() { 0 } else { sizes.iter().sum::<u64>() / sizes.len() as u64 }
+    }
+
+    /// The pictures' bytes on disk: hover strips, posters, editor frames.
+    fn picture_bytes(&self) -> u64 {
+        [CacheKind::Strips, CacheKind::Posters, CacheKind::Previews].iter()
+            .map(|kind| folder_size(&self.cache_directory.join(kind.folder()))).sum()
+    }
+
+    /// Brings the pictures back under their budget. The editor's frames go
+    /// first — made for one look —, then hover strips, then posters, which
+    /// every card on screen shows; within each, the one used longest ago
+    /// (a cached picture is touched when used again). Whatever goes is made
+    /// again when next wanted. Returns the bytes freed.
+    pub fn trim_pictures(&self) -> Result<u64> {
+        let budget = self.config.picture_budget_bytes();
+        let mut files: Vec<(usize, std::time::SystemTime, u64, PathBuf)> = vec![];
+        for (rank, kind) in [CacheKind::Previews, CacheKind::Strips, CacheKind::Posters].into_iter().enumerate() {
+            let Ok(entries) = std::fs::read_dir(self.cache_directory.join(kind.folder())) else { continue };
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() && metadata.is_file() {
+                    let used = metadata.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    files.push((rank, used, metadata.len(), entry.path()));
+                }
+            }
+        }
+        let mut total: u64 = files.iter().map(|f| f.2).sum();
+        files.sort_by_key(|f| (f.0, f.1));
+        let mut freed = 0;
+        for (_, _, size, path) in files {
+            if total <= budget {
+                break;
+            }
+            std::fs::remove_file(&path)?;
+            total -= size;
+            freed += size;
+        }
+        Ok(freed)
+    }
+
+    /// Sets both budgets and saves them to `config.json`, then brings the
+    /// cache under them at once.
+    pub fn set_cache_budgets(&mut self, proxies_gb: f64, pictures_gb: f64) -> Result<()> {
+        for (what, gb) in [("playback previews", proxies_gb), ("pictures", pictures_gb)] {
+            if !gb.is_finite() || gb < 0.1 {
+                return Err(LibraryError::Invalid(format!("the {what}' budget must be at least 0.1 GB, not {gb}")));
+            }
+        }
+        let config = Config { proxy_budget_gb: proxies_gb, picture_budget_gb: pictures_gb, ..self.config.clone() };
+        config.save(&self.config_directory)?;
+        self.config = config;
+        // Settings is open, so no flight is playing: nothing to pin.
+        self.proxy_cache().evict(&HashSet::new())?;
+        self.trim_pictures()?;
+        Ok(())
     }
 
     pub(crate) fn proxy_cache(&self) -> ProxyCache<'_> {
@@ -444,16 +621,40 @@ impl Library {
     pub fn snapshot(&self) -> Result<Vec<SessionView>> {
         let mut labels = self.store.session_labels()?;
         self.store.sessions()?.iter()
-            .map(|session| Ok(views::session_view(
-                session, self.store.source_files(session.id)?, self.store.flights(session.id)?,
-                views::SessionContext {
-                    root: &self.root,
-                    session_labels: labels.remove(&session.id).unwrap_or_default(),
-                    flight_labels: self.store.flight_labels_in_session(session.id)?,
-                    tags: &self.store.tags_in_session(session.id)?,
-                    reduced: &self.store.reduced_files(session.id)?,
-                })))
+            .map(|session| {
+                let files = self.store.source_files(session.id)?;
+                let cloud: HashSet<Uuid> = files.iter()
+                    .filter(|f| self.only_in_cloud(f)).map(|f| f.id).collect();
+                let freeable: HashSet<Uuid> = files.iter()
+                    .filter(|f| self.freeable(f)).map(|f| f.id).collect();
+                Ok(views::session_view(session, files, self.store.flights(session.id)?,
+                    views::SessionContext {
+                        root: &self.root,
+                        session_labels: labels.remove(&session.id).unwrap_or_default(),
+                        flight_labels: self.store.flight_labels_in_session(session.id)?,
+                        tags: &self.store.tags_in_session(session.id)?,
+                        reduced: &self.store.reduced_files(session.id)?,
+                        cloud: &cloud,
+                        freeable: &freeable,
+                    }))
+            })
             .collect()
+    }
+
+    /// A recording the cloud drive holds online only: what merely looks at
+    /// footage — posters, hover strips, the camera's name — leaves it there
+    /// rather than download gigabytes nobody asked for.
+    fn only_in_cloud(&self, file: &SourceFile) -> bool {
+        (self.cloud.only_in_cloud)(Path::new(&file.imported_path))
+    }
+
+    /// On this disk, in a cloud drive's folder: its space can be freed.
+    fn freeable(&self, file: &SourceFile) -> bool {
+        (self.cloud.on_drive)(Path::new(&file.imported_path)) && !self.only_in_cloud(file)
+    }
+
+    fn in_cloud_error(file: &SourceFile) -> LibraryError {
+        LibraryError::InCloud(file_name(&file.imported_path))
     }
 
     fn session(&self, id: &str) -> Result<Session> {
@@ -520,14 +721,19 @@ impl Library {
         let ffmpeg = self.ffmpeg();
         let importer = LibraryImporter::new(&ffmpeg, &self.store);
         let known = self.store.imported_paths()?;
+        let deleted = self.store.deleted_paths()?;
         self.session_folders_on_disk()?.into_iter().map(|folder| {
             let files = importer.discover(&folder)?;
             let name = file_name(&folder.to_string_lossy());
             let (day, session) = fpv_import::session_of_folder(&name);
+            let unknown: Vec<String> = files.iter().map(|f| f.path.to_string_lossy().into_owned())
+                .filter(|path| !known.contains(path)).collect();
+            let (deleted, new): (Vec<String>, Vec<String>) = unknown.into_iter().partition(|path| deleted.contains(path));
             Ok(FolderView {
                 session, date: day.map(|d| d.format("%Y-%m-%d").to_string()),
                 recordings: files.len(),
-                new: files.iter().filter(|f| !known.contains(f.path.to_string_lossy().as_ref())).count(),
+                new: new.len(),
+                deleted: deleted.iter().map(|path| file_name(path)).collect(),
                 name,
             })
         }).collect()
@@ -551,27 +757,40 @@ impl Library {
     /// its name (`session_of_folder`): the folders of one session and day (one
     /// per source) join one session, and a session of that name and day
     /// already in the library is joined. Folders holding nothing new create
-    /// nothing.
-    pub fn load_import_folders(&self, chosen: &[String], mut progress: impl FnMut(ImportEvent))
-        -> Result<ImportSummary> {
+    /// nothing. A recording deleted with its flight is left where it is,
+    /// unless its folder is among `restore`: then it comes back too, into the
+    /// session the folder loads into, beside the flights still there.
+    pub fn load_import_folders(&self, chosen: &[String], restore: &[String],
+                               mut progress: impl FnMut(ImportEvent)) -> Result<ImportSummary> {
         let ffmpeg = self.ffmpeg();
         let importer = LibraryImporter::new(&ffmpeg, &self.store).posters_in(self.posters());
         let folders = self.session_folders_on_disk()?;
-        for name in chosen {
+        for name in chosen.iter().chain(restore) {
             if !folders.iter().any(|f| file_name(&f.to_string_lossy()) == *name) {
                 return Err(LibraryError::NotFound(format!("folder {name} in the import folder")));
             }
         }
         let found: Vec<(PathBuf, Vec<_>)> = folders.into_iter()
-            .filter(|folder| chosen.contains(&file_name(&folder.to_string_lossy())))
+            .filter(|folder| chosen.iter().chain(restore).any(|name| *name == file_name(&folder.to_string_lossy())))
             .map(|folder| Ok((folder.clone(), importer.discover(&folder)?)))
             .collect::<std::io::Result<_>>()?;
         let count = found.iter().map(|(_, files)| files.len()).sum();
         progress(ImportEvent::Discovered { count, sessions: found.len() });
 
         let known = self.store.imported_paths()?;
+        let deleted = self.store.deleted_paths()?;
         let mut summary = ImportSummary::default();
-        for (folder, files) in found {
+        for (folder, mut files) in found {
+            if !restore.contains(&file_name(&folder.to_string_lossy())) {
+                files.retain(|file| {
+                    let gone = deleted.contains(file.path.to_string_lossy().as_ref());
+                    if gone {
+                        summary.skipped += 1;
+                        progress(ImportEvent::Skipped(file.path.clone()));
+                    }
+                    !gone
+                });
+            }
             if files.iter().all(|f| known.contains(f.path.to_string_lossy().as_ref())) {
                 for file in files {
                     summary.skipped += 1;
@@ -592,6 +811,9 @@ impl Library {
                 }
             };
             let report = importer.register_in_place(files, &session, &mut progress)?;
+            let back: Vec<String> = report.imported.iter().map(|file| file.imported_path.clone())
+                .filter(|path| deleted.contains(path)).collect();
+            self.store.forget_deleted(&back)?;
             summary.imported += report.imported.len();
             summary.skipped += report.skipped.len();
             summary.failed += report.failed.len();
@@ -1084,11 +1306,15 @@ impl Library {
         let (flight, clips, timeline) = self.flight(flight)?;
         let cached = self.strip_path(&flight, &clips, index);
         if cached.exists() {
+            touch(&cached);
             return Ok(Thumbnail::cached(cached));
         }
         let fraction = (index as f64 + 0.5) / count.max(1) as f64;
         let position = timeline.position(fraction * timeline.duration())
             .ok_or_else(|| LibraryError::NotFound("footage in this flight".into()))?;
+        if self.only_in_cloud(position.file) {
+            return Err(Self::in_cloud_error(position.file));
+        }
         let seconds = position.file.media.frame_rate.seconds(position.source_frame);
         let ffmpeg = self.ffmpeg();
         let generator = ThumbnailGenerator::new(&ffmpeg);
@@ -1108,14 +1334,26 @@ impl Library {
     /// The hover-strip frames not on disk yet, across the whole library, the
     /// `first` session's flights first — the one on screen fills before the
     /// rest. Cheap: a file check per frame, no ffmpeg.
+    /// Nothing once the pictures leave no room for another frame (weighed as
+    /// the frames already made do): the job would make one only to take it
+    /// back, at every launch.
     pub fn missing_strip_frames(&self, count: usize, first: Option<&str>) -> Result<Vec<StripFrame>> {
+        if self.picture_bytes() + self.strip_frame_size() >= self.config.picture_budget_bytes() {
+            return Ok(vec![]);
+        }
         let mut sessions = self.store.sessions()?;
         if let Some(first) = first.map(parse).transpose()? {
             sessions.sort_by_key(|s| s.id != first);
         }
         let mut missing = vec![];
         for session in sessions {
+            let cloud: HashSet<Uuid> = self.store.source_files(session.id)?.iter()
+                .filter(|f| self.only_in_cloud(f)).map(|f| f.id).collect();
             for (flight, clips) in self.store.flights(session.id)? {
+                // Its strip waits until the flight is downloaded.
+                if clips.iter().any(|c| cloud.contains(&c.source_file_id)) {
+                    continue;
+                }
                 let label = format!("{} — {}", session.name,
                                     flight.title.clone().unwrap_or_else(|| format!("Flight {}", flight.order_in_session)));
                 for index in 0..count {
@@ -1137,13 +1375,26 @@ impl Library {
         let missing = self.missing_strip_frames(count, first)?;
         let mut prepared = StripsPrepared::default();
         let mut broken: HashSet<String> = HashSet::new();
+        let budget = self.config.picture_budget_bytes();
+        let mut used = self.picture_bytes();
+        // A frame that goes over is taken back: the job stops at the budget,
+        // never a frame over it.
         for (done, frame) in missing.iter().enumerate() {
             progress(done, missing.len(), &frame.label);
             if broken.contains(&frame.flight) {
                 continue;
             }
             match self.filmstrip_frame(&frame.flight, frame.index, count) {
-                Ok(thumbnail) => prepared.made += usize::from(thumbnail.made),
+                Ok(thumbnail) => {
+                    let size = std::fs::metadata(&thumbnail.path).map_or(0, |m| m.len());
+                    if thumbnail.made && used + size > budget {
+                        let _ = std::fs::remove_file(&thumbnail.path);
+                        prepared.at_budget = true;
+                        break;
+                    }
+                    prepared.made += usize::from(thumbnail.made);
+                    used += size;
+                }
                 Err(LibraryError::NotFound(_)) => { broken.insert(frame.flight.clone()); }
                 Err(error) => {
                     broken.insert(frame.flight.clone());
@@ -1160,6 +1411,119 @@ impl Library {
         let file = self.store.source_file(parse(file)?)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording {file}")))?;
         Ok(PathBuf::from(file.imported_path))
+    }
+
+    /// Brings a session's recordings that are only in the cloud back onto this
+    /// computer (`download`).
+    pub fn download_session(&self, session: &str, progress: impl FnMut(DownloadStep))
+        -> Result<DownloadSummary> {
+        let session = self.session(session)?;
+        self.download(self.store.source_files(session.id)?, DOWNLOAD_CHUNK, progress)
+    }
+
+    /// Brings a flight's recordings that are only in the cloud back onto this
+    /// computer (`download`).
+    pub fn download_flight(&self, flight: &str, progress: impl FnMut(DownloadStep))
+        -> Result<DownloadSummary> {
+        self.download(self.flight_files(flight)?, DOWNLOAD_CHUNK, progress)
+    }
+
+    /// A flight's recordings, each once, in its order.
+    fn flight_files(&self, flight: &str) -> Result<Vec<SourceFile>> {
+        let (_, clips, _) = self.flight(flight)?;
+        let mut files: Vec<SourceFile> = vec![];
+        for clip in &clips {
+            if let Some(file) = self.store.source_file(clip.source_file_id)?
+                && !files.iter().any(|f| f.id == file.id)
+            {
+                files.push(file);
+            }
+        }
+        Ok(files)
+    }
+
+    /// Makes a session's recordings Online Only again (`free_up_space`).
+    pub fn free_up_session(&self, session: &str, progress: impl FnMut(usize, usize, String))
+        -> Result<FreeUpSummary> {
+        let session = self.session(session)?;
+        Ok(self.free_up_space(self.store.source_files(session.id)?, progress))
+    }
+
+    /// Makes a flight's recordings Online Only again (`free_up_space`).
+    pub fn free_up_flight(&self, flight: &str, progress: impl FnMut(usize, usize, String))
+        -> Result<FreeUpSummary> {
+        Ok(self.free_up_space(self.flight_files(flight)?, progress))
+    }
+
+    /// Asks the cloud drive to take each of `files` that is on this disk back
+    /// to Online Only. Only what sits in a cloud drive's folder is asked; a
+    /// recording the drive keeps here anyway — refused, or not uploaded yet —
+    /// is reported with its reason, and is never deleted by other means.
+    fn free_up_space(&self, files: Vec<SourceFile>, mut progress: impl FnMut(usize, usize, String))
+        -> FreeUpSummary {
+        let here: Vec<SourceFile> = files.into_iter().filter(|f| self.freeable(f)).collect();
+        let mut summary = FreeUpSummary::default();
+        for (index, file) in here.iter().enumerate() {
+            let name = file_name(&file.imported_path);
+            progress(index, here.len(), format!("Freeing {name} ({}/{})…", index + 1, here.len()));
+            let path = Path::new(&file.imported_path);
+            let size = std::fs::metadata(path).map_or(0, |m| m.len());
+            match (self.cloud.free_up_space)(path) {
+                Ok(()) if self.only_in_cloud(file) => {
+                    summary.freed += 1;
+                    summary.bytes += size;
+                }
+                Ok(()) => summary.failed.push((name, "the cloud drive kept it on this disk".into())),
+                Err(error) => summary.failed.push((name, error.to_string())),
+            }
+        }
+        progress(here.len(), here.len(), format!("{} recording(s) made Online Only", summary.freed));
+        summary
+    }
+
+    /// Reads every recording of `files` that is only in the cloud through to
+    /// its end: the File Provider downloads a placeholder on its first read,
+    /// so reading is downloading, and it needs nothing of the drive's own.
+    /// Progress counts bytes, the placeholder's size being the recording's.
+    /// A recording still in the cloud afterwards is reported, not trusted.
+    fn download(&self, files: Vec<SourceFile>, chunk: usize, mut progress: impl FnMut(DownloadStep))
+        -> Result<DownloadSummary> {
+        let away: Vec<SourceFile> = files.into_iter().filter(|f| self.only_in_cloud(f)).collect();
+        let size = |file: &SourceFile| std::fs::metadata(&file.imported_path).map_or(0, |m| m.len());
+        let total: u64 = away.iter().map(size).sum();
+        let mut summary = DownloadSummary::default();
+        let mut buffer = vec![0u8; chunk];
+        for (index, file) in away.iter().enumerate() {
+            let name = file_name(&file.imported_path);
+            let line = format!("Downloading {name} ({}/{})…", index + 1, away.len());
+            let step = |done: u64| DownloadStep { done: done as usize, total: total as usize,
+                                                  file: index + 1, files: away.len(), line: line.clone() };
+            progress(step(summary.bytes));
+            let read = (|| -> std::io::Result<u64> {
+                let mut source = std::fs::File::open(&file.imported_path)?;
+                let mut read = 0;
+                loop {
+                    let n = std::io::Read::read(&mut source, &mut buffer)?;
+                    if n == 0 {
+                        return Ok(read);
+                    }
+                    read += n as u64;
+                    progress(step(summary.bytes + read));
+                }
+            })();
+            match read {
+                Ok(_) if self.only_in_cloud(file) =>
+                    summary.failed.push((name, "the cloud drive did not bring it down".into())),
+                Ok(read) => {
+                    summary.downloaded += 1;
+                    summary.bytes += read;
+                }
+                Err(error) => summary.failed.push((name, error.to_string())),
+            }
+        }
+        progress(DownloadStep { done: total as usize, total: total as usize, file: away.len(), files: away.len(),
+                                line: format!("{} recording(s) downloaded", summary.downloaded) });
+        Ok(summary)
     }
 
     /// One recording per folder the session's recordings sit in, to show in
@@ -1534,10 +1898,14 @@ impl Library {
         if let Some(path) = clip.thumbnail_path.as_deref().map(PathBuf::from)
             && path.is_file()
         {
+            touch(&path);
             return Ok(Thumbnail::cached(path));
         }
         let file = self.store.source_file(clip.source_file_id)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording of clip {}", clip.id)))?;
+        if self.only_in_cloud(&file) {
+            return Err(Self::in_cloud_error(&file));
+        }
         let ffmpeg = self.ffmpeg();
         let path = ThumbnailGenerator::new(&ffmpeg).generate_for_clip(&clip, &file, &self.posters(), 480)?;
         self.store.update_clip(&Clip { thumbnail_path: Some(path.to_string_lossy().into_owned()), ..clip })?;

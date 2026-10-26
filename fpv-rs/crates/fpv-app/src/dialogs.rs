@@ -7,8 +7,8 @@ use crate::{
 };
 use eframe::egui;
 use fpv_library::{
-    CacheUsage, Config, ExportMode, FlightDeletion, FlightView, FolderView, ImportProgress,
-    ReducePreview, RelocationPreview, SegmentProgress, SessionEdit, SessionView,
+    CacheKind, CacheUsage, Config, ExportMode, FlightDeletion, FlightView, FolderView,
+    ImportProgress, ReducePreview, RelocationPreview, SegmentProgress, SessionEdit, SessionView,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -29,6 +29,7 @@ enum Kind {
     Export,
     Bulk,
     Load,
+    FreeSpace,
 }
 
 pub(crate) struct Dialog {
@@ -54,6 +55,8 @@ pub(crate) struct Dialog {
     deletion: Option<FlightDeletion>,
     cache: Option<CacheUsage>,
     saving: Option<u64>,
+    restore: HashSet<String>,
+    budgets: [f64; 2],
 }
 
 impl Dialog {
@@ -81,6 +84,8 @@ impl Dialog {
             deletion: None,
             cache: None,
             saving: None,
+            restore: HashSet::new(),
+            budgets: [10.0, 2.0],
         }
     }
     pub fn import(folder: Option<PathBuf>, name: String) -> Self {
@@ -96,6 +101,7 @@ impl Dialog {
         Self {
             path: config.media_root.to_string_lossy().into_owned(),
             name: config.folder_pattern.clone(),
+            budgets: [config.proxy_budget_gb, config.picture_budget_gb],
             ..Self::new(Kind::Settings, "Settings")
         }
     }
@@ -135,6 +141,15 @@ impl Dialog {
     }
     pub fn relocate(session: &SessionView) -> Self {
         Self::of_session(Kind::Relocate, "Move into import folder", session)
+    }
+    pub fn free_session(session: &SessionView) -> Self {
+        Self {
+            flag: true,
+            ..Self::of_session(Kind::FreeSpace, "Free up cloud space", session)
+        }
+    }
+    pub fn free_flight(flight: &FlightView) -> Self {
+        Self::of_flight(Kind::FreeSpace, "Free up cloud space", flight)
     }
     fn of_flight(kind: Kind, title: &str, flight: &FlightView) -> Self {
         Self {
@@ -306,21 +321,56 @@ impl App {
                 if let Some(cache) = &dialog.cache {
                     ui.label(format!("Cache: {:.1} MB", cache.total() as f64 / 1e6));
                 }
+                ui.add(
+                    egui::DragValue::new(&mut dialog.budgets[0])
+                        .range(0.1..=10000.0)
+                        .prefix("Preview budget: ")
+                        .suffix(" GB"),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut dialog.budgets[1])
+                        .range(0.1..=10000.0)
+                        .prefix("Picture budget: ")
+                        .suffix(" GB"),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    for (kind, label) in [
+                        (CacheKind::Proxies, "Empty previews"),
+                        (CacheKind::Strips, "Empty hover frames"),
+                        (CacheKind::Posters, "Empty posters"),
+                        (CacheKind::Previews, "Empty editor frames"),
+                    ] {
+                        if ui.small_button(label).clicked() {
+                            self.viewer = None;
+                            self.thumbnails.clear();
+                            self.requested.clear();
+                            self.images = crate::images::Images::new(ui.ctx().clone());
+                            self.dialog_request =
+                                Some(self.submit(label, false, move |library, _| {
+                                    library.clear_cache(&[kind])?;
+                                    Ok(Reply::Cache(library.cache_usage()?))
+                                }));
+                        }
+                    }
+                });
                 if ui.button("Empty cache").clicked() {
                     self.viewer = None;
                     self.thumbnails.clear();
                     self.requested.clear();
                     self.images = crate::images::Images::new(ui.ctx().clone());
                     self.dialog_request = Some(self.submit("Empty cache", false, |library, _| {
-                        library.clear_cache()?;
+                        library.clear_cache(&CacheKind::ALL)?;
                         Ok(Reply::Cache(library.cache_usage()?))
                     }));
                 }
                 if ui.button("Save settings").clicked() {
                     let (path, pattern) = (PathBuf::from(&dialog.path), dialog.name.clone());
+                    let budgets = dialog.budgets;
+                    self.viewer = None;
                     dialog.saving = Some(self.submit("Save settings", false, move |library, _| {
                         library.set_folder_pattern(&pattern)?;
                         library.set_media_root(&path)?;
+                        library.set_cache_budgets(budgets[0], budgets[1])?;
                         Ok(Reply::Done("Settings saved".into()))
                     }));
                 }
@@ -734,6 +784,38 @@ impl App {
                         );
                 }
             }
+            Kind::FreeSpace => {
+                ui.label("Make these recordings Online Only on the cloud drive? Their local content is released; the cloud placeholders and library entries remain. Playing them again downloads them.");
+                ui.label(
+                    "The cloud provider can refuse to release a file; its error will be reported.",
+                );
+                if ui.button("Free up space").clicked() {
+                    self.viewer = None;
+                    let (id, session) = (dialog.id.clone(), dialog.flag);
+                    dialog.saving = Some(self.submit(
+                        "Free up cloud space",
+                        false,
+                        move |library, progress| {
+                            let report = if session {
+                                library.free_up_session(&id, |a, b, c| progress.count(a, b, c))?
+                            } else {
+                                library.free_up_flight(&id, |a, b, c| progress.count(a, b, c))?
+                            };
+                            if !report.failed.is_empty() {
+                                return Err(fpv_library::LibraryError::Invalid(format!(
+                                    "{} freed; failed: {:?}",
+                                    report.freed, report.failed
+                                )));
+                            }
+                            Ok(Reply::Done(format!(
+                                "Released {} recordings ({:.1} MB)",
+                                report.freed,
+                                report.bytes as f64 / 1e6
+                            )))
+                        },
+                    ));
+                }
+            }
             Kind::Load => {
                 if let Some(folders) = &dialog.folders {
                     egui::ScrollArea::vertical()
@@ -743,7 +825,7 @@ impl App {
                                 let mut chosen = dialog.chosen.contains(&folder.name);
                                 if ui
                                     .add_enabled(
-                                        folder.new > 0,
+                                        folder.new > 0 || dialog.restore.contains(&folder.name),
                                         egui::Checkbox::new(
                                             &mut chosen,
                                             format!(
@@ -760,6 +842,16 @@ impl App {
                                         dialog.chosen.remove(&folder.name);
                                     }
                                 }
+                                if !folder.deleted.is_empty() {
+                                    ui.indent(&folder.name, |ui| {
+                                        let mut restore = dialog.restore.contains(&folder.name);
+                                        if ui.checkbox(&mut restore, format!("Restore {} recording(s) previously deleted with their flight", folder.deleted.len())).changed() {
+                                            if restore { dialog.restore.insert(folder.name.clone()); dialog.chosen.insert(folder.name.clone()); }
+                                            else { dialog.restore.remove(&folder.name); if folder.new == 0 { dialog.chosen.remove(&folder.name); } }
+                                        }
+                                        ui.collapsing("Deleted recordings", |ui| { for file in &folder.deleted { ui.small(file); } });
+                                    });
+                                }
                             }
                         });
                     if ui
@@ -770,14 +862,20 @@ impl App {
                         .clicked()
                     {
                         let chosen: Vec<_> = dialog.chosen.iter().cloned().collect();
+                        let restore: Vec<_> = dialog
+                            .restore
+                            .intersection(&dialog.chosen)
+                            .cloned()
+                            .collect();
                         dialog.saving = Some(self.submit(
                             "Load destination folders",
                             false,
                             move |library, progress| {
                                 let mut counter = ImportProgress::default();
-                                let report = library.load_import_folders(&chosen, |event| {
-                                    progress.step(counter.step(event))
-                                })?;
+                                let report =
+                                    library.load_import_folders(&chosen, &restore, |event| {
+                                        progress.step(counter.step(event))
+                                    })?;
                                 if report.failed > 0 {
                                     return Err(fpv_library::LibraryError::Invalid(format!(
                                         "{} loaded; {} failed",

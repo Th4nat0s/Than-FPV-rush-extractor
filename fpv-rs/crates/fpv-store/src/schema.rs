@@ -58,6 +58,12 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("v6", r#"
         CREATE TABLE "sessionLabel" ("sessionId" TEXT NOT NULL REFERENCES "session"("id") ON DELETE CASCADE, "label" TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY ("sessionId", "label"));
     "#),
+    // Recordings that left the library with a deleted flight (2026-10-25), by
+    // path: loading the import folder must not bring one back unasked, should
+    // the trash have refused it or the pilot put it back.
+    ("v7", r#"
+        CREATE TABLE "deletedRecording" ("path" TEXT PRIMARY KEY NOT NULL);
+    "#),
 ];
 
 /// Applies every migration not yet in the ledger, up to and including

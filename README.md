@@ -100,6 +100,13 @@ supply the flying date for DVR footage. Copies preserve bytes and mtime; SHA-256
 deduplicates repeated imports. GoPro chapters join into one flight. Optional
 card cleanup removes only recordings successfully imported in that run.
 Load destination registers previously copied recordings without copying again.
+It skips recordings deleted with their flight unless their restoration is
+explicitly selected. The source fork's cloud-drive behavior is retained:
+Online Only files are marked, pictures never hydrate them implicitly, and
+playing a flight first downloads its missing recordings with progress.
+Session/flight menus offer Download and, on supported macOS cloud drives,
+Free Up Space. Settings exposes separate preview/picture budgets and cache
+cleanup by category.
 
 Segment analyzes DVR recordings only. Picture statistics determine boundaries,
 independently of OSD or armed state. It joins flights continuing into the next

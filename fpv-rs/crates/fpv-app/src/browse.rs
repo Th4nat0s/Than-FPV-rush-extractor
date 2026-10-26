@@ -175,6 +175,8 @@ mod tests {
             duration,
             clips: vec![],
             recordings: 1,
+            cloud: false,
+            freeable: false,
             action_cam: false,
             source: "DVR".into(),
             format: String::new(),

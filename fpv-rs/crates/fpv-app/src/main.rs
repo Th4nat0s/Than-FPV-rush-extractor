@@ -25,6 +25,7 @@ struct Task {
     running: bool,
     failed: bool,
     quiet: bool,
+    log: Vec<String>,
 }
 
 struct Viewer {
@@ -61,6 +62,7 @@ pub(crate) struct App {
     notices: Vec<String>,
     show_tasks: bool,
     exit_after: Option<std::time::Instant>,
+    screenshot_requested: bool,
 }
 
 impl App {
@@ -104,6 +106,7 @@ impl App {
             notices: vec![],
             show_tasks: false,
             exit_after,
+            screenshot_requested: false,
         }
     }
 
@@ -119,6 +122,7 @@ impl App {
             id,
             label: label.into(),
             quiet,
+            log: vec![],
             line: "Queued".into(),
             done: 0,
             total: 0,
@@ -175,6 +179,12 @@ impl App {
                 Event::Progress { id, step } => {
                     if let Some(task) = self.tasks.iter_mut().find(|task| task.id == id) {
                         task.line = step.line;
+                        if task.log.last() != Some(&task.line) {
+                            task.log.push(task.line.clone());
+                            if task.log.len() > 200 {
+                                task.log.remove(0);
+                            }
+                        }
                         task.done = step.done;
                         task.total = step.total;
                     }
@@ -276,7 +286,24 @@ impl App {
         self.submit(
             format!("Open {}", flight_name(flight)),
             false,
-            move |library, _| {
+            move |library, progress| {
+                let report = library.download_flight(&id, |step| {
+                    progress.count(
+                        if step.done == step.total {
+                            step.files
+                        } else {
+                            step.file.saturating_sub(1)
+                        },
+                        step.files,
+                        step.line,
+                    );
+                })?;
+                if !report.failed.is_empty() {
+                    return Err(LibraryError::Invalid(format!(
+                        "Cloud download failed: {:?}",
+                        report.failed
+                    )));
+                }
                 Ok(Reply::Playback {
                     parts: library.native_playback(&id)?,
                     flight: id,
@@ -295,6 +322,32 @@ impl eframe::App for App {
         self.browser(ctx);
         self.player_window(ctx);
         self.dialog_window(ctx);
+        if let Some(path) = std::env::var_os("FPV_SMOKE_SCREENSHOT") {
+            if self.ready && !self.screenshot_requested {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+                self.screenshot_requested = true;
+            }
+            ctx.input(|input| {
+                for event in &input.events {
+                    if let egui::Event::Screenshot { image, .. } = event {
+                        let pixels: Vec<u8> = image
+                            .pixels
+                            .iter()
+                            .flat_map(|pixel| pixel.to_array())
+                            .collect();
+                        if let Err(error) = image::save_buffer(
+                            &path,
+                            &pixels,
+                            image.width() as u32,
+                            image.height() as u32,
+                            image::ColorType::Rgba8,
+                        ) {
+                            log::warn!("Could not save smoke screenshot: {error}");
+                        }
+                    }
+                }
+            });
+        }
         if self
             .exit_after
             .is_some_and(|end| std::time::Instant::now() >= end)
