@@ -2,11 +2,21 @@
 
 Project context for AI coding agents. Read this before touching the codebase.
 
+**Current desktop architecture (2026-10-26):** the pilot requested a native Rust
+GUI with no Tauri. `fpv-app` now uses eframe/egui, rfd, image and cpal. Its worker
+owns `fpv-library`; video/audio are bounded FFmpeg pipes in `player.rs`, source
+parts retain their individual clocks. The native player reads recordings directly
+and does not need a proxy. Historical Tauri/Svelte/WebKit measurements below remain
+as history, not implementation instructions. No JavaScript frontend is shipped.
+`packaging/` builds native macOS/Linux/Windows installers with separately compiled
+LGPL-only FFmpeg/ffprobe, their exact sources and build recipe. `native.yml`
+builds on each native OS. Runtime ffmpeg binaries are not linked into Rust.
+
 ---
 
 ## 1. Goal
 
-A desktop application — Linux first, Rust + Tauri (§3.1, §9.9) — that:
+A desktop application — Rust + egui on macOS, Linux and Windows — that:
 
 1. **Imports** DVR recordings from an FPV goggle SD card (Fat Shark analog DVR, primary target),
    and action-cam rushes (GoPro, DJI, …) alongside them (§10, "Action-cam rushes").
@@ -45,8 +55,8 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   property does not hold for H.264/HEVC: those are stream-copied only from frame 0 (whole
   action-cam takes); a cut elsewhere is refused rather than opened on a broken GOP.
   Two deliberate exceptions, both chosen, neither a default: the user-requested one-file export
-  of a flight whose parts disagree on their rate (§6, Phase 3), and the **playback proxy** — an
-  H.264/AAC MP4 per flight that exists only because the web view cannot play the source. A
+  of a flight whose parts disagree on their rate (§6, Phase 3), and the optional **CLI proxy** — a
+  MPEG-4/AAC MP4 derivative. The native GUI plays source files directly. A
   proxy is resampled, so its frames are not the recording's: it is **view-only and never an
   export source**, and boundaries are never edited against it.
 - **No platform media framework reads MJPEG-in-AVI reliably** — AVFoundation could not, and the
@@ -61,15 +71,21 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
 - **Rust** (edition 2024, stable) for everything below the window: the `fpv-rs/` workspace,
   one crate per concern (§10, "Rust port"), and the `fpvlib` CLI that drives it headless.
   `fpv-library` is the application layer — every GUI action as a tested method.
-- **Tauri 2** for the desktop shell (`fpv-rs/crates/fpv-app`), **Svelte 5 + TypeScript + Vite**
-  for the UI (`fpv-rs/app`). Linux first (WebKitGTK); nothing in the code is tied to one
-  desktop, and macOS/Windows paths exist for config, cards and tools.
+- **eframe/egui** for the native Rust UI (`fpv-rs/crates/fpv-app`), **rfd** for
+  system dialogs, **image** for cached pictures and **cpal** for audio output.
+  Work is queued on the library's owner thread; the window never runs ffmpeg or
+  disk jobs. Decoder threads have bounded queues and kill/reap their children
+  on close and seek. Audio is the clock when a device is available; otherwise
+  video uses the system clock. Display scaling/rate do not affect source frames.
 - **ffmpeg / ffprobe as external binaries**, invoked via `std::process`, always through the
   `FfmpegInvoking` trait so tests substitute a stub. Resolved from the app's `resources/bin` when
-  both are bundled there, else `PATH` (`tool_directory`); the `.deb` depends on the
-  distribution's ffmpeg. Licence: unmodified binaries, no linking, no distribution (§9.4) — no
-  LGPL/GPL obligation triggers; revisit before handing the app out. (The retired macOS app
-  bundled Homebrew's ffmpeg with a relocation script; that is gone with it.)
+  both are bundled there, else `PATH` (`tool_directory`). Native streaming is
+  implemented beside this request/response trait because its output is unbounded.
+  FFmpeg is now redistributed: `packaging/build-ffmpeg.sh` pins and verifies its
+  archive, disables GPL/nonfree/autodetected third-party components and includes
+  corresponding unmodified source, LGPL license and the exact build recipe in
+  every package. No libav* library is linked into Rust. The optional CLI proxy
+  uses built-in MPEG-4/AAC; the GUI does not transcode playback proxies.
 - **SQLite through rusqlite** (`bundled`), on the schema GRDB created for the macOS app (§3.3).
 - **Frame analysis in plain portable code, no SIMD library, no OpenCV** (§9.7). The detector's
   metrics are a per-block Laplacian variance, a lag-1 correlation and a correlation on a
@@ -460,26 +476,25 @@ Tauri app's (§10).
   - **Where the test goes is where the logic lives.** A GUI action is a method on
     `fpv-library`'s `Library`, tested through the real ffmpeg on generated takes; a rule inside
     one concern goes in its crate (the detector, the importer, the store…). The front end's own
-    logic — stores, helpers in `.ts` / `.svelte.ts` modules — is tested with **Vitest**
-    (`*.test.ts` beside the module; Tauri's `invoke`/`listen` mocked, timers faked).
+    logic lives in `fpv-app` Rust modules: browsing rules, source-part seeks,
+    pause/clock handling, bounded decoding and audio samples have Rust tests.
   - **Every crate, the adapters included.** Each crate tests its own rules; the ffmpeg
     boundary, which everything above reaches through stubs, is also run against the real
     binaries (`fpv-media/tests/real_ffmpeg.rs`: pipes drained under load, with a timer so a
     deadlock fails instead of hanging `make check`; failures carrying the full command); the
     `fpvlib` CLI is driven end to end as a user types it (`fpvlib/tests/cli.rs`: the built
     binary on a generated card — import, re-import, segment, tag, export, exit codes).
-  - **Keep logic out of what cannot be tested.** The `#[tauri::command]`s and the Svelte
-    components stay thin; anything with a rule in it moves to `fpv-library` or a `.ts` module
-    first (the import/segmentation progress counting moved out of `main.rs` for this,
-    `fpv_library::progress`). Components themselves are not unit-tested: what only shows in the
-    window is driven headless (Xvfb + xdotool, §10) and what was seen is reported.
+  - **Keep logic out of what cannot be tested.** egui rendering delegates domain
+    actions to `fpv-library` and background jobs to the worker. UI-independent
+    browsing/player rules have unit tests. A real window is smoke-tested under
+    Xvfb with isolated config/cache/media roots (`packaging/smoke.sh`).
   - **A bug fix starts from a test that fails on the bug.** Every new test is seen failing
     once — break the code it guards, watch it go red, restore it — before it is trusted; a test
     that has only ever passed proves nothing.
-  - `make check` runs it all: clippy at `-D warnings`, `cargo test`, Vitest, svelte-check. A
+  - `make check` runs it all: clippy at `-D warnings` and `cargo test`. A
     feature is not done while it is red.
-- Rust: `cargo clippy --workspace --all-targets` at zero warnings; front end: `npm run check` at
-  zero errors and zero warnings, `npm test` (Vitest) green.
+- Rust: `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`,
+  and `cargo fmt -p fpv-app -- --check`. No Node or TypeScript build step.
 
 ---
 
@@ -491,12 +506,16 @@ Tauri app's (§10).
 2. **NTSC vs. PAL: detect at runtime.** Never hardcode the OSD grid geometry.
 3. **Library storage: copy** into an app-managed location. Source files on the card stay
    untouched; disk duplication is accepted.
-4. **Distribution: none — personal use.** No sandbox, no signing or notarization constraints,
-   removable media read freely. A `.deb`/AppImage is built for installing it, not publishing it.
+4. **Distribution: native redistributable packages** (changed 2026-10-26).
+   No application sandbox; removable media is read freely. The Mac bundle uses
+   an ad-hoc identity (`-`) by default, not Developer ID/notarization. Linux deb,
+   tar and AppImage, Mac universal DMG and Windows installer/ZIP are built on
+   native runners. Each bundles independently built LGPL-only FFmpeg tools and
+   their corresponding sources and build recipe. GUI Rust code stays MIT/Apache.
    **The source is public** (2026-10-19), under `MIT OR Apache-2.0` (`LICENSE-MIT`,
-   `LICENSE-APACHE`). Publishing source distributes no ffmpeg: the installers depend on the
-   system's or Homebrew's, so no LGPL/GPL obligation arises — re-check before ever bundling
-   ffmpeg binaries into a release.
+   `LICENSE-APACHE`). Keep the FFmpeg license, exact source archive, SHA-256 and
+   build instructions beside redistributed tools; GPL/nonfree components are
+   forbidden in the bundled FFmpeg build.
 
 ### Settled 2026-09-03
 

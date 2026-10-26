@@ -5,6 +5,50 @@ use std::process::Command;
 
 use super::*;
 
+#[test]
+fn native_playback_exposes_dvr_parts_without_resampling_or_proxy_generation() {
+    use fpv_core::{FrameRate, Clip, Flight, DetectionRun};
+    let root = tempfile::tempdir().unwrap();
+    let library = open(root.path());
+    let session = Session::new("Native DVR", None);
+    library.store.save_session(&session).unwrap();
+    let mut offset = 0.0;
+    let flight = Flight::new(session.id, 1);
+    for (index, rate, start, end) in [(1, FrameRate::new(1_000_000, 33459), 4194, 4217),
+                                    (2, FrameRate::new(1_000_000, 40839), 0, 1475)] {
+        let mut media = MediaInfo::new(640, 480, rate, 180.0, "mjpeg");
+        media.audio_codec = Some("pcm_s16le".into());
+        let file = SourceFile::new(session.id, "card", format!("/not-decoded/PICT{index:04}.AVI"), Some(index), media);
+        library.store.save_source_files(std::slice::from_ref(&file)).unwrap();
+        let clip = Clip::new(flight.id, file.id, start, end);
+        library.store.replace_clips(file.id, &[clip], if index == 1 { std::slice::from_ref(&flight) } else { &[] },
+            &DetectionRun::new(file.id, "test", Default::default())).unwrap();
+        let parts = library.native_playback(&uuid_string(flight.id)).unwrap();
+        let part = parts.last().unwrap();
+        assert!((part.segment.start - rate.seconds(start)).abs() < 1e-9);
+        assert!((part.segment.end - rate.seconds(end)).abs() < 1e-9);
+        assert!((part.segment.offset - offset).abs() < 1e-9);
+        assert!(part.has_audio);
+        assert_eq!((part.width, part.height), (640, 480));
+        offset += rate.seconds(end - start);
+    }
+    assert!(!root.path().join("cache/proxies").exists());
+}
+
+#[test]
+fn refuses_to_overwrite_an_export_and_checks_all_parts_before_writing() {
+    let (fixture, session) = imported();
+    let destination = fixture._root.path().join("keep.mp4");
+    std::fs::write(&destination, b"keep this file").unwrap();
+    assert!(fixture.library.export(&session.flights[0].id, &destination, ExportMode::Lossless).is_err());
+    assert_eq!(std::fs::read(&destination).unwrap(), b"keep this file");
+    let part = destination.with_file_name("keep - part2.mp4");
+    std::fs::write(&part, b"keep part two").unwrap();
+    assert!(fixture.library.export(&session.flights[0].id, &destination, ExportMode::Parts).is_err());
+    assert!(!destination.with_file_name("keep - part1.mp4").exists());
+    assert_eq!(std::fs::read(part).unwrap(), b"keep part two");
+}
+
 /// A library with its configuration and media folders side by side, as the
 /// app lays them out under the user's config and videos directories.
 fn open(root: &Path) -> Library {

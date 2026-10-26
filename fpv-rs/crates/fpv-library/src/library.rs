@@ -88,6 +88,15 @@ pub struct Segment {
     pub offset: f64,
 }
 
+/// A source part for native playback, before display scaling or resampling.
+#[derive(Debug, Clone)]
+pub struct NativeSegment {
+    pub segment: Segment,
+    pub width: i64,
+    pub height: i64,
+    pub has_audio: bool,
+}
+
 /// The cache folder's contents by kind, in bytes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1220,6 +1229,17 @@ impl Library {
     /// Writes a flight out. Returns the files written.
     pub fn export(&self, flight: &str, destination: &Path, mode: ExportMode) -> Result<Vec<PathBuf>> {
         let (_, _, timeline) = self.flight(flight)?;
+        // Text-entry destinations in the native UI have no OS overwrite
+        // prompt. Check every part before writing any of them.
+        let destinations = if mode == ExportMode::Parts {
+            let stem = destination.file_stem().unwrap_or_default().to_string_lossy();
+            let extension = destination.extension().and_then(|s| s.to_str()).unwrap_or("avi");
+            (1..=timeline.parts.len()).map(|index|
+                destination.with_file_name(format!("{stem} - part{index}.{extension}"))).collect()
+        } else { vec![destination.to_path_buf()] };
+        if let Some(path) = destinations.iter().find(|path| path.exists()) {
+            return Err(LibraryError::Invalid(format!("destination already exists: {}", path.display())));
+        }
         let ffmpeg = self.ffmpeg();
         let exporter = ClipExporter::new(&ffmpeg);
         Ok(match mode {
@@ -1325,6 +1345,26 @@ impl Library {
     }
 
     // Playback
+
+    /// Native playback reads every codec directly, including DVR MJPEG. Each
+    /// part uses its own source clock, even when adjacent file rates disagree.
+    pub fn native_playback(&self, flight: &str) -> Result<Vec<NativeSegment>> {
+        let (_, _, timeline) = self.flight(flight)?;
+        Ok(timeline.parts.iter().map(|(clip, file)| {
+            let rate = file.media.frame_rate;
+            NativeSegment {
+                segment: Segment {
+                    path: PathBuf::from(&file.imported_path),
+                    start: rate.seconds(clip.start_frame),
+                    end: rate.seconds(clip.end_frame),
+                    offset: timeline.flight_time(clip.start_frame, clip).unwrap_or_default(),
+                },
+                width: file.media.width,
+                height: file.media.height,
+                has_audio: file.media.audio_codec.is_some(),
+            }
+        }).collect())
+    }
 
     /// How the player opens a flight. An action-cam take plays from its own
     /// files — H.264 or HEVC in MP4, which the web view decodes itself (in
