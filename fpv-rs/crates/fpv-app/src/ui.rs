@@ -18,10 +18,18 @@ impl App {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
+                ui.set_min_width(380.0);
                 ui.vertical_centered(|ui| {
-                    ui.add(
-                        egui::Image::new(&self.splash_texture).max_size(egui::vec2(380.0, 210.0)),
-                    );
+                    egui::Frame::new()
+                        .fill(Color32::WHITE)
+                        .corner_radius(8.0)
+                        .inner_margin(8.0)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Image::new(&self.splash_texture)
+                                    .max_size(180.0 * egui::vec2(1.0, 1.4)),
+                            );
+                        });
                     ui.heading("FPV Rush");
                     ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                     ui.hyperlink_to(
@@ -29,7 +37,8 @@ impl App {
                         "https://github.com/defane/FPV-rush-extractor",
                     );
                     ui.add_space(8.0);
-                    ui.label("Developers: Claude · Codex · Defane · Thanat0s");
+                    ui.label(RichText::new("Developers").strong());
+                    ui.label("Claude · Codex · Defane · Thanat0s");
                 });
             });
     }
@@ -51,10 +60,16 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.add(
-                        egui::Image::new(&self.splash_texture).max_size(egui::vec2(420.0, 240.0)),
-                    );
-                    ui.label("FPV Rush");
+                    egui::Frame::new()
+                        .fill(Color32::WHITE)
+                        .corner_radius(8.0)
+                        .inner_margin(8.0)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Image::new(&self.splash_texture)
+                                    .max_size(180.0 * egui::vec2(1.0, 1.4)),
+                            );
+                        });
                     if ui.button("Close").clicked() {
                         close = true;
                     }

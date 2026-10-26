@@ -6,3 +6,5 @@
 - Add a persisted, opt-in Mute videos setting for single and bulk exports (#4).
 - Show a dismissible Letz Kwad splash screen for 1.5 seconds, with a persisted opt-out (#5).
 - Add an About window with the Letz Kwad logo, project URL, and developer credits (#7).
+- Use calendar date pickers for recording imports and session edits (#6).
+- Keep the Letz Kwad logo and credits visible in About and remove duplicate splash title text (#7).
