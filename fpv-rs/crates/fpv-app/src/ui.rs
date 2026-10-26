@@ -1,5 +1,5 @@
 use crate::{
-    ACCENT, App, Dialog, Reply,
+    ACCENT, App, Dialog, Reply, Viewer,
     browse::{self, Sort, View, clock, flight_name, page_range},
     day, open_folder,
 };
@@ -782,156 +782,199 @@ impl App {
         egui::Window::new(flight_name(&viewer.flight))
             .id(egui::Id::new("player"))
             .open(&mut open)
-            .default_width(1050.0)
+            .default_width(1200.0)
+            .default_height(760.0)
             .resizable(true)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(if viewer.player.paused() {
-                            "Play"
-                        } else {
-                            "Pause"
-                        })
-                        .clicked()
-                    {
-                        viewer.player.pause(!viewer.player.paused());
-                    }
-                    ui.label(clock(viewer.player.position()));
-                    let mut time = viewer.seek_time.unwrap_or_else(|| viewer.player.position());
-                    let seek = ui.add(
-                        egui::Slider::new(&mut time, 0.0..=viewer.player.duration())
-                            .show_value(false),
-                    );
-                    if seek.dragged() {
-                        viewer.seek_time = Some(time);
-                    }
-                    if seek.drag_stopped() || (seek.changed() && !seek.dragged()) {
-                        viewer.player.seek(time);
-                        viewer.seek_time = None;
-                    }
-                    ui.label(clock(viewer.player.duration()));
-                    if ui
-                        .add(egui::Slider::new(&mut viewer.volume, 0.0..=1.0).text("Volume"))
-                        .changed()
-                    {
-                        viewer.player.set_volume(viewer.volume);
-                    }
-                    if viewer.player.ended() && ui.button("Replay").clicked() {
-                        viewer.player.seek(0.0);
-                        viewer.player.pause(false);
-                    }
-                });
-                if viewer.player.buffering() {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Buffering…");
-                    });
-                }
-                if let Some(texture) = &viewer.texture {
-                    ui.add(
-                        egui::Image::new(texture)
-                            .max_size(egui::vec2(ui.available_width(), 480.0))
-                            .maintain_aspect_ratio(true),
-                    );
-                }
-                ui.horizontal(|ui| {
-                    if ui.button("Mark In (I)").clicked() {
-                        viewer.mark = Some(viewer.player.position());
-                    }
-                    if let Some(mark) = viewer.mark {
-                        ui.label(format!("From {}", clock(mark)));
-                        if ui.small_button("Cancel mark").clicked() {
-                            viewer.mark = None;
-                        }
-                    }
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut viewer.figure).hint_text("Figure name"),
-                    );
-                    let enter = response.lost_focus()
-                        && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                    if (ui.button("Add figure").clicked() || enter)
-                        && !viewer.figure.trim().is_empty()
-                    {
-                        let id = viewer.flight.id.clone();
-                        let label = std::mem::take(&mut viewer.figure);
-                        let end = viewer.player.position();
-                        let start = viewer.mark.take().unwrap_or(end);
-                        self.submit("Add figure", true, move |library, _| {
-                            library.add_tag(&id, &label, start, end)?;
-                            Ok(Reply::Done("Figure added".into()))
-                        });
-                    }
-                });
-                ui.horizontal_wrapped(|ui| {
-                    for label in viewer.flight.labels.clone() {
-                        if ui.button(format!("{label} ×")).clicked() {
-                            let id = viewer.flight.id.clone();
-                            self.submit("Remove flight tag", true, move |library, _| {
-                                library.remove_flight_label(&id, &label)?;
-                                Ok(Reply::Done("Tag removed".into()))
-                            });
-                        }
-                    }
-                    ui.add(
-                        egui::TextEdit::singleline(&mut viewer.label)
-                            .hint_text("Flight tag")
-                            .desired_width(120.0),
-                    );
-                    if ui.button("Add tag").clicked() && !viewer.label.trim().is_empty() {
-                        let id = viewer.flight.id.clone();
-                        let label = std::mem::take(&mut viewer.label);
-                        self.submit("Add flight tag", true, move |library, _| {
-                            library.add_flight_label(&id, &label)?;
-                            Ok(Reply::Done("Tag added".into()))
-                        });
-                    }
-                });
-                egui::ScrollArea::vertical()
-                    .max_height(150.0)
-                    .show(ui, |ui| {
-                        for tag in &viewer.flight.figures {
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .button(format!("{}  {}", clock(tag.start), tag.label))
-                                    .clicked()
-                                {
-                                    viewer.player.seek(tag.start);
-                                }
-                                if !tag.marker {
-                                    ui.label(format!("→ {}", clock(tag.end)));
-                                }
-                                if ui.small_button("Delete").clicked() {
-                                    let id = tag.id.clone();
-                                    self.submit("Delete figure", true, move |library, _| {
-                                        library.delete_tag(&id)?;
-                                        Ok(Reply::Done("Figure deleted".into()))
-                                    });
-                                }
-                            });
-                        }
-                    });
-                if !ui.ctx().wants_keyboard_input() {
-                    if ui.input(|input| input.key_pressed(egui::Key::Space)) {
-                        viewer.player.pause(!viewer.player.paused());
-                    }
-                    if ui.input(|input| input.key_pressed(egui::Key::I)) {
-                        viewer.mark = Some(viewer.player.position());
-                    }
-                    if ui.input(|input| input.key_pressed(egui::Key::ArrowLeft)) {
-                        viewer
-                            .player
-                            .seek((viewer.player.position() - 5.0).max(0.0));
-                    }
-                    if ui.input(|input| input.key_pressed(egui::Key::ArrowRight)) {
-                        viewer.player.seek(viewer.player.position() + 5.0);
-                    }
-                }
-            });
+            .show(ctx, |ui| self.player_contents(ui, &mut viewer));
         if open {
             if !viewer.player.paused() && !viewer.player.ended() || viewer.player.buffering() {
                 ctx.request_repaint_after(Duration::from_millis(16));
             }
             self.viewer = Some(viewer);
+        }
+    }
+
+    fn player_contents(&mut self, ui: &mut egui::Ui, viewer: &mut Viewer) {
+        let available = ui.available_size();
+        let side_width = 300.0_f32.min(available.x * 0.42);
+        let left_width = (available.x - side_width - 12.0).max(260.0);
+
+        let show_video = |ui: &mut egui::Ui, viewer: &mut Viewer| {
+            ui.horizontal(|ui| {
+                if ui
+                    .button(if viewer.player.paused() {
+                        "Play"
+                    } else {
+                        "Pause"
+                    })
+                    .clicked()
+                {
+                    viewer.player.pause(!viewer.player.paused());
+                }
+                ui.label(clock(viewer.player.position()));
+                let mut time = viewer.seek_time.unwrap_or_else(|| viewer.player.position());
+                let seek = ui.add(
+                    egui::Slider::new(&mut time, 0.0..=viewer.player.duration()).show_value(false),
+                );
+                if seek.dragged() {
+                    viewer.seek_time = Some(time);
+                }
+                if seek.drag_stopped() || (seek.changed() && !seek.dragged()) {
+                    viewer.player.seek(time);
+                    viewer.seek_time = None;
+                }
+                ui.label(clock(viewer.player.duration()));
+                if ui.add(egui::Slider::new(&mut viewer.volume, 0.0..=1.0).text("Volume")).changed() {
+                    viewer.player.set_volume(viewer.volume);
+                }
+                if viewer.player.ended() && ui.button("Replay").clicked() {
+                    viewer.player.seek(0.0);
+                    viewer.player.pause(false);
+                }
+            });
+            if viewer.player.buffering() {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Buffering…");
+                });
+            }
+            if let Some(texture) = &viewer.texture {
+                ui.centered_and_justified(|ui| {
+                    ui.add(
+                        egui::Image::new(texture)
+                            .max_size(egui::vec2(
+                                ui.available_width(),
+                                480.0,
+                            ))
+                            .maintain_aspect_ratio(true),
+                    );
+                });
+            }
+        };
+        let show_metadata = |this: &mut Self, ui: &mut egui::Ui, viewer: &mut Viewer| {
+            ui.heading("Tags");
+            ui.horizontal_wrapped(|ui| {
+                for label in viewer.flight.labels.clone() {
+                    if ui.button(format!("{label} ×")).clicked() {
+                        let id = viewer.flight.id.clone();
+                        this.submit("Remove flight tag", true, move |library, _| {
+                            library.remove_flight_label(&id, &label)?;
+                            Ok(Reply::Done("Tag removed".into()))
+                        });
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut viewer.label)
+                        .hint_text("Add a tag…")
+                        .desired_width(ui.available_width() - 55.0),
+                );
+                if ui.button("Add").clicked() && !viewer.label.trim().is_empty() {
+                    let id = viewer.flight.id.clone();
+                    let label = std::mem::take(&mut viewer.label);
+                    this.submit("Add flight tag", true, move |library, _| {
+                        library.add_flight_label(&id, &label)?;
+                        Ok(Reply::Done("Tag added".into()))
+                    });
+                }
+            });
+            ui.separator();
+            ui.heading("Figures");
+            egui::ScrollArea::vertical()
+                .max_height((ui.available_height() - 170.0).max(100.0))
+                .show(ui, |ui| {
+                    for tag in &viewer.flight.figures {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(format!("{}  {}", clock(tag.start), tag.label))
+                                .clicked()
+                            {
+                                viewer.player.seek(tag.start);
+                            }
+                            if !tag.marker {
+                                ui.label(format!("→ {}", clock(tag.end)));
+                            }
+                            if ui
+                                .small_button("×")
+                                .on_hover_text("Delete figure")
+                                .clicked()
+                            {
+                                let id = tag.id.clone();
+                                this.submit("Delete figure", true, move |library, _| {
+                                    library.delete_tag(&id)?;
+                                    Ok(Reply::Done("Figure deleted".into()))
+                                });
+                            }
+                        });
+                    }
+                });
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Mark In (I)").clicked() {
+                    viewer.mark = Some(viewer.player.position());
+                }
+                if let Some(mark) = viewer.mark {
+                    ui.label(format!("From {}", clock(mark)));
+                    if ui.small_button("Cancel").clicked() {
+                        viewer.mark = None;
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut viewer.figure)
+                        .hint_text("Figure name")
+                        .desired_width(ui.available_width() - 55.0),
+                );
+                let enter =
+                    response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                if (ui.button("Add").clicked() || enter) && !viewer.figure.trim().is_empty() {
+                    let id = viewer.flight.id.clone();
+                    let label = std::mem::take(&mut viewer.figure);
+                    let end = viewer.player.position();
+                    let start = viewer.mark.take().unwrap_or(end);
+                    this.submit("Add figure", true, move |library, _| {
+                        library.add_tag(&id, &label, start, end)?;
+                        Ok(Reply::Done("Figure added".into()))
+                    });
+                }
+            });
+        };
+
+        if available.x < 720.0 {
+            show_video(ui, viewer);
+            ui.separator();
+            show_metadata(self, ui, viewer);
+        } else {
+            ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(left_width, available.y),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| show_video(ui, viewer),
+                );
+                ui.separator();
+                ui.allocate_ui_with_layout(
+                    egui::vec2(side_width, available.y),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| show_metadata(self, ui, viewer),
+                );
+            });
+        }
+        if !ui.ctx().wants_keyboard_input() {
+            if ui.input(|input| input.key_pressed(egui::Key::Space)) {
+                viewer.player.pause(!viewer.player.paused());
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::I)) {
+                viewer.mark = Some(viewer.player.position());
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::ArrowLeft)) {
+                viewer
+                    .player
+                    .seek((viewer.player.position() - 5.0).max(0.0));
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::ArrowRight)) {
+                viewer.player.seek(viewer.player.position() + 5.0);
+            }
         }
     }
 
