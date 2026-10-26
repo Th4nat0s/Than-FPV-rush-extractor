@@ -162,7 +162,7 @@ impl<'a> ProxyGenerator<'a> {
             // clock represents their timestamps without changing playback speed.
             "-c:v".into(), "mpeg4".into(), "-q:v".into(), "2".into(),
             "-enc_time_base".into(), "1:60000".into(),
-            "-fps_mode".into(), "passthrough".into(),
+            "-vsync".into(), "0".into(),
             "-pix_fmt".into(), "yuv420p".into(),
         ]);
         arguments.extend(match audio {
@@ -236,7 +236,7 @@ mod tests {
             let seek = cut.iter().position(|a| a == "-ss").unwrap();
             assert!(seek < input && cut[input + 1] == file.imported_path);
             assert!(cut.windows(2).any(|w| w == ["-enc_time_base", "1:60000"]));
-            assert!(cut.windows(2).any(|w| w == ["-fps_mode", "passthrough"]));
+            assert!(cut.windows(2).any(|w| w == ["-vsync", "0"]));
             let at: f64 = cut[seek + 1].parse().unwrap();
             assert!((at - file.media.frame_rate.seconds(clip.start_frame)).abs() < 0.001);
         }
