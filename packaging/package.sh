@@ -46,7 +46,7 @@ if [ "$PLATFORM" = macos ]; then
         for target in "${targets[@]}"; do
             cpu="${target%%-*}"
             [ "$cpu" != aarch64 ] || cpu=arm64
-            lipo -verify_arch "$cpu" "$APP/Contents/Resources/bin/$bin"
+            lipo "$APP/Contents/Resources/bin/$bin" -verify_arch "$cpu"
         done
         codesign --force --sign "${MACOS_SIGN_IDENTITY:--}" "$APP/Contents/Resources/bin/$bin"
     done
