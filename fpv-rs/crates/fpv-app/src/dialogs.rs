@@ -323,7 +323,8 @@ impl App {
                 }
             }
             Kind::Settings => {
-                ui.checkbox(&mut dialog.mute_videos, "Mute videos");
+                ui.checkbox(&mut dialog.mute_videos, "Mute videos")
+                    .on_hover_text("Mute player playback and exported videos");
                 ui.checkbox(&mut dialog.do_not_show_splash, "Do not show splash");
                 ui.label("Import folder (existing recordings stay where they are)");
                 ui.text_edit_singleline(&mut dialog.path);
@@ -403,7 +404,10 @@ impl App {
                         library.set_media_root(&path)?;
                         library.set_cache_budgets(budgets[0], budgets[1])?;
                         library.set_video_preferences(mute, hide_splash)?;
-                        Ok(Reply::Done("Settings saved".into()))
+                        Ok(Reply::VideoPreferences {
+                            mute_videos: mute,
+                            do_not_show_splash: hide_splash,
+                        })
                     }));
                 }
                 ui.separator();

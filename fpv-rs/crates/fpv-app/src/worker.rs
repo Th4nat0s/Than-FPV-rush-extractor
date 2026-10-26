@@ -29,6 +29,10 @@ pub enum Reply {
     Relocation(RelocationPreview),
     Deletion(FlightDeletion),
     Cache(CacheUsage),
+    VideoPreferences {
+        mute_videos: bool,
+        do_not_show_splash: bool,
+    },
     Picked(Option<PathBuf>),
 }
 

@@ -36,6 +36,7 @@ struct Viewer {
     figure: String,
     label: String,
     volume: f32,
+    muted: bool,
     fullscreen: bool,
     seek_time: Option<f64>,
 }
@@ -253,6 +254,13 @@ impl App {
                     match result {
                         Err(error) => self.notices.push(error),
                         Ok(Reply::Done(_)) => {}
+                        Ok(Reply::VideoPreferences {
+                            mute_videos,
+                            do_not_show_splash,
+                        }) => {
+                            self.config.mute_videos = mute_videos;
+                            self.config.do_not_show_splash = do_not_show_splash;
+                        }
                         Ok(Reply::Playback { flight, at, parts }) => {
                             if let Some(flight) = self
                                 .sessions
@@ -260,19 +268,23 @@ impl App {
                                 .flat_map(|s| &s.flights)
                                 .find(|f| f.id == flight)
                             {
+                                let muted = self.config.mute_videos;
+                                let player = player::Player::new_with_volume(
+                                    parts,
+                                    self.tools.clone(),
+                                    at,
+                                    ctx.clone(),
+                                    if muted { 0.0 } else { 1.0 },
+                                );
                                 self.viewer = Some(Viewer {
                                     flight: flight.clone(),
-                                    player: player::Player::new(
-                                        parts,
-                                        self.tools.clone(),
-                                        at,
-                                        ctx.clone(),
-                                    ),
+                                    player,
                                     texture: None,
                                     mark: None,
                                     figure: String::new(),
                                     label: String::new(),
-                                    volume: 1.0,
+                                    volume: if muted { 0.0 } else { 1.0 },
+                                    muted,
                                     fullscreen: false,
                                     seek_time: None,
                                 });

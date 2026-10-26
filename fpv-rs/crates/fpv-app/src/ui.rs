@@ -867,7 +867,12 @@ impl App {
                     viewer.seek_time = None;
                 }
                 ui.label(clock(viewer.player.duration()));
-                if ui.add(egui::Slider::new(&mut viewer.volume, 0.0..=1.0).text("Volume")).changed() {
+                if viewer.muted {
+                    ui.small("Muted by settings");
+                } else if ui
+                    .add(egui::Slider::new(&mut viewer.volume, 0.0..=1.0).text("Volume"))
+                    .changed()
+                {
                     viewer.player.set_volume(viewer.volume);
                 }
                 if viewer.player.ended() && ui.button("Replay").clicked() {

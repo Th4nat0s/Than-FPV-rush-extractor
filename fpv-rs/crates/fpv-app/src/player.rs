@@ -100,17 +100,40 @@ impl State {
 
 pub struct Player {
     state: Arc<State>,
+    audio_enabled: bool,
     tools: Option<PathBuf>,
     parts: Vec<NativeSegment>,
     context: eframe::egui::Context,
 }
 
 impl Player {
+    #[cfg(test)]
     pub fn new(
         parts: Vec<NativeSegment>,
         tools: Option<PathBuf>,
         at: f64,
         context: eframe::egui::Context,
+    ) -> Self {
+        Self::new_with_volume(parts, tools, at, context, 1.0)
+    }
+
+    pub fn new_with_volume(
+        parts: Vec<NativeSegment>,
+        tools: Option<PathBuf>,
+        at: f64,
+        context: eframe::egui::Context,
+        volume: f32,
+    ) -> Self {
+        Self::start(parts, tools, at, context, volume, volume > 0.0)
+    }
+
+    fn start(
+        parts: Vec<NativeSegment>,
+        tools: Option<PathBuf>,
+        at: f64,
+        context: eframe::egui::Context,
+        volume: f32,
+        audio_enabled: bool,
     ) -> Self {
         let duration = parts
             .last()
@@ -121,7 +144,7 @@ impl Player {
         let state = Arc::new(State {
             stop: AtomicBool::new(false),
             paused: AtomicBool::new(false),
-            audio: AtomicBool::new(parts.iter().any(|p| p.has_audio)),
+            audio: AtomicBool::new(audio_enabled && parts.iter().any(|p| p.has_audio)),
             consumed: AtomicU64::new(0),
             sample_rate: AtomicU64::new(48000),
             frames: Mutex::new(VecDeque::new()),
@@ -136,7 +159,7 @@ impl Player {
             base: at,
             duration,
             requested_at: Instant::now(),
-            volume: Mutex::new(1.0),
+            volume: Mutex::new(volume.clamp(0.0, 1.0)),
             video_done: AtomicBool::new(false),
             context: context.clone(),
         });
@@ -177,6 +200,7 @@ impl Player {
         }
         Self {
             state,
+            audio_enabled,
             tools,
             parts,
             context,
@@ -222,14 +246,15 @@ impl Player {
         let paused = self.paused();
         let volume = self.state.volume.lock().map(|gain| *gain).unwrap_or(1.0);
         self.state.stop();
-        *self = Self::new(
+        *self = Self::start(
             self.parts.clone(),
             self.tools.clone(),
             at,
             self.context.clone(),
+            volume,
+            self.audio_enabled,
         );
         self.pause(paused);
-        self.set_volume(volume);
     }
 
     pub fn frame(&self) -> Option<VideoFrame> {
@@ -769,6 +794,36 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         assert!(player.state.frames.lock().unwrap().len() <= 4);
         assert_eq!(player.position(), 0.52);
+    }
+
+    #[test]
+    fn muted_playback_stays_muted_after_seeking_without_starting_audio() {
+        let part = NativeSegment {
+            segment: Segment {
+                path: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/h264-initial-headers.avi"),
+                start: 0.0,
+                end: 3.0,
+                offset: 0.0,
+            },
+            width: 64,
+            height: 48,
+            has_audio: true,
+            all_intra: false,
+        };
+        let mut player = Player::new_with_volume(
+            vec![part],
+            test_tools(),
+            0.0,
+            eframe::egui::Context::default(),
+            0.0,
+        );
+        assert!(!player.state.audio.load(Ordering::Relaxed));
+        player.pause(true);
+        player.seek(1.0);
+        assert!(!player.state.audio.load(Ordering::Relaxed));
+        assert_eq!(*player.state.volume.lock().unwrap(), 0.0);
+        assert!(player.paused());
     }
 
     #[test]
