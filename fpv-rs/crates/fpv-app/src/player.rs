@@ -373,17 +373,21 @@ impl Drop for Process {
 }
 
 fn input(part: &NativeSegment, skip: f64, duration: f64) -> Vec<String> {
-    vec![
-        "-hide_banner".into(),
-        "-loglevel".into(),
-        "error".into(),
-        "-ss".into(),
-        seconds_argument(part.segment.start + skip),
+    let mut arguments = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
+    if part.all_intra {
+        arguments.extend(["-ss".into(), seconds_argument(part.segment.start + skip)]);
+    }
+    arguments.extend([
         "-i".into(),
         part.segment.path.to_string_lossy().into_owned(),
-        "-t".into(),
-        seconds_argument(duration),
-    ]
+    ]);
+    if !part.all_intra {
+        // Input-side AVI seeking can land in an H.264 GOP without its SPS/PPS.
+        // Decode from the start for long-GOP sources so seeking still yields frames.
+        arguments.extend(["-ss".into(), seconds_argument(part.segment.start + skip)]);
+    }
+    arguments.extend(["-t".into(), seconds_argument(duration)]);
+    arguments
 }
 
 fn decode_video(
@@ -636,6 +640,7 @@ mod tests {
             width: 640,
             height: 480,
             has_audio: false,
+            all_intra: true,
         };
         let parts = [part(140.0, 141.0, 0.0), part(0.0, 60.0, 1.0)];
         let rest: Vec<_> = remaining(&parts, 1.0).collect();
@@ -644,9 +649,22 @@ mod tests {
         let rest: Vec<_> = remaining(&parts, 11.0).collect();
         assert_eq!((rest[0].1, rest[0].2), (10.0, 50.0));
         let args = input(rest[0].0, rest[0].1, rest[0].2);
+        let seek = args.iter().position(|arg| arg == "-ss").unwrap();
+        let input_index = args.iter().position(|arg| arg == "-i").unwrap();
+        assert_eq!(args[seek + 1], seconds_argument(10.0));
         assert!(
-            args.windows(2)
-                .any(|pair| pair == ["-ss", &seconds_argument(10.0)])
+            seek < input_index,
+            "all-intra footage uses fast input-side seeking"
+        );
+
+        let mut long_gop = rest[0].0.clone();
+        long_gop.all_intra = false;
+        let args = input(&long_gop, rest[0].1, rest[0].2);
+        let seek = args.iter().position(|arg| arg == "-ss").unwrap();
+        let input_index = args.iter().position(|arg| arg == "-i").unwrap();
+        assert!(
+            input_index < seek,
+            "long-GOP footage must seek after its input"
         );
     }
     #[test]
@@ -692,6 +710,7 @@ mod tests {
             width: 64,
             height: 48,
             has_audio: false,
+            all_intra: true,
         }];
         let mut player = Player::new(parts, tools, 0.0, eframe::egui::Context::default());
         player.pause(true);
@@ -781,6 +800,7 @@ mod tests {
             width: 64,
             height: 48,
             has_audio: false,
+            all_intra: true,
         }];
         // No CPAL device is opened in this test: inspect the decoded sample queue.
         let player = Player::new(

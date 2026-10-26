@@ -98,6 +98,7 @@ pub struct NativeSegment {
     pub width: i64,
     pub height: i64,
     pub has_audio: bool,
+    pub all_intra: bool,
 }
 
 /// The cache folder's contents by kind, in bytes.
@@ -1755,6 +1756,7 @@ impl Library {
                 width: file.media.width,
                 height: file.media.height,
                 has_audio: file.media.audio_codec.is_some(),
+                all_intra: file.media.is_all_intra(),
             }
         }).collect())
     }
