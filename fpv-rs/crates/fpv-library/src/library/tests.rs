@@ -436,12 +436,17 @@ fn never_overwrites_a_different_file_left_in_the_import_folder() {
 #[test]
 fn frees_the_card_only_for_verified_copies() {
     let fixture = gopro_card();
+    let metadata = Command::new("ffprobe")
+        .args(["-v", "error", "-show_format", "-show_streams", "-of", "json"])
+        .arg(fixture.card.join("DCIM/100GOPRO/GH010042.MP4"))
+        .output().unwrap();
     let summary = fixture.library.import(&fixture.card, "Letz Kwad", None, true, |_| {}).unwrap();
     assert_eq!(summary.deleted_from_card, 3);
     assert!(summary.kept.is_empty());
     assert!(!fixture.card.join("DCIM/100GOPRO/GH010042.MP4").exists());
     // The session took the first take's time, read as local.
-    assert!(fixture.library.snapshot().unwrap()[0].date.is_some());
+    assert!(fixture.library.snapshot().unwrap()[0].date.is_some(), "{}",
+        String::from_utf8_lossy(&metadata.stdout));
 }
 
 #[test]

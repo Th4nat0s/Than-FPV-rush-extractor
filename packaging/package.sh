@@ -72,12 +72,12 @@ else
     # dpkg-shlibdeps records linked runtime requirements from this build host.
     # Drivers, display server and audio devices remain supplied by the OS.
     glibc="$(getconf GNU_LIBC_VERSION | cut -d' ' -f2)"
-    deps="libc6 (>= $glibc), libasound2, libxkbcommon0, libx11-6, libegl1, libgl1, xdg-utils"
+    deps="libc6 (>= $glibc), libasound2, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libegl1, libgl1, xdg-utils"
     if command -v dpkg-shlibdeps >/dev/null; then
         detected="$(cd "$WORK" && dpkg-shlibdeps --ignore-missing-info -O \
             -e"$STAGE/usr/bin/fpv-rush" -e"$STAGE/usr/lib/fpv-rush/bin/ffmpeg" \
             -e"$STAGE/usr/lib/fpv-rush/bin/ffprobe" 2>/dev/null | sed -n 's/^shlibs:Depends=//p' || true)"
-        [ -z "$detected" ] || deps="$detected, libasound2, libxkbcommon0, libx11-6, libegl1, libgl1, xdg-utils"
+        [ -z "$detected" ] || deps="$detected, libasound2, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libegl1, libgl1, xdg-utils"
     fi
     printf 'Package: fpv-rush\nVersion: %s\nArchitecture: %s\nMaintainer: FPV Rush contributors\nSection: video\nPriority: optional\nDepends: %s\nDescription: Native FPV DVR flight library with bundled FFmpeg\n' \
         "$VERSION" "$debarch" "$deps" > "$STAGE/DEBIAN/control"

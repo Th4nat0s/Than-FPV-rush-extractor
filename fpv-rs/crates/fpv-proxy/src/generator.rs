@@ -111,7 +111,18 @@ impl<'a> ProxyGenerator<'a> {
         let attempt = |hardware: bool| {
             let mut arguments = Self::arguments(part, rate, height, audio, hardware);
             arguments.extend(["-y".into(), output.to_string_lossy().into_owned()]);
-            run_writing(self.ffmpeg, &arguments, output)
+            match run_writing(self.ffmpeg, &arguments, output) {
+                Err(FfmpegError::ToolFailed { ref message, .. })
+                    if message.contains("Unrecognized option 'fps_mode'") => {
+                    // FFmpeg 4 uses -vsync; FFmpeg 9 removed it. Keep the
+                    // modern spelling unless the installed tool rejects it.
+                    let index = arguments.iter().position(|arg| arg == "-fps_mode").unwrap();
+                    arguments[index] = "-vsync".into();
+                    arguments[index + 1] = "0".into();
+                    run_writing(self.ffmpeg, &arguments, output)
+                }
+                result => result,
+            }
         };
         if height <= MAX_PROXY_HEIGHT {
             return Ok(attempt(false)?);
@@ -162,7 +173,7 @@ impl<'a> ProxyGenerator<'a> {
             // clock represents their timestamps without changing playback speed.
             "-c:v".into(), "mpeg4".into(), "-q:v".into(), "2".into(),
             "-enc_time_base".into(), "1:60000".into(),
-            "-vsync".into(), "0".into(),
+            "-fps_mode".into(), "passthrough".into(),
             "-pix_fmt".into(), "yuv420p".into(),
         ]);
         arguments.extend(match audio {
@@ -236,7 +247,7 @@ mod tests {
             let seek = cut.iter().position(|a| a == "-ss").unwrap();
             assert!(seek < input && cut[input + 1] == file.imported_path);
             assert!(cut.windows(2).any(|w| w == ["-enc_time_base", "1:60000"]));
-            assert!(cut.windows(2).any(|w| w == ["-vsync", "0"]));
+            assert!(cut.windows(2).any(|w| w == ["-fps_mode", "passthrough"]));
             let at: f64 = cut[seek + 1].parse().unwrap();
             assert!((at - file.media.frame_rate.seconds(clip.start_frame)).abs() < 0.001);
         }
@@ -296,6 +307,28 @@ mod tests {
         let call = take("GX010045.MP4", FrameRate::new(30000, 1001), 720);
         assert_eq!(filter(&call), "fps=30000/1001");
         assert!(!has(&call, "-hwaccel"));
+    }
+
+    #[test]
+    fn supports_ffmpeg_before_fps_mode_was_added() {
+        struct OlderFfmpeg(RecordingFfmpeg);
+        impl FfmpegInvoking for OlderFfmpeg {
+            fn run(&self, tool: FfmpegTool, arguments: &[String]) -> Result<ProcessResult, FfmpegError> {
+                if arguments.iter().any(|arg| arg == "-fps_mode") {
+                    return Ok(ProcessResult { status: 1, stdout: vec![],
+                        stderr: "Unrecognized option 'fps_mode'.".into() });
+                }
+                assert!(arguments.windows(2).any(|pair| pair == ["-vsync", "0"]));
+                self.0.run(tool, arguments)
+            }
+        }
+        let ffmpeg = OlderFfmpeg(RecordingFfmpeg::default());
+        let out = tempfile::tempdir().unwrap();
+        let file = source("PICT0030.AVI", FrameRate::new(30, 1), 480);
+        let destination = out.path().join("take.mp4");
+        ProxyGenerator::new(&ffmpeg)
+            .generate(&[(Clip::new(Uuid::new_v4(), file.id, 0, 30), file)], &destination).unwrap();
+        assert!(destination.is_file());
     }
 
     #[test]

@@ -33,7 +33,7 @@ SQLite and the separate FFmpeg tools are C dependencies.
 
 Linux development dependencies on Debian/Ubuntu:
 
-    sudo apt install build-essential pkg-config libasound2-dev libxkbcommon-dev \
+    sudo apt install build-essential pkg-config libasound2-dev libxkbcommon-dev libxkbcommon-x11-0 \
         libx11-dev libgl1-mesa-dev ffmpeg
 
 macOS: Xcode command-line tools and Rust; Homebrew FFmpeg is useful for tests.

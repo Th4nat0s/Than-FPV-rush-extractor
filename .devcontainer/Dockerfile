@@ -17,7 +17,7 @@ RUN apt-get install -y ffmpeg python3-numpy python3-pil
 
 # Native egui window and CPAL audio; FFmpeg is a separate process. No browser
 # engine, Node, GTK or GStreamer development stack is required.
-RUN apt-get install -y libasound2-dev libxkbcommon-dev libx11-dev libgl1-mesa-dev \
+RUN apt-get install -y libasound2-dev libxkbcommon-dev libxkbcommon-x11-0 libx11-dev libgl1-mesa-dev \
     file pkg-config xvfb xdotool imagemagick xz-utils
 
 USER vscode
