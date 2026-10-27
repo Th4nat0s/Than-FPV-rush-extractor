@@ -647,3 +647,56 @@ fn splash_moves_from_the_first_frames_without_a_hold() {
         "splash must move immediately: {widths:?}"
     );
 }
+
+#[test]
+fn thumbnail_hearts_have_no_background_box() {
+    fn boxes(shape: &egui::Shape, point: egui::Pos2) -> bool {
+        match shape {
+            egui::Shape::Rect(r) => {
+                r.rect.contains(point)
+                    && r.rect.width() < 45.0
+                    && r.rect.height() < 45.0
+                    && (r.fill.a() > 0 || r.stroke.width > 0.0)
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| boxes(s, point)),
+            _ => false,
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let session = SessionView {
+        id: "s".into(),
+        name: "Test".into(),
+        date: None,
+        files: vec![],
+        flights: vec![],
+        segmentable: false,
+        reducible: false,
+        detection_profile: "standard".into(),
+        location: None,
+        notes: None,
+        labels: vec![],
+    };
+    let mut flight = flight();
+    for liked in [false, true] {
+        flight.liked = liked;
+        let mut output = None;
+        for _ in 0..3 {
+            output = Some(ctx.run(input(egui::vec2(600.0, 500.0)), |ctx| {
+                egui::CentralPanel::default()
+                    .show(ctx, |ui| app.flight_card(ui, &session, &flight, None));
+            }));
+        }
+        let output = output.unwrap();
+        let heart = text_positions(&output.shapes)
+            .into_iter()
+            .find(|(s, _)| s == if liked { "♥" } else { "♡" })
+            .unwrap()
+            .1
+            + egui::vec2(4.0, 4.0);
+        assert!(
+            !output.shapes.iter().any(|s| boxes(&s.shape, heart)),
+            "heart must not have a painted button box"
+        );
+    }
+}

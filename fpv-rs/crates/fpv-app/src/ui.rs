@@ -943,7 +943,7 @@ impl App {
                 egui::Button::new(
                     RichText::new(if flight.liked { "♥" } else { "♡" }).color(Color32::WHITE),
                 )
-                .fill(Color32::from_black_alpha(120))
+                .frame(false)
                 .min_size(heart_rect.size()),
             );
             if heart.clicked() && !self.busy() {
