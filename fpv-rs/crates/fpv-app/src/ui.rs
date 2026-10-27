@@ -1359,7 +1359,6 @@ impl App {
             );
             overlay.set_clip_rect(ui.clip_rect().intersect(video));
             egui::Frame::new()
-                .fill(Color32::from_black_alpha(215))
                 .inner_margin(6.0)
                 .show(&mut overlay, |ui| {
                     ui.visuals_mut().override_text_color = Some(Color32::WHITE);

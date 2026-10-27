@@ -874,3 +874,43 @@ fn volume_is_vertical_on_the_right_and_increases_upwards() {
         });
     });
 }
+
+#[test]
+fn video_controls_do_not_paint_a_background_strip() {
+    fn has_strip(shape: &egui::Shape, image: egui::Rect) -> bool {
+        match shape {
+            egui::Shape::Rect(r) => {
+                image.expand(1.0).contains_rect(r.rect)
+                    && r.rect.width() > image.width() * 0.7
+                    && r.rect.height() > 40.0
+                    && r.rect.height() < image.height() * 0.8
+                    && r.fill.a() > 0
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| has_strip(s, image)),
+            _ => false,
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut viewer = test_viewer(&ctx);
+    let texture = ctx.load_texture(
+        "transparent-controls",
+        egui::ColorImage::filled([640, 360], Color32::WHITE),
+        Default::default(),
+    );
+    let id = texture.id();
+    viewer.texture = Some(texture);
+    app.viewer = Some(viewer);
+    let mut output = None;
+    for _ in 0..4 {
+        output = Some(ctx.run(input(egui::vec2(1280.0, 820.0)), |ctx| {
+            app.player_window(ctx)
+        }));
+    }
+    let shapes = output.unwrap().shapes;
+    let image = texture_rect(&shapes, id).unwrap();
+    assert!(
+        !shapes.iter().any(|s| has_strip(&s.shape, image)),
+        "controls must be transparent over the video"
+    );
+}

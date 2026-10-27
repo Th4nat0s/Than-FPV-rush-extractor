@@ -27,3 +27,4 @@
 - Draw favourite hearts without a surrounding button box while preserving their click target (#29).
 - Toggle temporary playback mute by clicking the speaker and restore the previous audible volume; forced no-audio policies remain authoritative (#25).
 - Place the audible player volume slider vertically at the right edge of the video (#26).
+- Remove the dark controls backdrop so seek and volume controls sit directly over the video (#27).
