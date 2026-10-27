@@ -698,6 +698,13 @@ impl Library {
     /// copy matches size for size.
     pub fn import(&self, folder: &Path, name: &str, date: Option<&str>, delete_originals: bool,
                   progress: impl FnMut(ImportEvent)) -> Result<ImportSummary> {
+        self.import_with_audio(folder, name, date, delete_originals, false, progress)
+    }
+
+    /// Imports with a per-recording audio policy, preserving source bytes and known files.
+    pub fn import_with_audio(&self, folder: &Path, name: &str, date: Option<&str>,
+                  delete_originals: bool, no_sound: bool,
+                  progress: impl FnMut(ImportEvent)) -> Result<ImportSummary> {
         let name = name.trim();
         if name.is_empty() {
             return Err(LibraryError::Invalid("a session needs a name".into()));
@@ -705,6 +712,7 @@ impl Library {
         let date = date.map(local_midnight).transpose()?;
         let ffmpeg = self.ffmpeg();
         let report = LibraryImporter::new(&ffmpeg, &self.store)
+            .without_sound(no_sound)
             .posters_in(self.posters())
             .folders_named(FolderPattern::parse(&self.config.folder_pattern)
                 .map_err(|e| LibraryError::Invalid(format!("folderPattern in config.json: {e}")))?)
@@ -933,12 +941,13 @@ impl Library {
         let clean = |cut: &[(PathBuf, PathBuf, SourceFile)]| for (partial, _, _) in cut {
             let _ = std::fs::remove_file(partial);
         };
+        let reduction_source = SourceFile { muted: false, ..plan.file.clone() };
         for (n, &(start, end)) in plan.ranges.iter().enumerate() {
             let destination = free_name(folder, &format!("{stem}-{}", n + 1), &extension);
             let partial = folder.join(format!(".{}.reducing.{extension}",
                                               destination.file_name().unwrap().to_string_lossy()));
             let range = Clip::new(Uuid::nil(), plan.file.id, start, end);
-            let checked = exporter.export_clip(&range, &plan.file, &partial)
+            let checked = exporter.export_clip(&range, &reduction_source, &partial)
                 .map_err(|e| LibraryError::Invalid(e.to_string()))
                 .and_then(|_| probe.probe(&partial).map_err(|e| LibraryError::Invalid(e.to_string())))
                 .and_then(|media| {
@@ -958,6 +967,7 @@ impl Library {
                     let mut piece = SourceFile::new(plan.file.session_id, plan.file.original_path.clone(),
                                                     destination.to_string_lossy(), plan.file.sequence_number,
                                                     MediaInfo { camera: None, ..media });
+                    piece.muted = plan.file.muted;
                     // The checksum of the recording it was cut from, on its
                     // first piece: importing the same card again must not
                     // bring the snow back as a new recording.
@@ -1755,7 +1765,7 @@ impl Library {
                 },
                 width: file.media.width,
                 height: file.media.height,
-                has_audio: file.media.audio_codec.is_some(),
+                has_audio: file.media.audio_codec.is_some() && !file.muted,
                 all_intra: file.media.is_all_intra(),
             }
         }).collect())

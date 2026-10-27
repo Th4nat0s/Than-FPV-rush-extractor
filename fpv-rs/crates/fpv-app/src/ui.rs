@@ -17,76 +17,7 @@ enum MetadataIcon {
 
 fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
     let (area, response) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::hover());
-    let color = ui.visuals().weak_text_color();
-    let stroke = egui::Stroke::new(1.2_f32, color);
-    let body = egui::Rect::from_min_max(
-        area.min + egui::vec2(2.0, 3.0),
-        area.max - egui::vec2(2.0, 2.0),
-    );
-    let painter = ui.painter();
-    match kind {
-        MetadataIcon::Dvr => {
-            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
-            painter.line_segment(
-                [
-                    body.left_top() + egui::vec2(3.0, 3.0),
-                    body.right_top() - egui::vec2(3.0, -3.0),
-                ],
-                stroke,
-            );
-            painter.circle_filled(body.right_bottom() - egui::vec2(3.0, 3.0), 1.2_f32, color);
-        }
-        MetadataIcon::Film => {
-            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
-            let screen = egui::Rect::from_min_max(
-                body.min + egui::vec2(5.0, 2.0),
-                body.max - egui::vec2(5.0, 2.0),
-            );
-            painter.rect_stroke(screen, 0.5, stroke, egui::StrokeKind::Inside);
-            for y in [body.top() + 3.0, body.center().y, body.bottom() - 3.0] {
-                painter.circle_filled(egui::pos2(body.left() + 2.5, y), 0.7_f32, color);
-                painter.circle_filled(egui::pos2(body.right() - 2.5, y), 0.7_f32, color);
-            }
-        }
-        MetadataIcon::Speaker(muted) => {
-            let speaker = egui::Rect::from_min_max(
-                body.min + egui::vec2(1.0, 3.0),
-                body.min + egui::vec2(6.0, 10.0),
-            );
-            painter.rect_filled(speaker, 0.5, color);
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    egui::pos2(body.left() + 5.0, body.top() + 2.0),
-                    egui::pos2(body.left() + 11.0, body.top()),
-                    egui::pos2(body.left() + 11.0, body.bottom()),
-                    egui::pos2(body.left() + 5.0, body.bottom() - 2.0),
-                ],
-                color,
-                egui::Stroke::NONE,
-            ));
-            if muted {
-                painter.line_segment(
-                    [body.right_top(), body.left_bottom() + egui::vec2(2.0, -1.0)],
-                    egui::Stroke::new(1.6_f32, color),
-                );
-            } else {
-                painter.line_segment(
-                    [
-                        egui::pos2(body.left() + 10.5, body.top() + 1.0),
-                        egui::pos2(body.right(), body.center().y),
-                    ],
-                    stroke,
-                );
-                painter.line_segment(
-                    [
-                        egui::pos2(body.right(), body.center().y),
-                        egui::pos2(body.left() + 10.5, body.bottom() - 1.0),
-                    ],
-                    stroke,
-                );
-            }
-        }
-    }
+    paint_metadata_icon(ui, kind, area);
     response.on_hover_text(match kind {
         MetadataIcon::Dvr => "Recording source",
         MetadataIcon::Film => "Video format",
@@ -244,6 +175,98 @@ fn pagination_footer(
             },
         );
     });
+}
+
+fn paint_metadata_icon(ui: &egui::Ui, kind: MetadataIcon, area: egui::Rect) {
+    let color = ui.visuals().weak_text_color();
+    let stroke = egui::Stroke::new(1.2_f32, color);
+    let body = egui::Rect::from_min_max(
+        area.min + egui::vec2(2.0, 3.0),
+        area.max - egui::vec2(2.0, 2.0),
+    );
+    let painter = ui.painter();
+    match kind {
+        MetadataIcon::Dvr => {
+            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
+            painter.line_segment(
+                [
+                    body.left_top() + egui::vec2(3.0, 3.0),
+                    body.right_top() - egui::vec2(3.0, -3.0),
+                ],
+                stroke,
+            );
+            painter.circle_filled(body.right_bottom() - egui::vec2(3.0, 3.0), 1.2_f32, color);
+        }
+        MetadataIcon::Film => {
+            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
+            let screen = egui::Rect::from_min_max(
+                body.min + egui::vec2(5.0, 2.0),
+                body.max - egui::vec2(5.0, 2.0),
+            );
+            painter.rect_stroke(screen, 0.5, stroke, egui::StrokeKind::Inside);
+            for y in [body.top() + 3.0, body.center().y, body.bottom() - 3.0] {
+                painter.circle_filled(egui::pos2(body.left() + 2.5, y), 0.7_f32, color);
+                painter.circle_filled(egui::pos2(body.right() - 2.5, y), 0.7_f32, color);
+            }
+        }
+        MetadataIcon::Speaker(muted) => {
+            let speaker = egui::Rect::from_min_max(
+                body.min + egui::vec2(1.0, 3.0),
+                body.min + egui::vec2(6.0, 10.0),
+            );
+            painter.rect_filled(speaker, 0.5, color);
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(body.left() + 5.0, body.top() + 2.0),
+                    egui::pos2(body.left() + 11.0, body.top()),
+                    egui::pos2(body.left() + 11.0, body.bottom()),
+                    egui::pos2(body.left() + 5.0, body.bottom() - 2.0),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            if muted {
+                painter.line_segment(
+                    [body.right_top(), body.left_bottom() + egui::vec2(2.0, -1.0)],
+                    egui::Stroke::new(1.6_f32, color),
+                );
+            } else {
+                painter.line_segment(
+                    [
+                        egui::pos2(body.left() + 10.5, body.top() + 1.0),
+                        egui::pos2(body.right(), body.center().y),
+                    ],
+                    stroke,
+                );
+                painter.line_segment(
+                    [
+                        egui::pos2(body.right(), body.center().y),
+                        egui::pos2(body.left() + 10.5, body.bottom() - 1.0),
+                    ],
+                    stroke,
+                );
+            }
+        }
+    }
+}
+
+pub(crate) fn no_sound_choice(ui: &mut egui::Ui, no_sound: &mut bool) -> egui::Response {
+    ui.horizontal(|ui| {
+        let icon = ui
+            .add(
+                egui::Button::new("")
+                    .selected(*no_sound)
+                    .min_size(egui::vec2(26.0, 24.0)),
+            )
+            .on_hover_text("Toggle sound for this import");
+        if icon.clicked() {
+            *no_sound = !*no_sound;
+        }
+        paint_metadata_icon(ui, MetadataIcon::Speaker(*no_sound), icon.rect.shrink(3.0));
+        ui.checkbox(no_sound, "No Sound");
+        icon
+    })
+    .inner
 }
 
 impl App {

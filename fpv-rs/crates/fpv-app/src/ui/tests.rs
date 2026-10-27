@@ -380,3 +380,37 @@ fn pagination_stays_inside_a_narrow_view_with_many_pages() {
     }
 }
 
+#[test]
+fn import_speaker_button_toggles_the_same_state_as_the_no_sound_checkbox() {
+    let ctx = egui::Context::default();
+    let mut muted = false;
+    let mut icon = egui::Rect::NOTHING;
+    for _ in 0..2 {
+        let _ = ctx.run(input(egui::vec2(400.0, 150.0)), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                icon = no_sound_choice(ui, &mut muted).rect;
+            });
+        });
+    }
+    for expected in [true, false] {
+        for pressed in [true, false] {
+            let mut input = input(egui::vec2(400.0, 150.0));
+            input.events = vec![
+                egui::Event::PointerMoved(icon.center()),
+                egui::Event::PointerButton {
+                    pos: icon.center(),
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ];
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = no_sound_choice(ui, &mut muted);
+                });
+            });
+        }
+        assert_eq!(muted, expected);
+    }
+}
+

@@ -90,6 +90,12 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   stream probing needs it to retain H.264/HEVC headers before indexed seeks.
   The player tries input-side seeking, with a sequential fallback if no video
   frame is emitted. See `docs/player-buffering.md` and the generated AVI fixture.
+- **Import audio policy:** schema `v8` adds `sourceFile.muted`, default false for
+  existing recordings. Import's No Sound option marks only new recordings;
+  playback emits silence for their parts and exports honor that choice. Mixed
+  muted/audible flights normalize audio and synthesize silence only for muted
+  parts; lossless exports keep the original video packets. Reduction preserves
+  source audio and carries the policy onto its pieces.
 - macOS' system About panel is separate from egui's About window. Packaging
   generates `Credits.rtfd` with the LetzKwad logo, credits and links using the
   host's AppKit tools; only the rich-text/image assets are redistributed.

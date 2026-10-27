@@ -297,6 +297,7 @@ impl App {
                     &mut dialog.date_picker_open,
                     true,
                 );
+                let _ = crate::ui::no_sound_choice(ui, &mut dialog.mute_videos);
                 ui.small(format!("Copies go to {}", self.config.media_root.display()));
                 ui.checkbox(
                     &mut dialog.flag,
@@ -309,15 +310,16 @@ impl App {
                     )
                     .clicked()
                 {
-                    let (path, name, date, delete) = (
+                    let (path, name, date, delete, no_sound) = (
                         PathBuf::from(&dialog.path),
                         dialog.name.clone(),
                         format_date(dialog.date),
                         dialog.flag,
+                        dialog.mute_videos,
                     );
                     dialog.saving = Some(self.submit("Import recordings", false, move |library, progress| {
                         let mut counter = ImportProgress::default();
-                        let report = library.import(&path, &name, date.as_deref(), delete, |event| progress.step(counter.step(event)))?;
+                        let report = library.import_with_audio(&path, &name, date.as_deref(), delete, no_sound, |event| progress.step(counter.step(event)))?;
                         if report.failed > 0 || !report.kept.is_empty() {
                             return Err(fpv_library::LibraryError::Invalid(format!("Imported {}, skipped {}, failed {}. Kept on card: {}. See task logs.", report.imported, report.skipped, report.failed, report.kept.join("; "))));
                         }

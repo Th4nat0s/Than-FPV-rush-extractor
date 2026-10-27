@@ -268,7 +268,7 @@ impl App {
                                 .flat_map(|s| &s.flights)
                                 .find(|f| f.id == flight)
                             {
-                                let muted = self.config.mute_videos;
+                                let muted = self.config.mute_videos || parts.iter().all(|part| !part.has_audio);
                                 let player = player::Player::new_with_volume(
                                     parts,
                                     self.tools.clone(),

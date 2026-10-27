@@ -79,9 +79,19 @@ impl<'a> ClipExporter<'a> {
                 return Err(ExportError::MismatchedFrameRates(a, b));
             }
         }
+        let mixed_audio = !mute && parts.iter().any(|(_, f)| f.muted)
+            && parts.iter().any(|(_, f)| !f.muted && f.media.audio_codec.is_some());
+        let mute = mute || (parts.iter().any(|(_, f)| f.muted) && !mixed_audio);
         let workspace = Workspace::beside(destination, "fpv-export")?;
         let list = self.cut(parts, workspace.path(), destination, |(clip, file)| {
-            copy_arguments(clip, file, mute)
+            if mixed_audio {
+                let source = SourceFile { muted: false, ..file.clone() };
+                let mut arguments = copy_arguments(clip, &source, false)?;
+                normalize_flight_audio(&mut arguments, file, destination);
+                Ok(arguments)
+            } else {
+                copy_arguments(clip, file, mute)
+            }
         })?;
         Ok(run_writing(self.ffmpeg, &concat_arguments(&list, destination), destination)?)
     }
@@ -107,6 +117,9 @@ impl<'a> ClipExporter<'a> {
             [(clip, file)] => return self.export_clip_with_mute(clip, file, destination, mute),
             _ => {}
         }
+        let mixed_audio = !mute && parts.iter().any(|(_, f)| f.muted)
+            && parts.iter().any(|(_, f)| !f.muted && f.media.audio_codec.is_some());
+        let mute = mute || (parts.iter().any(|(_, f)| f.muted) && !mixed_audio);
         let rate = target.unwrap_or_else(|| FrameRate::dominant(parts));
         let workspace = Workspace::beside(destination, "fpv-export")?;
         let list = self.cut(parts, workspace.path(), destination, |(clip, file)| {
@@ -121,7 +134,11 @@ impl<'a> ClipExporter<'a> {
                 "-vf".into(), format!("fps={}/{}", rate.numerator, rate.denominator),
                 "-c:v".into(), "mjpeg".into(), "-q:v".into(), "2".into(),
             ];
-            arguments.extend(if mute { vec!["-an".into()] } else { vec!["-c:a".into(), "copy".into()] });
+            if mixed_audio {
+                normalize_flight_audio(&mut arguments, file, destination);
+            } else {
+                arguments.extend(if mute || file.muted { vec!["-an".into()] } else { vec!["-c:a".into(), "copy".into()] });
+            }
             Ok(arguments)
         })?;
         Ok(run_writing(self.ffmpeg, &concat_arguments(&list, destination), destination)?)
@@ -145,6 +162,23 @@ impl<'a> ClipExporter<'a> {
         write_concat_list(&pieces, &list)?;
         Ok(list)
     }
+}
+
+/// Mixed mute policies need homogeneous audio streams for concatenation. Only
+/// audio is normalized; lossless exports retain the original video packets.
+fn normalize_flight_audio(arguments: &mut Vec<String>, file: &SourceFile, destination: &Path) {
+    let silent = file.muted || file.media.audio_codec.is_none();
+    if silent {
+        let input_end = arguments.iter().position(|arg| arg == "-i").unwrap() + 2;
+        arguments.splice(input_end..input_end, ["-f".into(), "lavfi".into(), "-i".into(),
+            "anullsrc=r=48000:cl=stereo,aresample=osf=s16".into()]);
+    }
+    let codec = if destination.extension().is_some_and(|e| e.eq_ignore_ascii_case("avi")) {
+        "pcm_s16le"
+    } else { "aac" };
+    arguments.extend(["-map".into(), "0:v:0".into(), "-map".into(),
+        if silent { "1:a:0" } else { "0:a:0" }.into(), "-c:a".into(), codec.into(),
+        "-ar".into(), "48000".into(), "-ac".into(), "2".into()]);
 }
 
 /// Start and length in seconds, through the file's own rate.
@@ -181,7 +215,7 @@ fn copy_arguments(clip: &Clip, file: &SourceFile, mute: bool) -> Result<Vec<Stri
     // cut's sound started at the next packet yet played from the first frame,
     // up to a tenth of a second early (99 ms on PICT0031, measured). PCM in,
     // PCM out holds the very same samples, now cut on the frame.
-    if mute {
+    if mute || file.muted {
         arguments.extend(["-c:v".into(), "copy".into(), "-an".into()]);
     } else { match file.media.audio_codec.as_deref() {
         Some(codec) if codec.starts_with("pcm_") && file.media.is_all_intra() =>

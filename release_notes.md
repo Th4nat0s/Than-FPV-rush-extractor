@@ -19,3 +19,4 @@
 - Keep the player inside the visible viewport, including after shrinking the app window (#17).
 - Move pagination and its Showing counter below the thumbnail grid (#18).
 - Select today's local date by default in new import dialogs (#19).
+- Add import's No Sound checkbox and speaker toggle, persisting playback/export muting per recording without altering source files (#20).

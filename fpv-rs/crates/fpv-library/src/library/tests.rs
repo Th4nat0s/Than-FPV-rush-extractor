@@ -1202,6 +1202,9 @@ fn reduces_a_dvr_recording_to_its_flights_and_keeps_everything_on_them() {
     assert!(recording.is_file());
     assert!(!session.reducible);
 
+    let mut policy = library.store.source_file(parse(&session.files[0].id).unwrap()).unwrap().unwrap();
+    policy.muted = true;
+    library.store.save_source_files(&[policy]).unwrap();
     flights_in(&fixture, &session);
     let before = library.snapshot().unwrap().remove(0);
     assert!(before.reducible);
@@ -1223,6 +1226,7 @@ fn reduces_a_dvr_recording_to_its_flights_and_keeps_everything_on_them() {
     assert!(!recording.exists(), "the recording went to the trash");
 
     let after = library.snapshot().unwrap().remove(0);
+    assert!(library.store.source_files(parse(&session.id).unwrap()).unwrap().iter().all(|f| f.muted && f.media.audio_codec.is_some()));
     let names: Vec<_> = after.files.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, ["PICT0032-1.AVI", "PICT0032-2.AVI"]);
     // 5 s margins at 25 fps: frames 125-725 (A and B merged) and 750-1000.
@@ -1248,6 +1252,7 @@ fn reduces_a_dvr_recording_to_its_flights_and_keeps_everything_on_them() {
     library.export(&after.flights[0].id, &out, ExportMode::Lossless).unwrap();
     let probe = MediaProbe::new(&library.ffmpeg()).probe(&out).unwrap();
     assert_eq!(probe.frame_count, Some(250));
+    assert!(probe.audio_codec.is_none(), "reduced pieces keep the import audio policy");
 
     // Reduced once: never cut again, and segmentation leaves it be.
     assert_eq!(library.reduce_preview(&session.id).unwrap(), ReducePreview::default());
@@ -1374,4 +1379,50 @@ fn moves_a_sessions_recordings_from_an_earlier_import_folder_into_the_current_on
     assert!(out.is_file());
     // Nothing left to move.
     assert_eq!(library.relocation_preview(&session.id).unwrap(), RelocationPreview::default());
+}
+
+#[test]
+fn no_sound_import_persists_and_silences_only_new_recordings_in_playback_and_exports() {
+    let fixture = gopro_card();
+    let normal_card = fixture._root.path().join("normal-card");
+    std::fs::create_dir_all(&normal_card).unwrap();
+    std::fs::copy(fixture.card.join("DCIM/100GOPRO/GH010043.MP4"), normal_card.join("GH010043.MP4")).unwrap();
+    fixture.library.import(&normal_card, "Audio choices", Some("2026-08-23"), false, |_| {}).unwrap();
+    let report = fixture.library.import_with_audio(&fixture.card, "Audio choices", Some("2026-08-23"), false, true, |_| {}).unwrap();
+    assert_eq!((report.imported, report.skipped), (2, 1));
+    assert!(!fixture.library.config.mute_videos);
+    let session = fixture.library.store.sessions().unwrap().remove(0);
+    let files = fixture.library.store.source_files(session.id).unwrap();
+    for file in &files {
+        assert_eq!(file.muted, !file.imported_path.ends_with("GH010043.MP4"));
+        assert!(file.media.audio_codec.is_some(), "retain the source audio metadata");
+        assert_eq!(std::fs::read(&file.original_path).unwrap(), std::fs::read(&file.imported_path).unwrap());
+    }
+    let library = open(fixture._root.path());
+    let session = library.snapshot().unwrap().remove(0);
+    let ffmpeg = library.ffmpeg();
+    let probe = MediaProbe::new(&ffmpeg);
+    for (index, flight) in session.flights.iter().enumerate() {
+        let muted = flight.recordings == 2;
+        assert!(library.native_playback(&flight.id).unwrap().iter().all(|p| p.has_audio != muted));
+        for mode in [ExportMode::Lossless, ExportMode::Parts] {
+            let destination = fixture._root.path().join(format!("flight-{index}-{mode:?}.mp4"));
+            for path in library.export(&flight.id, &destination, mode).unwrap() {
+                assert_eq!(probe.probe(&path).unwrap().audio_codec.is_none(), muted);
+            }
+        }
+    }
+    let muted_flight = session.flights.iter().find(|f| f.recordings == 2).unwrap();
+    let single = session.flights.iter().find(|f| f.recordings == 1).unwrap();
+    let target = fixture._root.path().join("single-reencode.mp4");
+    assert!(probe.probe(&library.export(&single.id, &target, ExportMode::Reencode).unwrap()[0]).unwrap().audio_codec.is_some());
+    let batch = fixture._root.path().join("batch");
+    let ids: Vec<_> = session.flights.iter().map(|f| f.id.clone()).collect();
+    library.export_flights(&ids, &batch, ExportMode::Parts, |_,_,_| {}).unwrap();
+    let exported: Vec<_> = std::fs::read_dir(&batch).unwrap().map(|f| probe.probe(&f.unwrap().path()).unwrap()).collect();
+    assert_eq!(exported.len(), 2);
+    assert_eq!(exported.iter().filter(|m| m.audio_codec.is_none()).count(), 1);
+    let skipped = library.import_with_audio(&fixture.card, "Audio choices", Some("2026-08-23"), false, false, |_| {}).unwrap();
+    assert_eq!((skipped.imported, skipped.skipped), (0, 3));
+    assert!(library.native_playback(&muted_flight.id).unwrap().iter().all(|p| !p.has_audio));
 }
