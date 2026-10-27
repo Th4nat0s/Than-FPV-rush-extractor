@@ -285,11 +285,27 @@ fn about_shows_the_requested_roles_and_letzkwad_link() {
         let output = ctx.run(input(egui::vec2(900.0, 700.0)), |ctx| app.about_window(ctx));
         positions = text_positions(&output.shapes);
     }
-    assert!(
-        positions
+    let mut previous = 0.0;
+    for expected in [
+        "Coded by",
+        "• Claude",
+        "• Codex",
+        "Driven by",
+        "• Defane",
+        "• Thanat0s",
+    ] {
+        let y = positions
             .iter()
-            .any(|(s, _)| s.contains("Coded by Claude, Codex, Driven by Defane, Thanat0s"))
-    );
+            .find(|(text, _)| text == expected)
+            .unwrap_or_else(|| panic!("missing contributor line {expected}"))
+            .1
+            .y;
+        assert!(
+            y > previous,
+            "credits must appear in role order on separate lines"
+        );
+        previous = y;
+    }
     assert!(positions.iter().any(|(s, _)| s.contains("letzkwad.lu")));
 }
 #[test]

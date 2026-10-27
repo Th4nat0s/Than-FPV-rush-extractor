@@ -22,3 +22,4 @@
 - Add import's No Sound checkbox and speaker toggle, persisting playback/export muting per recording without altering source files (#20).
 - Overlay seek, playback and audio controls on the video (#21).
 - Open videos in a compact player, add Maximize/Restore, and reset oversized saved geometry on reopening (#22).
+- Group in-app About contributors into bulleted Coded by and Driven by sections (#24).

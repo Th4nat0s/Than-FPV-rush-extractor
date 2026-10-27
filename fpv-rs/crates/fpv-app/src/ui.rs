@@ -350,7 +350,16 @@ impl App {
                         "https://github.com/defane/FPV-rush-extractor",
                     );
                     ui.add_space(8.0);
-                    ui.label("Coded by Claude, Codex, Driven by Defane, Thanat0s");
+                    for (role, names) in [
+                        ("Coded by", ["Claude", "Codex"]),
+                        ("Driven by", ["Defane", "Thanat0s"]),
+                    ] {
+                        ui.strong(role);
+                        for name in names {
+                            ui.label(format!("• {name}"));
+                        }
+                        ui.add_space(4.0);
+                    }
                     ui.hyperlink_to("letzkwad.lu", "https://letzkwad.lu/");
                 });
             });
