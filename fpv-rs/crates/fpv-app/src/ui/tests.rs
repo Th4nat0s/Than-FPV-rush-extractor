@@ -296,3 +296,87 @@ fn player_fits_viewport_when_opened_and_when_the_display_shrinks() {
     );
 }
 
+#[test]
+fn pagination_is_rendered_below_the_flight_cards() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    app.browse.view = View::Flights;
+    app.sessions.push(SessionView {
+        id: "session".into(),
+        name: "Test session".into(),
+        date: None,
+        files: vec![],
+        flights: vec![flight()],
+        segmentable: false,
+        reducible: false,
+        detection_profile: "standard".into(),
+        location: None,
+        notes: None,
+        labels: vec![],
+    });
+    let mut positions = vec![];
+    for _ in 0..3 {
+        let output = ctx.run(input(egui::vec2(900.0, 600.0)), |ctx| app.browser(ctx));
+        positions = text_positions(&output.shapes);
+    }
+    let showing = positions
+        .iter()
+        .find(|(s, _)| s.starts_with("Showing "))
+        .unwrap()
+        .1;
+    let play = positions
+        .iter()
+        .find(|(s, _)| s == "Layout test flight")
+        .unwrap()
+        .1;
+    assert!(
+        showing.y > play.y,
+        "pagination at {showing:?} precedes the cards at {play:?}"
+    );
+}
+
+#[test]
+fn pagination_stays_inside_a_narrow_view_with_many_pages() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    app.browse.view = View::Flights;
+    app.browse.page = 10;
+    app.sessions.push(SessionView {
+        id: "s".into(),
+        name: "Large session".into(),
+        date: None,
+        files: vec![],
+        flights: vec![flight(); 500],
+        segmentable: false,
+        reducible: false,
+        detection_profile: "standard".into(),
+        location: None,
+        notes: None,
+        labels: vec![],
+    });
+    let mut positions = vec![];
+    for _ in 0..4 {
+        positions = text_positions(
+            &ctx.run(input(egui::vec2(900.0, 600.0)), |ctx| {
+                app.sidebar(ctx);
+                app.browser(ctx);
+            })
+            .shapes,
+        );
+    }
+    for label in ["Showing ", "Per page"] {
+        let position = positions
+            .iter()
+            .find(|(text, _)| text.starts_with(label))
+            .unwrap()
+            .1;
+        assert!(
+            position.x >= 0.0
+                && position.x < 900.0
+                && position.y > 500.0
+                && position.y + 24.0 <= 600.0,
+            "footer {label} lies outside its bottom row: {position:?}"
+        );
+    }
+}
+

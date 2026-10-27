@@ -113,6 +113,139 @@ fn splash_logo(ui: &mut egui::Ui, texture: &egui::TextureHandle, progress: f32) 
     });
 }
 
+fn pagination_footer(
+    ui: &mut egui::Ui,
+    state: &mut browse::Browse,
+    total: usize,
+    range: &std::ops::Range<usize>,
+) {
+    let row_height = 28.0_f32.max(ui.spacing().interact_size.y);
+    let width = ui.available_width();
+    let gap = ui.spacing().item_spacing.x;
+    let counter_width = (width * 0.3).min(200.0);
+    let per_page_width = 140.0_f32.min(width * 0.28);
+    let navigation_width = (width - counter_width - per_page_width - 2.0 * gap).max(1.0);
+    let page_count = total.div_ceil(state.page_size).max(1);
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let number_width = |page: usize| {
+        ui.fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap((page + 1).to_string(), font.clone(), Color32::WHITE)
+                .size()
+                .x
+        })
+        .max(10.0)
+            + 2.0 * ui.spacing().button_padding.x
+    };
+    let navigation_size = |pages: &[Option<usize>]| {
+        56.0 + gap * (pages.len() + 1) as f32
+            + pages
+                .iter()
+                .map(|p| p.map(number_width).unwrap_or(14.0))
+                .sum::<f32>()
+    };
+    let mut pages = browse::visible_pages(state.page, page_count);
+    if navigation_size(&pages) > navigation_width {
+        let mut indexes = vec![0, state.page, page_count - 1];
+        indexes.sort_unstable();
+        indexes.dedup();
+        pages.clear();
+        for index in indexes {
+            if let Some(Some(last)) = pages.last()
+                && index > last + 1
+            {
+                pages.push(None);
+            }
+            pages.push(Some(index));
+        }
+    }
+    if navigation_size(&pages) > navigation_width {
+        pages = vec![Some(state.page)];
+    }
+    let navigation_size = navigation_size(&pages);
+    let button_widths: Vec<_> = pages
+        .iter()
+        .map(|p| p.map(number_width).unwrap_or(14.0))
+        .collect();
+    let showing = format!(
+        "Showing {}–{} of {total}",
+        range.start.saturating_add(1).min(total),
+        range.end
+    );
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(counter_width, row_height),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_min_size(egui::vec2(counter_width, row_height));
+                ui.add(egui::Label::new(RichText::new(&showing).small().weak()).truncate())
+                    .on_hover_text(&showing);
+            },
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(navigation_width, row_height),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_min_size(egui::vec2(navigation_width, row_height));
+                ui.add_space(((navigation_width - navigation_size) / 2.0).max(0.0));
+                if ui
+                    .add_enabled(
+                        state.page > 0,
+                        egui::Button::new("‹").min_size(egui::vec2(28.0, row_height)),
+                    )
+                    .clicked()
+                {
+                    state.page -= 1;
+                }
+                for (page, width) in pages.iter().zip(button_widths) {
+                    if let Some(page) = *page {
+                        let mut button = egui::Button::new((page + 1).to_string())
+                            .wrap_mode(egui::TextWrapMode::Extend);
+                        if page == state.page {
+                            button = button.fill(ACCENT);
+                        }
+                        if ui.add_sized([width, row_height], button).clicked() {
+                            state.page = page;
+                        }
+                    } else {
+                        ui.label("…");
+                    }
+                }
+                if ui
+                    .add_enabled(
+                        range.end < total,
+                        egui::Button::new("›").min_size(egui::vec2(28.0, row_height)),
+                    )
+                    .clicked()
+                {
+                    state.page += 1;
+                }
+            },
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(per_page_width, row_height),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                ui.set_min_size(egui::vec2(per_page_width, row_height));
+                egui::ComboBox::from_id_salt("page-size")
+                    .width(70.0)
+                    .selected_text(state.page_size.to_string())
+                    .show_ui(ui, |ui| {
+                        for size in [12, 24, 48, 96] {
+                            if ui
+                                .selectable_value(&mut state.page_size, size, size.to_string())
+                                .changed()
+                            {
+                                state.page = 0;
+                            }
+                        }
+                    });
+                ui.small("Per page");
+            },
+        );
+    });
+}
+
 impl App {
     pub(crate) fn about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
@@ -562,44 +695,17 @@ impl App {
                 }
             }); }
             let range = page_range(items.len(), &mut self.browse.page, self.browse.page_size);
-            let page_count = items.len().div_ceil(self.browse.page_size).max(1);
-            ui.horizontal(|ui| {
-                if ui.add_enabled(self.browse.page > 0, egui::Button::new("‹")).clicked() {
-                    self.browse.page -= 1;
-                }
-                for page in browse::visible_pages(self.browse.page, page_count) {
-                    if let Some(page) = page {
-                        let selected = self.browse.page == page;
-                        let mut button = egui::Button::new((page + 1).to_string());
-                        if selected {
-                            button = button.fill(ACCENT);
-                        }
-                        if ui.add_sized([30.0, 28.0], button).clicked() {
-                            self.browse.page = page;
-                        }
-                    } else {
-                        ui.label("…");
-                    }
-                }
-                if ui.add_enabled(range.end < items.len(), egui::Button::new("›")).clicked() {
-                    self.browse.page += 1;
-                }
-                let shown_start = range.start.saturating_add(1).min(items.len());
-                let shown_end = range.end;
-                ui.label(format!("Showing {shown_start}–{shown_end} of {}", items.len()));
-                egui::ComboBox::from_id_salt("page-size").selected_text(self.browse.page_size.to_string()).show_ui(ui, |ui| {
-                    for size in [12, 24, 48, 96] { if ui.selectable_value(&mut self.browse.page_size, size, size.to_string()).changed() { self.browse.page = 0; } }
-                });
-            });
             ui.separator();
-            egui::ScrollArea::vertical().id_salt("flight-grid").show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("flight-grid").auto_shrink([false, false]).max_height((ui.available_height() - 28.0 - 3.0 * ui.spacing().item_spacing.y).max(0.0)).show(ui, |ui| {
                 let columns = ((ui.available_width() / 270.0) as usize).clamp(1, 6);
-                for row in items[range].chunks(columns) {
+                for row in items[range.clone()].chunks(columns) {
                     ui.columns(columns, |uis| {
                         for (ui, (session, flight, figure)) in uis.iter_mut().zip(row) { self.flight_card(ui, session, flight, figure.as_ref()); }
                     }); ui.add_space(12.0);
                 }
             });
+            ui.separator();
+            pagination_footer(ui, &mut self.browse, items.len(), &range);
         });
     }
 
