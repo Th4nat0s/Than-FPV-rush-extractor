@@ -224,3 +224,75 @@ fn video_progress_times_are_drawn_inside_the_video_image() {
     }
 }
 
+#[test]
+fn player_fits_viewport_when_opened_and_when_the_display_shrinks() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    app.viewer = Some(Viewer {
+        flight: flight(),
+        player: Player::new(vec![], None, 0.0, ctx.clone()),
+        texture: Some(ctx.load_texture(
+            "test-video",
+            egui::ColorImage::filled([640, 360], Color32::GRAY),
+            Default::default(),
+        )),
+        mark: None,
+        figure: String::new(),
+        label: String::new(),
+        volume: 1.0,
+        muted: false,
+        fullscreen: false,
+        seek_time: None,
+    });
+    for size in [
+        egui::vec2(1280.0, 820.0),
+        egui::vec2(900.0, 600.0),
+        egui::vec2(640.0, 480.0),
+    ] {
+        for _ in 0..4 {
+            let _ = ctx.run(input(size), |ctx| app.player_window(ctx));
+        }
+        let rect = ctx
+            .memory(|memory| memory.area_rect(egui::Id::new("player")))
+            .unwrap();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        assert!(
+            screen.expand(1.0).contains_rect(rect),
+            "player {rect:?} exceeds display {screen:?}"
+        );
+    }
+    let size = egui::vec2(900.0, 600.0);
+    for fullscreen in [true, false] {
+        app.viewer.as_mut().unwrap().fullscreen = fullscreen;
+        for _ in 0..4 {
+            let _ = ctx.run(input(size), |ctx| app.player_window(ctx));
+        }
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("player")))
+            .unwrap();
+        assert!(
+            egui::Rect::from_min_size(egui::Pos2::ZERO, size)
+                .expand(1.0)
+                .contains_rect(rect),
+            "fullscreen transition exceeds viewport: {rect:?}"
+        );
+    }
+    app.viewer.as_mut().unwrap().fullscreen = true;
+    let mut escape = input(size);
+    escape.events.push(egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Default::default(),
+    });
+    let output = ctx.run(escape, |ctx| app.player_window(ctx));
+    assert!(!app.viewer.as_ref().unwrap().fullscreen);
+    assert!(
+        output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .iter()
+            .any(|command| matches!(command, egui::ViewportCommand::Fullscreen(false)))
+    );
+}
+

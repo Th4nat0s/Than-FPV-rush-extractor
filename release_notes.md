@@ -16,3 +16,4 @@
 - Enlarge the splash to 2.5 times its initial size while fading out and remove its Close button (#5).
 - Include the LetzKwad logo, exact role credits and website in both the native macOS and in-app About views (#7).
 - Overlay seek, playback and audio controls on the video (#21).
+- Keep the player inside the visible viewport, including after shrinking the app window (#17).

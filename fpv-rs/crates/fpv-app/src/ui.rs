@@ -816,21 +816,47 @@ impl App {
         }
         let mut open = true;
         let fullscreen = viewer.fullscreen;
+        let bounds = ctx.content_rect().shrink(8.0);
+        let frame = egui::Frame::window(&ctx.style());
+        let heading_font = egui::TextStyle::Heading.resolve(&ctx.style());
+        let title_height = ctx
+            .fonts_mut(|fonts| fonts.row_height(&heading_font))
+            .max(ctx.style().spacing.interact_size.y)
+            + 2.0 * frame.inner_margin.sum().y
+            + frame.stroke.width;
+        let content_limit =
+            (bounds.size() - frame.total_margin().sum() - egui::vec2(0.0, title_height))
+                .max(egui::vec2(1.0, 1.0));
         let mut window = egui::Window::new(flight_name(&viewer.flight))
             .id(egui::Id::new("player"))
             .collapsible(false)
+            .constrain_to(bounds)
+            .max_size(content_limit)
+            .vscroll(true)
             .resizable(!fullscreen);
         if fullscreen {
-            window = window.title_bar(false).fixed_rect(ctx.content_rect());
+            window = window
+                .title_bar(false)
+                .frame(egui::Frame::NONE)
+                .fixed_rect(ctx.content_rect());
         } else {
             window = window
                 .open(&mut open)
-                .default_width(1200.0)
-                .default_height(760.0);
+                .default_size(egui::vec2(1200.0, 760.0).min(content_limit));
         }
         let mut close_requested = false;
         window.show(ctx, |ui| {
-            self.player_contents(ui, &mut viewer, &mut close_requested, ctx, (ctx.content_rect().height() - 80.0).max(1.0))
+            self.player_contents(
+                ui,
+                &mut viewer,
+                &mut close_requested,
+                ctx,
+                if fullscreen {
+                    ctx.content_rect().height()
+                } else {
+                    content_limit.y
+                },
+            )
         });
         if close_requested {
             open = false;
@@ -1016,7 +1042,7 @@ impl App {
                 ui.add(
                     egui::TextEdit::singleline(&mut viewer.label)
                         .hint_text("Add a tag…")
-                        .desired_width(ui.available_width() - 55.0),
+                        .desired_width((ui.available_width() - 80.0).max(20.0)),
                 );
                 if ui.button("Add").clicked() && !viewer.label.trim().is_empty() {
                     let id = viewer.flight.id.clone();
@@ -1072,7 +1098,7 @@ impl App {
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut viewer.figure)
                         .hint_text("Figure name")
-                        .desired_width(ui.available_width() - 55.0),
+                        .desired_width((ui.available_width() - 80.0).max(20.0)),
                 );
                 let enter =
                     response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
