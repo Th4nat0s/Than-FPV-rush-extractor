@@ -97,7 +97,10 @@ impl Dialog {
         }
     }
     pub fn import(folder: Option<PathBuf>, name: String) -> Self {
+        let today = chrono::Local::now().date_naive();
         Self {
+            date: Some(today),
+            calendar_month: today.with_day(1).unwrap(),
             path: folder
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default(),
@@ -1025,6 +1028,20 @@ fn format_date(date: Option<NaiveDate>) -> Option<String> {
 #[cfg(test)]
 mod date_picker_tests {
     use super::*;
+
+    #[test]
+    fn new_import_selects_today_and_still_allows_clearing_the_date() {
+        let before = chrono::Local::now().date_naive();
+        let mut dialog = Dialog::import(None, "Test import".into());
+        let after = chrono::Local::now().date_naive();
+        assert!(dialog.date == Some(before) || dialog.date == Some(after));
+        assert_eq!(
+            dialog.calendar_month,
+            dialog.date.unwrap().with_day(1).unwrap()
+        );
+        dialog.date = None;
+        assert_eq!(format_date(dialog.date), None);
+    }
 
     #[test]
     fn formats_selected_day_for_the_library_and_preserves_clear() {
