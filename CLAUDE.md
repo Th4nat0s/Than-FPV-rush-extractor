@@ -96,6 +96,11 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   muted/audible flights normalize audio and synthesize silence only for muted
   parts; lossless exports keep the original video packets. Reduction preserves
   source audio and carries the policy onto its pieces.
+- `boundary.rs` edits source-frame ranges with left/start and right/exclusive-end
+  handles. Its bounded native source preview decodes at the recording's own
+  cadence without the player's normal display-rate conversion. Decoder restarts
+  are coalesced while dragging; the final requested frame is retained. Only
+  Save this clip persists the draft, through `Library::update_clip`.
 - macOS' system About panel is separate from egui's About window. Packaging
   generates `Credits.rtfd` with the LetzKwad logo, credits and links using the
   host's AppKit tools; only the rich-text/image assets are redistributed.

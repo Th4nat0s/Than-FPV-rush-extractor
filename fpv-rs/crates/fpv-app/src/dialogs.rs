@@ -2,7 +2,7 @@
 //! come from the same library methods which perform the destructive action.
 use crate::{
     ACCENT, App, Reply,
-    browse::{clock, flight_name, labels},
+    browse::{flight_name, labels},
 };
 use chrono::{Datelike, Months, NaiveDate};
 use eframe::egui;
@@ -61,6 +61,10 @@ pub(crate) struct Dialog {
     budgets: [f64; 2],
     mute_videos: bool,
     do_not_show_splash: bool,
+    editor_clip: usize,
+    editor_loading: Option<String>,
+    editor_source: Option<(String, fpv_library::NativeSegment)>,
+    editor_preview: Option<crate::boundary::SourcePreview>,
 }
 
 impl Dialog {
@@ -94,6 +98,10 @@ impl Dialog {
             budgets: [10.0, 2.0],
             mute_videos: false,
             do_not_show_splash: false,
+            editor_clip: 0,
+            editor_loading: None,
+            editor_source: None,
+            editor_preview: None,
         }
     }
     pub fn import(folder: Option<PathBuf>, name: String) -> Self {
@@ -209,6 +217,7 @@ impl Dialog {
 
     pub fn reply(&mut self, reply: Reply) {
         match reply {
+            Reply::BoundarySource { clip, source } => self.editor_source = Some((clip, source)),
             Reply::Folders(folders) => self.folders = Some(folders),
             Reply::Reduce(preview) => self.reduction = Some(preview),
             Reply::Relocation(preview) => self.relocation = Some(preview),
@@ -234,9 +243,16 @@ impl App {
             return;
         };
         let mut close = false;
-        egui::Modal::new(egui::Id::new("form")).show(ctx, |ui| {
+        let mut modal = egui::Modal::new(egui::Id::new("form"));
+        if dialog.kind == Kind::Editor {
+            modal.area = modal.area.default_size(egui::vec2(
+                (ctx.content_rect().width() - 32.0).min(1040.0),
+                (ctx.content_rect().height() - 48.0).max(120.0),
+            ));
+        }
+        modal.show(ctx, |ui| {
             ui.set_width(if dialog.kind == Kind::Editor {
-                760.0
+                (ctx.content_rect().width() - 64.0).clamp(240.0, 1000.0)
             } else {
                 520.0
             });
@@ -635,101 +651,65 @@ impl App {
                 }
             }
             Kind::Editor => {
-                ui.label("Boundaries use source frames. Display playback is never used to choose an export boundary.");
                 if let Some(flight) = &mut dialog.flight {
+                    if flight.clips.is_empty() {
+                        ui.label("No source clips available.");
+                        return;
+                    }
                     egui::ScrollArea::vertical()
-                        .max_height(520.0)
+                        .max_height((ui.ctx().content_rect().height() - 180.0).max(120.0))
                         .show(ui, |ui| {
-                            for clip in &mut flight.clips {
-                                ui.push_id(&clip.id, |ui| {
-                                    ui.label(format!("{} · {:.6} fps", clip.file_name, clip.fps));
-                                    for (name, frame, upper) in [
-                                        ("Start", &mut clip.start_frame, clip.last_frame),
-                                        (
-                                            "End (exclusive)",
-                                            &mut clip.end_frame,
-                                            clip.last_frame.saturating_add(1),
-                                        ),
-                                    ] {
-                                        ui.horizontal(|ui| {
-                                            ui.label(name);
-                                            ui.add(egui::DragValue::new(frame).range(0..=upper));
-                                            for (label, delta) in [
-                                                ("−1s", -(clip.fps.round() as i64)),
-                                                ("−¼s", -(clip.fps / 4.0).round() as i64),
-                                                ("−1f", -1),
-                                                ("+1f", 1),
-                                                ("+¼s", (clip.fps / 4.0).round() as i64),
-                                                ("+1s", clip.fps.round() as i64),
-                                            ] {
-                                                if ui.small_button(label).clicked() {
-                                                    *frame =
-                                                        frame.saturating_add(delta).clamp(0, upper);
-                                                }
-                                            }
-                                        });
-                                        ui.add(egui::Slider::new(frame, 0..=upper).text(name));
-                                        let source_frame = (*frame).min(clip.last_frame).max(0);
-                                        let key =
-                                            format!("preview:{}:{source_frame}", clip.file_id);
-                                        if ui
-                                            .button(format!(
-                                                "Show source at {}",
-                                                clock(source_frame as f64 / clip.fps)
-                                            ))
-                                            .clicked()
-                                            && self.requested.insert(key.clone())
-                                        {
-                                            let id = clip.file_id.clone();
-                                            let key = key.clone();
-                                            self.submit(
-                                                "Source boundary frame",
-                                                true,
-                                                move |library, _| {
-                                                    Ok(Reply::Image {
-                                                        key,
-                                                        thumbnail: library
-                                                            .preview_frame(&id, source_frame)?,
-                                                    })
-                                                },
-                                            );
-                                        }
-                                        if let Some(path) = self.thumbnails.get(&key).cloned()
-                                            && let Some(texture) = self.images.get(ui.ctx(), &path)
-                                        {
-                                            ui.add(
-                                                egui::Image::new(&texture)
-                                                    .max_size(egui::vec2(300.0, 160.0)),
-                                            );
-                                        }
+                            egui::ComboBox::from_id_salt("boundary-source-clip")
+                                .selected_text(format!("{} / {} · {}", dialog.editor_clip + 1, flight.clips.len(), flight.clips[dialog.editor_clip].file_name))
+                                .show_ui(ui, |ui| {
+                                    for (index, clip) in flight.clips.iter().enumerate() {
+                                        ui.selectable_value(&mut dialog.editor_clip, index, format!("{} · {}", index + 1, clip.file_name));
                                     }
-                                    if clip.start_frame >= clip.end_frame {
-                                        ui.colored_label(
-                                            egui::Color32::LIGHT_RED,
-                                            "Start must precede end",
-                                        );
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            clip.start_frame < clip.end_frame,
-                                            egui::Button::new("Save this clip"),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.viewer = None;
-                                        let (id, start, end) =
-                                            (clip.id.clone(), clip.start_frame, clip.end_frame);
-                                        self.submit(
-                                            "Save clip boundary",
-                                            false,
-                                            move |library, _| {
-                                                library.update_clip(&id, start, end)?;
-                                                Ok(Reply::Done("Boundaries saved".into()))
-                                            },
-                                        );
-                                    }
-                                    ui.separator();
                                 });
+                            let clip = &mut flight.clips[dialog.editor_clip];
+                            ui.small(format!("{} · {:.6} fps · source frames", clip.file_name, clip.fps));
+                            if dialog.editor_loading.as_deref() != Some(&clip.id) {
+                                dialog.editor_preview = None;
+                                dialog.editor_source = None;
+                                dialog.editor_loading = Some(clip.id.clone());
+                                let id = clip.file_id.clone();
+                                let clip_id = clip.id.clone();
+                                let flight_id = flight.id.clone();
+                                self.dialog_request = Some(self.submit("Open boundary source", true, move |library, progress| {
+                                    let report = library.download_flight(&flight_id, |step| progress.count(step.file, step.files, step.line))?;
+                                    if !report.failed.is_empty() {
+                                        return Err(fpv_library::LibraryError::Invalid(format!("Source download failed: {:?}", report.failed)));
+                                    }
+                                    Ok(Reply::BoundarySource { clip: clip_id, source: library.native_source_playback(&id)? })
+                                }));
+                            }
+                            if let Some((id, source)) = dialog.editor_source.take() && id == clip.id {
+                                let muted = self.config.mute_videos || !source.has_audio;
+                                dialog.editor_preview = Some(crate::boundary::SourcePreview::new(clip, source, self.tools.clone(), muted, ui.ctx()));
+                            }
+                            if let Some(preview) = &mut dialog.editor_preview {
+                                self.notices.extend(preview.show(ui, clip));
+                            } else {
+                                crate::boundary::preview_canvas(ui, None);
+                                let failed = self.tasks.iter().any(|task| Some(task.id) == self.dialog_request && !task.running && task.failed);
+                                if failed {
+                                    ui.label("Source preview unavailable. See Tasks for the error.");
+                                    if ui.button("Retry preview").clicked() { dialog.editor_loading = None; }
+                                } else { ui.label("Preparing source preview…"); }
+                            }
+                            ui.separator();
+                            if let Some(frame) = crate::boundary::trim_timeline(ui, clip)
+                                && let Some(preview) = &mut dialog.editor_preview {
+                                preview.seek_frame(frame);
+                                ui.ctx().request_repaint();
+                            }
+                            ui.small("Drag the left edge for start and the right edge for end. End is exclusive.");
+                            if ui.button("Save this clip").clicked() {
+                                let (id, start, end) = (clip.id.clone(), clip.start_frame, clip.end_frame);
+                                dialog.saving = Some(self.submit("Save clip boundary", false, move |library, _| {
+                                    library.update_clip(&id, start, end)?;
+                                    Ok(Reply::Done("Boundaries saved".into()))
+                                }));
                             }
                         });
                 }

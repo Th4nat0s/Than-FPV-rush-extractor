@@ -1317,9 +1317,9 @@ impl Library {
             .ok_or_else(|| LibraryError::NotFound(format!("clip {id}")))?;
         let file = self.store.source_file(clip.source_file_id)?
             .ok_or_else(|| LibraryError::NotFound(format!("recording of clip {id}")))?;
-        let last = views::last_frame(&file);
-        let start = start_frame.clamp(0, (last - 1).max(0));
-        let end = end_frame.clamp(start + 1, last.max(start + 1));
+        let last = views::last_frame(&file).max(0);
+        let start = start_frame.clamp(0, last);
+        let end = end_frame.clamp(start + 1, last.saturating_add(1));
         Ok(self.store.update_clip(&Clip { start_frame: start, end_frame: end, ..clip })?)
     }
 
@@ -1749,6 +1749,20 @@ impl Library {
     }
 
     // Playback
+
+    /// Full source timeline for non-destructive boundary previews, including
+    /// frames outside the currently selected clip.
+    pub fn native_source_playback(&self, file: &str) -> Result<NativeSegment> {
+        let file = self.store.source_file(parse(file)?)?
+            .ok_or_else(|| LibraryError::NotFound(format!("recording {file}")))?;
+        Ok(NativeSegment {
+            segment: Segment { path: PathBuf::from(&file.imported_path), start: 0.0,
+                end: file.media.duration, offset: 0.0 },
+            width: file.media.width, height: file.media.height,
+            has_audio: file.media.audio_codec.is_some() && !file.muted,
+            all_intra: file.media.is_all_intra(),
+        })
+    }
 
     /// Native playback reads every codec directly, including DVR MJPEG. Each
     /// part uses its own source clock, even when adjacent file rates disagree.

@@ -1146,6 +1146,7 @@ impl App {
                     ui.close();
                 }
                 if ui.button("Edit boundaries…").clicked() {
+                    self.viewer = None;
                     self.dialog = Some(Dialog::editor(flight));
                     ui.close();
                 }

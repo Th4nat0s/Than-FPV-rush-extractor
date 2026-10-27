@@ -1029,3 +1029,57 @@ fn video_click_buttons_and_space_share_playback_state() {
         "typing spaces must not pause playback"
     );
 }
+
+#[test]
+fn boundary_editor_places_start_left_and_end_right() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut flight = flight();
+    flight.clips.push(fpv_library::ClipView {
+        id: "clip".into(),
+        file_id: "source".into(),
+        file_name: "DVR.avi".into(),
+        start_frame: 10,
+        end_frame: 80,
+        last_frame: 99,
+        fps: 25.0,
+        file_duration: 4.0,
+        entry: "".into(),
+        exit: "".into(),
+        thumbnail: None,
+    });
+    app.dialog = Some(Dialog::editor(&flight));
+    let mut output = None;
+    for _ in 0..4 {
+        output = Some(ctx.run(input(egui::vec2(1280.0, 900.0)), |ctx| {
+            app.dialog_window(ctx)
+        }));
+    }
+    let texts = text_positions(&output.unwrap().shapes);
+    let start = texts
+        .iter()
+        .find(|(s, _)| s == "Start")
+        .unwrap_or_else(|| panic!("start handle label missing: {texts:?}"))
+        .1;
+    let end = texts
+        .iter()
+        .find(|(s, _)| s == "End (exclusive)")
+        .expect("end handle label")
+        .1;
+    assert!(
+        end.x > start.x + 200.0 && (end.y - start.y).abs() < 10.0,
+        "start should be aligned left and end right on the same trim rail: {start:?}, {end:?}"
+    );
+    for size in [egui::vec2(800.0, 600.0), egui::vec2(640.0, 480.0)] {
+        for _ in 0..4 {
+            let _ = ctx.run(input(size), |ctx| app.dialog_window(ctx));
+        }
+        let rect = ctx.memory(|m| m.area_rect(egui::Id::new("form"))).unwrap();
+        assert!(
+            egui::Rect::from_min_size(egui::Pos2::ZERO, size)
+                .expand(1.0)
+                .contains_rect(rect),
+            "boundary editor must fit smaller displays: {rect:?} in {size:?}"
+        );
+    }
+}

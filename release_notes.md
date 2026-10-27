@@ -29,3 +29,4 @@
 - Place the audible player volume slider vertically at the right edge of the video (#26).
 - Remove the dark controls backdrop so seek and volume controls sit directly over the video (#27).
 - Toggle playback by clicking the video or pressing Space while retaining Play/Pause, Replay and speaker buttons beneath the video (#31).
+- Add a large native source preview and draggable left/start and right/end trim handles, with source-frame cadence, numeric fine adjustment and non-destructive per-clip saving (#28).

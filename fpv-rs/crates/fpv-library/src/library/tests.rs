@@ -198,7 +198,7 @@ fn edits_titles_likes_names_and_boundaries() {
     fixture.library.set_flight_title(&take.id, "  Bando  ").unwrap();
     assert!(fixture.library.toggle_like(&take.id).unwrap());
     fixture.library.rename_session(&session.id, "Letz Kwad — GoPro").unwrap();
-    // Clamped to the recording: an end past the last frame lands on it.
+    // The end is exclusive, so the final source frame must remain selectable.
     fixture.library.update_clip(&take.clips[0].id, 6, 10_000).unwrap();
 
     let session = fixture.library.snapshot().unwrap().remove(0);
@@ -206,7 +206,7 @@ fn edits_titles_likes_names_and_boundaries() {
     assert_eq!(session.name, "Letz Kwad — GoPro");
     assert_eq!(take.title.as_deref(), Some("Bando"));
     assert!(take.liked);
-    assert_eq!((take.clips[0].start_frame, take.clips[0].end_frame), (6, take.clips[0].last_frame));
+    assert_eq!((take.clips[0].start_frame, take.clips[0].end_frame), (6, take.clips[0].last_frame + 1));
     // A boundary edit re-keys the flight, so its strips and proxy go stale.
     assert!(!take.cache_key.ends_with("-0-30"));
     fixture.library.set_flight_title(&take.id, "").unwrap();
@@ -1425,4 +1425,32 @@ fn no_sound_import_persists_and_silences_only_new_recordings_in_playback_and_exp
     let skipped = library.import_with_audio(&fixture.card, "Audio choices", Some("2026-08-23"), false, false, |_| {}).unwrap();
     assert_eq!((skipped.imported, skipped.skipped), (0, 3));
     assert!(library.native_playback(&muted_flight.id).unwrap().iter().all(|p| !p.has_audio));
+}
+
+#[test]
+fn source_boundary_previews_and_multipart_edits_are_non_destructive() {
+    let (fixture, session) = imported();
+    let flight = &session.flights[0];
+    assert_eq!(flight.clips.len(), 2);
+    let mut originals = vec![];
+    for clip in &flight.clips {
+        let source = fixture.library.native_source_playback(&clip.file_id).unwrap();
+        assert_eq!((source.segment.start, source.segment.end, source.segment.offset), (0.0, clip.file_duration, 0.0));
+        assert!(source.has_audio);
+        originals.push((source.segment.path.clone(), std::fs::read(&source.segment.path).unwrap()));
+        fixture.library.update_clip(&clip.id, 1, clip.last_frame + 1).unwrap();
+    }
+    // Discarding an unsaved draft leaves the persisted selection untouched.
+    let mut draft = fixture.library.snapshot().unwrap()[0].flights[0].clips[0].clone();
+    draft.start_frame = 9;
+    drop(draft);
+    let reopened = open(fixture._root.path());
+    let snapshot = reopened.snapshot().unwrap();
+    for (edited, original) in snapshot[0].flights[0].clips.iter().zip(&flight.clips) {
+        assert_eq!((edited.start_frame, edited.end_frame), (1, original.last_frame + 1));
+    }
+    for (path, bytes) in originals { assert_eq!(std::fs::read(path).unwrap(), bytes); }
+    let file = fixture.library.store.source_file(parse(&flight.clips[0].file_id).unwrap()).unwrap().unwrap();
+    fixture.library.store.save_source_files(&[SourceFile { muted: true, ..file }]).unwrap();
+    assert!(!fixture.library.native_source_playback(&flight.clips[0].file_id).unwrap().has_audio);
 }

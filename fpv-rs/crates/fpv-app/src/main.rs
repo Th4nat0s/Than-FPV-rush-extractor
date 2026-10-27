@@ -1,5 +1,6 @@
 //! Native desktop front end. All domain actions go through fpv-library.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod boundary;
 mod browse;
 mod dialogs;
 mod images;

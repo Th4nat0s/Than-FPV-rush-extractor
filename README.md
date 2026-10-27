@@ -226,3 +226,9 @@ available alongside their download. See https://ffmpeg.org/legal.html.
 FFmpeg 8.1.3 source: https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz
 
 The startup logo approaches continuously from a small distant size and fades as it zooms forward, without a pause. Disable it with Do not show splash in Settings.
+
+Edit boundaries opens a source-video preview with a trim range: drag its left
+handle to move the start, and its right handle to move the exclusive end. The
+preview follows the edited source frame; numeric fields allow fine adjustment.
+Select each source clip for multipart flights, then Save this clip to persist its
+range. Closing without saving discards the draft and never changes source files.

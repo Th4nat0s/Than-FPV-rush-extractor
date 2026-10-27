@@ -48,6 +48,7 @@ struct State {
     volume: Mutex<f32>,
     video_done: AtomicBool,
     context: eframe::egui::Context,
+    source_fps: Option<f64>,
 }
 
 impl State {
@@ -104,6 +105,7 @@ pub struct Player {
     tools: Option<PathBuf>,
     parts: Vec<NativeSegment>,
     context: eframe::egui::Context,
+    source_fps: Option<f64>,
 }
 
 impl Player {
@@ -124,7 +126,20 @@ impl Player {
         context: eframe::egui::Context,
         volume: f32,
     ) -> Self {
-        Self::start(parts, tools, at, context, volume, volume > 0.0)
+        Self::start(parts, tools, at, context, volume, volume > 0.0, None)
+    }
+
+    /// Boundary previews decode every original source frame, without the normal
+    /// display-rate conversion. Preserve this mode across seeks.
+    pub fn new_source_preview(
+        parts: Vec<NativeSegment>,
+        tools: Option<PathBuf>,
+        at: f64,
+        context: eframe::egui::Context,
+        volume: f32,
+        fps: f64,
+    ) -> Self {
+        Self::start(parts, tools, at, context, volume, volume > 0.0, Some(fps))
     }
 
     fn start(
@@ -134,6 +149,7 @@ impl Player {
         context: eframe::egui::Context,
         volume: f32,
         audio_enabled: bool,
+        source_fps: Option<f64>,
     ) -> Self {
         let duration = parts
             .last()
@@ -162,6 +178,7 @@ impl Player {
             volume: Mutex::new(volume.clamp(0.0, 1.0)),
             video_done: AtomicBool::new(false),
             context: context.clone(),
+            source_fps,
         });
         let s = state.clone();
         let t = tools.clone();
@@ -200,6 +217,7 @@ impl Player {
         }
         Self {
             state,
+            source_fps,
             audio_enabled,
             tools,
             parts,
@@ -258,6 +276,7 @@ impl Player {
             self.context.clone(),
             volume,
             self.audio_enabled,
+            self.source_fps,
         );
         self.pause(paused);
     }
@@ -266,7 +285,11 @@ impl Player {
         let mut frames = self.state.frames.lock().ok()?;
         let time = self.position();
         let mut latest = None;
-        while frames.front().is_some_and(|frame| frame.at <= time + 0.025) {
+        let tolerance = self.source_fps.map(|fps| 0.25 / fps).unwrap_or(0.025);
+        while frames
+            .front()
+            .is_some_and(|frame| frame.at <= time + tolerance)
+        {
             latest = frames.pop_front();
         }
         latest
@@ -441,7 +464,11 @@ fn decode_video(
             args.extend([
                 "-an".into(),
                 "-vf".into(),
-                format!("fps={DISPLAY_RATE},scale={width}:{height}"),
+                if state.source_fps.is_some() {
+                    format!("scale={width}:{height}")
+                } else {
+                    format!("fps={DISPLAY_RATE},scale={width}:{height}")
+                },
                 "-pix_fmt".into(),
                 "rgb24".into(),
                 "-f".into(),
@@ -471,7 +498,9 @@ fn decode_video(
                 }
                 decoded = true;
                 let frame = VideoFrame {
-                    at: part.segment.offset + skip + index as f64 / DISPLAY_RATE,
+                    at: part.segment.offset
+                        + skip
+                        + index as f64 / state.source_fps.unwrap_or(DISPLAY_RATE),
                     width,
                     height,
                     rgb,
@@ -865,7 +894,14 @@ mod tests {
             has_audio: false,
             all_intra: true,
         }];
-        let mut player = Player::new(parts, tools, 0.0, eframe::egui::Context::default());
+        let mut player = Player::new_source_preview(
+            parts,
+            tools,
+            0.0,
+            eframe::egui::Context::default(),
+            0.0,
+            25.0,
+        );
         player.pause(true);
         let wait_frame = |player: &Player| {
             let deadline = Instant::now() + Duration::from_secs(10);
@@ -893,6 +929,20 @@ mod tests {
         assert!((sought.at - 0.5).abs() < 0.04);
         assert!(player.paused());
         assert_ne!(first.rgb, sought.rgb);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let frames = player.state.frames.lock().unwrap();
+            if frames.len() >= 2 {
+                assert!(
+                    (frames[1].at - frames[0].at - 1.0 / 25.0).abs() < 0.000001,
+                    "boundary previews must keep source cadence across seeks"
+                );
+                break;
+            }
+            drop(frames);
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
         let state = player.state.clone();
         drop(player);
         let deadline = Instant::now() + Duration::from_secs(5);

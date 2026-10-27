@@ -20,6 +20,10 @@ pub enum Reply {
         at: f64,
         parts: Vec<NativeSegment>,
     },
+    BoundarySource {
+        clip: String,
+        source: NativeSegment,
+    },
     Image {
         key: String,
         thumbnail: Thumbnail,
