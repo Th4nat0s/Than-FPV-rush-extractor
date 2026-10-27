@@ -1083,3 +1083,38 @@ fn boundary_editor_places_start_left_and_end_right() {
         );
     }
 }
+
+#[test]
+fn splash_has_no_white_card_or_border() {
+    fn white_panel(shape: &egui::Shape) -> bool {
+        match shape {
+            egui::Shape::Rect(r) => {
+                r.brush.is_none()
+                    && r.fill.a() > 0
+                    && r.fill.r() == r.fill.a()
+                    && r.fill.g() == r.fill.a()
+                    && r.fill.b() == r.fill.a()
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().any(white_panel),
+            _ => false,
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut output = None;
+    for _ in 0..4 {
+        app.splash_started = Some(std::time::Instant::now() - Duration::from_millis(400));
+        output = Some(ctx.run(input(egui::vec2(900.0, 700.0)), |ctx| {
+            app.splash_window(ctx)
+        }));
+    }
+    let shapes = output.unwrap().shapes;
+    assert!(
+        texture_rect(&shapes, app.splash_texture.id()).is_some(),
+        "logo must remain visible"
+    );
+    assert!(
+        !shapes.iter().any(|s| white_panel(&s.shape)),
+        "transparent splash must not paint a white card or border"
+    );
+}

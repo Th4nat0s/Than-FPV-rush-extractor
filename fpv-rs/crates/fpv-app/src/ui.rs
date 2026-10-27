@@ -240,17 +240,11 @@ fn splash_logo(ui: &mut egui::Ui, texture: &egui::TextureHandle, progress: f32) 
     let opacity = (1.0 - (progress - 0.55).max(0.0) / 0.45).clamp(0.0, 1.0);
     let logo_size = 48.0 + 752.0 * progress.powf(1.5);
     ui.vertical_centered(|ui| {
-        egui::Frame::new()
-            .fill(Color32::from_white_alpha((255.0 * opacity) as u8))
-            .corner_radius(8.0)
-            .inner_margin(8.0)
-            .show(ui, |ui| {
-                ui.add(
-                    egui::Image::new(texture)
-                        .fit_to_exact_size(logo_size * egui::vec2(1.0, 1.4))
-                        .tint(Color32::from_white_alpha((255.0 * opacity) as u8)),
-                );
-            });
+        ui.add(
+            egui::Image::new(texture)
+                .fit_to_exact_size(logo_size * egui::vec2(1.0, 1.4))
+                .tint(Color32::from_white_alpha((255.0 * opacity) as u8)),
+        );
     });
 }
 
@@ -440,14 +434,13 @@ impl App {
             self.splash_started = None;
             return;
         }
-        let opacity = 1.0 - progress;
         egui::Window::new("Letz Kwad")
             .id(egui::Id::new("startup-splash"))
             .constrain(false)
             .collapsible(false)
             .resizable(false)
             .title_bar(false)
-            .frame(egui::Frame::new().fill(Color32::from_white_alpha((32.0 * opacity) as u8)))
+            .frame(egui::Frame::NONE)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| splash_logo(ui, &self.splash_texture, progress));
         ctx.request_repaint_after(Duration::from_millis(16));
