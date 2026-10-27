@@ -90,6 +90,9 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   stream probing needs it to retain H.264/HEVC headers before indexed seeks.
   The player tries input-side seeking, with a sequential fallback if no video
   frame is emitted. See `docs/player-buffering.md` and the generated AVI fixture.
+- macOS' system About panel is separate from egui's About window. Packaging
+  generates `Credits.rtfd` with the LetzKwad logo, credits and links using the
+  host's AppKit tools; only the rich-text/image assets are redistributed.
 - **SQLite through rusqlite** (`bundled`), on the schema GRDB created for the macOS app (§3.3).
 - **Frame analysis in plain portable code, no SIMD library, no OpenCV** (§9.7). The detector's
   metrics are a per-block Laplacian variance, a lag-1 correlation and a correlation on a

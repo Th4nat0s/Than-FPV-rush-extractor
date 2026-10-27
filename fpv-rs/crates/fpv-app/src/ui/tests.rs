@@ -129,3 +129,21 @@ fn splash_visibly_reaches_twice_its_initial_size_before_becoming_transparent() {
     assert!(leaving.1 > 0 && leaving.1 < initial.1);
 }
 
+#[test]
+fn about_shows_the_requested_roles_and_letzkwad_link() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    app.show_about = true;
+    let mut positions = vec![];
+    for _ in 0..3 {
+        let output = ctx.run(input(egui::vec2(900.0, 700.0)), |ctx| app.about_window(ctx));
+        positions = text_positions(&output.shapes);
+    }
+    assert!(
+        positions
+            .iter()
+            .any(|(s, _)| s.contains("Coded by Claude, Codex, Driven by Defane, Thanat0s"))
+    );
+    assert!(positions.iter().any(|(s, _)| s.contains("letzkwad.lu")));
+}
+

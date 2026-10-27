@@ -142,8 +142,8 @@ impl App {
                         "https://github.com/defane/FPV-rush-extractor",
                     );
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Developers").strong());
-                    ui.label("Claude · Codex · Defane · Thanat0s");
+                    ui.label("Coded by Claude, Codex, Driven by Defane, Thanat0s");
+                    ui.hyperlink_to("letzkwad.lu", "https://letzkwad.lu/");
                 });
             });
     }

@@ -39,6 +39,8 @@ if [ "$PLATFORM" = macos ]; then
     lipo -create "${inputs[@]}" -output "$APP/Contents/MacOS/fpv-rush"
     cp -R "$RESOURCES/." "$APP/Contents/Resources/"
     cp "$ROOT/fpv-rs/crates/fpv-app/icons/icon.icns" "$APP/Contents/Resources/icon.icns"
+    swift "$ROOT/packaging/macos/build-credits.swift" \
+        "$ROOT/docs/logo-letz_kwad-full-transparent.png" "$APP/Contents/Resources/Credits.rtfd"
     cp "$ROOT/LICENSE-MIT" "$ROOT/LICENSE-APACHE" "$APP/Contents/Resources/licenses/"
     sed "s/@VERSION@/$VERSION/g" "$ROOT/packaging/macos/Info.plist.in" > "$APP/Contents/Info.plist"
     plutil -lint "$APP/Contents/Info.plist"
