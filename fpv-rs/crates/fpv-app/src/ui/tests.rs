@@ -91,7 +91,7 @@ fn input(size: egui::Vec2) -> egui::RawInput {
 fn player_fits_viewport_when_opened_and_when_the_display_shrinks() {
     let ctx = egui::Context::default();
     let mut app = app(&ctx);
-    app.viewer = Some(Viewer {
+    let new_viewer = || Viewer {
         flight: flight(),
         player: Player::new(vec![], None, 0.0, ctx.clone()),
         texture: Some(ctx.load_texture(
@@ -105,8 +105,87 @@ fn player_fits_viewport_when_opened_and_when_the_display_shrinks() {
         volume: 1.0,
         muted: false,
         fullscreen: false,
+        window: Default::default(),
         seek_time: None,
-    });
+    };
+    app.viewer = Some(new_viewer());
+    for _ in 0..4 {
+        let _ = ctx.run(input(egui::vec2(1280.0, 820.0)), |ctx| {
+            app.player_window(ctx)
+        });
+    }
+    let initial = ctx
+        .memory(|m| m.area_rect(egui::Id::new("player")))
+        .unwrap();
+    assert!(
+        initial.width() <= 1050.0 && initial.height() <= 680.0,
+        "player should open compact, not fill the viewport: {initial:?}"
+    );
+    assert!(!app.viewer.as_ref().unwrap().fullscreen);
+    fn click_control(ctx: &egui::Context, app: &mut App, label: &str) {
+        let size = egui::vec2(1280.0, 820.0);
+        let output = ctx.run(input(size), |ctx| app.player_window(ctx));
+        let position = text_positions(&output.shapes)
+            .into_iter()
+            .find(|(text, _)| text == label)
+            .expect("visible player control")
+            .1
+            + egui::vec2(5.0, 5.0);
+        for pressed in [true, false] {
+            let mut raw = input(size);
+            raw.events = vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ];
+            let _ = ctx.run(raw, |ctx| app.player_window(ctx));
+        }
+        for _ in 0..4 {
+            let _ = ctx.run(input(size), |ctx| app.player_window(ctx));
+        }
+    }
+    click_control(&ctx, &mut app, "Maximize");
+    let maximized = ctx
+        .memory(|m| m.area_rect(egui::Id::new("player")))
+        .unwrap();
+    assert!(maximized.width() > initial.width() + 100.0);
+    assert!(maximized.height() > initial.height() + 100.0);
+    assert!(
+        !app.viewer.as_ref().unwrap().fullscreen,
+        "maximize must keep OS windowed"
+    );
+    click_control(&ctx, &mut app, "Restore");
+    let restored = ctx
+        .memory(|m| m.area_rect(egui::Id::new("player")))
+        .unwrap();
+    assert!(
+        (restored.size() - initial.size()).length() < 2.0
+            && restored.min.distance(initial.min) < 2.0,
+        "restore should return to {initial:?}, got {restored:?}"
+    );
+    click_control(&ctx, &mut app, "Maximize");
+    click_control(&ctx, &mut app, "×");
+    assert!(
+        app.viewer.is_none(),
+        "close must dismiss the maximized player"
+    );
+    app.viewer = Some(new_viewer());
+    for _ in 0..4 {
+        let _ = ctx.run(input(egui::vec2(1280.0, 820.0)), |ctx| {
+            app.player_window(ctx)
+        });
+    }
+    let reopened_rect = ctx
+        .memory(|m| m.area_rect(egui::Id::new("player")))
+        .unwrap();
+    assert!(
+        (reopened_rect.size() - initial.size()).length() < 2.0,
+        "opening another video must reset maximized geometry: {reopened_rect:?}"
+    );
     for size in [
         egui::vec2(1280.0, 820.0),
         egui::vec2(900.0, 600.0),
@@ -259,6 +338,7 @@ fn video_progress_times_are_drawn_inside_the_video_image() {
         volume: 1.0,
         muted: false,
         fullscreen: false,
+        window: Default::default(),
         seek_time: None,
     });
     let mut shapes = vec![];

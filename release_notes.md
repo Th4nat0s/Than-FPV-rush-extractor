@@ -21,3 +21,4 @@
 - Select today's local date by default in new import dialogs (#19).
 - Add import's No Sound checkbox and speaker toggle, persisting playback/export muting per recording without altering source files (#20).
 - Overlay seek, playback and audio controls on the video (#21).
+- Open videos in a compact player, add Maximize/Restore, and reset oversized saved geometry on reopening (#22).

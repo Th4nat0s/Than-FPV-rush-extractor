@@ -28,6 +28,13 @@ struct Task {
     log: Vec<String>,
 }
 
+#[derive(Default)]
+struct PlayerWindow {
+    maximized: bool,
+    normal_rect: Option<egui::Rect>,
+    was_expanded: bool,
+}
+
 struct Viewer {
     flight: FlightView,
     player: player::Player,
@@ -38,6 +45,7 @@ struct Viewer {
     volume: f32,
     muted: bool,
     fullscreen: bool,
+    window: PlayerWindow,
     seek_time: Option<f64>,
 }
 
@@ -307,6 +315,7 @@ impl App {
                                     volume: if muted { 0.0 } else { 1.0 },
                                     muted,
                                     fullscreen: false,
+                                    window: PlayerWindow::default(),
                                     seek_time: None,
                                 });
                             }

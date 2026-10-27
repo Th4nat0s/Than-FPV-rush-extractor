@@ -163,7 +163,9 @@ Indexed seeking avoids decoding from the beginning; a sequential fallback handle
 inputs whose indexes still fail. See [buffering measurements](docs/player-buffering.md).
 
 In the player, playback and video are on the left while flight tags and figures
-are on the right. The player cannot be collapsed; its controls include a
+are on the right. Videos open in a compact window; Maximize fills the available
+application area and Restore returns to the previous window size. Reopening a
+video starts compact again. The player cannot be collapsed; its controls include a
 fullscreen toggle, Escape to exit fullscreen, and an X close button. Mute videos
 also silences player audio, in which case the volume slider is replaced by a
 muted indicator.

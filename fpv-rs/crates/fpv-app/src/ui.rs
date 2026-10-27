@@ -1116,36 +1116,57 @@ impl App {
         }
         let mut open = true;
         let fullscreen = viewer.fullscreen;
+        let expanded = fullscreen || viewer.window.maximized;
         let bounds = ctx.content_rect().shrink(8.0);
         let frame = egui::Frame::window(&ctx.style());
         let heading_font = egui::TextStyle::Heading.resolve(&ctx.style());
         let title_height = ctx
             .fonts_mut(|fonts| fonts.row_height(&heading_font))
             .max(ctx.style().spacing.interact_size.y)
-            + 2.0 * frame.inner_margin.sum().y
+            + frame.inner_margin.sum().y
             + frame.stroke.width;
-        let content_limit =
-            (bounds.size() - frame.total_margin().sum() - egui::vec2(0.0, title_height))
-                .max(egui::vec2(1.0, 1.0));
+        let decorations = frame.total_margin().sum() + egui::vec2(0.0, title_height);
+        let content_limit = (bounds.size() - decorations).max(egui::vec2(1.0, 1.0));
         let mut window = egui::Window::new(flight_name(&viewer.flight))
             .id(egui::Id::new("player"))
             .collapsible(false)
             .constrain_to(bounds)
             .max_size(content_limit)
             .vscroll(true)
-            .resizable(!fullscreen);
+            .resizable(!expanded);
         if fullscreen {
             window = window
                 .title_bar(false)
                 .frame(egui::Frame::NONE)
                 .fixed_rect(ctx.content_rect());
-        } else {
+        } else if viewer.window.maximized {
             window = window
                 .open(&mut open)
-                .default_size(egui::vec2(1200.0, 760.0).min(content_limit));
+                .fixed_pos(bounds.min)
+                .fixed_size(content_limit);
+        } else {
+            window = window.open(&mut open);
+            // Reset persisted egui geometry on opening, and restore the floating
+            // rectangle after maximizing/fullscreen without remembering it on reopen.
+            if viewer.window.normal_rect.is_none() || viewer.window.was_expanded {
+                let compact_size = (bounds.size() * 0.82).min(egui::vec2(1000.0, 620.0));
+                let rect = viewer
+                    .window
+                    .normal_rect
+                    .unwrap_or_else(|| egui::Rect::from_center_size(bounds.center(), compact_size));
+                let size = rect.size().min(bounds.size());
+                let position = rect.min.clamp(bounds.min, bounds.max - size);
+                // Area otherwise constrains the new position using last frame's
+                // expanded size before Resize has applied the restored size.
+                window = window.constrain(false).current_pos(position).fixed_size(
+                    (size - decorations)
+                        .max(egui::vec2(1.0, 1.0))
+                        .min(content_limit),
+                );
+            }
         }
         let mut close_requested = false;
-        window.show(ctx, |ui| {
+        let shown = window.show(ctx, |ui| {
             self.player_contents(
                 ui,
                 &mut viewer,
@@ -1154,10 +1175,14 @@ impl App {
                 if fullscreen {
                     ctx.content_rect().height()
                 } else {
-                    content_limit.y
+                    ui.available_height().min(content_limit.y)
                 },
             )
         });
+        if !expanded && let Some(shown) = shown {
+            viewer.window.normal_rect = Some(shown.response.rect);
+        }
+        viewer.window.was_expanded = expanded;
         if close_requested {
             open = false;
         }
@@ -1184,6 +1209,17 @@ impl App {
         content_height: f32,
     ) {
         let header = ui.horizontal_wrapped(|ui| {
+            if !viewer.fullscreen
+                && ui
+                    .button(if viewer.window.maximized {
+                        "Restore"
+                    } else {
+                        "Maximize"
+                    })
+                    .clicked()
+            {
+                viewer.window.maximized = !viewer.window.maximized;
+            }
             if ui
                 .button(if viewer.fullscreen {
                     "Exit full screen"
