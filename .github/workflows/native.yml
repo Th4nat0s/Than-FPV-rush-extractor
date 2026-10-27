@@ -79,17 +79,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: clippy
       - name: Install test FFmpeg
         run: brew install ffmpeg
-      - name: Validate native About branding
-        run: |
-          mkdir -p tmp
-          swift packaging/macos/build-credits.swift docs/logo-letz_kwad-full-transparent.png tmp/AboutCredits.rtfd
       - name: Test native application
         working-directory: fpv-rs
-        run: cargo test --workspace --locked
+        run: |
+          cargo clippy -p fpv-app --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
       - name: Build universal media tools and DMG
         run: make macos
+      - name: Test packaged macOS About menu
+        run: bash packaging/macos/smoke-about.sh
+      - name: Save macOS About smoke evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-about-menu-smoke
+          path: |
+            tmp/macos-about.*/app.log
+            tmp/macos-about.*/about.png
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fpv-rush-macos-universal

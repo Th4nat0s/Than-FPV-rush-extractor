@@ -31,3 +31,4 @@
 - Toggle playback by clicking the video or pressing Space while retaining Play/Pause, Replay and speaker buttons beneath the video (#31).
 - Add a large native source preview and draggable left/start and right/end trim handles, with source-frame cadence, numeric fine adjustment and non-destructive per-clip saving (#28).
 - Remove the white card and outer backdrop from the startup splash, preserving the transparent logo and continuous zoom/fade.
+- Route the macOS About menu to the same Rust About window as Settings, keeping logo, grouped credits and links identical (#30).

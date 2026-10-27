@@ -232,3 +232,7 @@ handle to move the start, and its right handle to move the exclusive end. The
 preview follows the edited source frame; numeric fields allow fine adjustment.
 Select each source clip for multipart flights, then Save this clip to persist its
 range. Closing without saving discards the draft and never changes source files.
+
+On macOS, the application-menu About command opens the same branded window as
+Settings About, including the grouped contributor credits and LetzKwad link.
+The startup splash uses the transparent logo directly, without a white frame.

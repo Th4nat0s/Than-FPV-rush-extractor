@@ -40,6 +40,8 @@ fn app(ctx: &egui::Context) -> App {
             Default::default(),
         ),
         show_about: false,
+        #[cfg(target_os = "macos")]
+        about_menu: None,
     }
 }
 fn flight() -> FlightView {

@@ -1,5 +1,7 @@
 //! Native desktop front end. All domain actions go through fpv-library.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#[cfg(any(target_os = "macos", test))]
+mod about_menu;
 mod boundary;
 mod browse;
 mod dialogs;
@@ -81,6 +83,8 @@ pub(crate) struct App {
     splash_started: Option<std::time::Instant>,
     splash_texture: egui::TextureHandle,
     show_about: bool,
+    #[cfg(target_os = "macos")]
+    about_menu: Option<about_menu::AboutMenu>,
 }
 
 pub(crate) const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 91, 46);
@@ -178,6 +182,8 @@ impl App {
             splash_started: None,
             splash_texture,
             show_about: false,
+            #[cfg(target_os = "macos")]
+            about_menu: about_menu::AboutMenu::install(&cc.egui_ctx),
         }
     }
 
@@ -408,6 +414,21 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.receive(ctx);
+        #[cfg(target_os = "macos")]
+        {
+            if self.about_menu.is_none() {
+                self.about_menu = about_menu::AboutMenu::install(ctx);
+            }
+            if let Some(menu) = &mut self.about_menu {
+                if self.ready {
+                    menu.smoke_test_if_requested();
+                }
+                if menu.take_request() {
+                    self.show_about = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
+            }
+        }
         self.task_bar(ctx);
         self.sidebar(ctx);
         self.browser(ctx);

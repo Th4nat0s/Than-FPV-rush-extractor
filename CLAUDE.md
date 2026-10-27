@@ -101,9 +101,12 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   cadence without the player's normal display-rate conversion. Decoder restarts
   are coalesced while dragging; the final requested frame is retained. Only
   Save this clip persists the draft, through `Library::update_clip`.
-- macOS' system About panel is separate from egui's About window. Packaging
-  generates `Credits.rtfd` with the LetzKwad logo, credits and links using the
-  host's AppKit tools; only the rich-text/image assets are redistributed.
+- `about_menu.rs` routes macOS' native About menu action into the same egui
+  About window used by Settings. It reuses the Objective-C binding packages
+  already in the dependency graph, retains the weak menu target, and restores
+  the original target/action on shutdown. The packaged-DMG smoke check invokes
+  the actual Cocoa menu action repeatedly on the app's main thread.
+
 - **SQLite through rusqlite** (`bundled`), on the schema GRDB created for the macOS app (§3.3).
 - **Frame analysis in plain portable code, no SIMD library, no OpenCV** (§9.7). The detector's
   metrics are a per-block Laplacian variance, a lag-1 correlation and a correlation on a
