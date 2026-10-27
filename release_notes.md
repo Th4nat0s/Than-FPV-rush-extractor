@@ -23,3 +23,4 @@
 - Overlay seek, playback and audio controls on the video (#21).
 - Open videos in a compact player, add Maximize/Restore, and reset oversized saved geometry on reopening (#22).
 - Group in-app About contributors into bulleted Coded by and Driven by sections (#24).
+- Animate the splash continuously from a distant logo to a larger approach zoom, without a stationary hold (#23).

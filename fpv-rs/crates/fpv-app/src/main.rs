@@ -76,7 +76,6 @@ pub(crate) struct App {
     exit_after: Option<std::time::Instant>,
     screenshot_requested: bool,
     splash_started: Option<std::time::Instant>,
-    splash_exit_started: Option<std::time::Instant>,
     splash_texture: egui::TextureHandle,
     show_about: bool,
 }
@@ -174,7 +173,6 @@ impl App {
             exit_after,
             screenshot_requested: false,
             splash_started: None,
-            splash_exit_started: None,
             splash_texture,
             show_about: false,
         }

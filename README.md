@@ -220,3 +220,5 @@ Distributors should retain these files and make the corresponding source
 available alongside their download. See https://ffmpeg.org/legal.html.
 
 FFmpeg 8.1.3 source: https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz
+
+The startup logo approaches continuously from a small distant size and fades as it zooms forward, without a pause. Disable it with Do not show splash in Settings.

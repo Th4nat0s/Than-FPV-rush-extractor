@@ -171,8 +171,8 @@ fn thumbnail_badge(ui: &egui::Ui, image: egui::Rect, text: &str, fill: Color32, 
 }
 
 fn splash_logo(ui: &mut egui::Ui, texture: &egui::TextureHandle, progress: f32) {
-    let opacity = 1.0 - progress;
-    let logo_size = 180.0 * (1.0 + progress * 1.5);
+    let opacity = (1.0 - (progress - 0.55).max(0.0) / 0.45).clamp(0.0, 1.0);
+    let logo_size = 48.0 + 752.0 * progress.powf(1.5);
     ui.vertical_centered(|ui| {
         egui::Frame::new()
             .fill(Color32::from_white_alpha((255.0 * opacity) as u8))
@@ -369,23 +369,15 @@ impl App {
         let Some(started) = self.splash_started else {
             return;
         };
-        let now = std::time::Instant::now();
-        if self.splash_exit_started.is_none() && started.elapsed() >= Duration::from_millis(1500) {
-            self.splash_exit_started = Some(now);
-        }
-        let progress = self
-            .splash_exit_started
-            .map(|exit| (now - exit).as_secs_f32() / 0.35)
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0);
+        let progress = (started.elapsed().as_secs_f32() / 1.5).clamp(0.0, 1.0);
         if progress >= 1.0 {
             self.splash_started = None;
-            self.splash_exit_started = None;
             return;
         }
         let opacity = 1.0 - progress;
         egui::Window::new("Letz Kwad")
             .id(egui::Id::new("startup-splash"))
+            .constrain(false)
             .collapsible(false)
             .resizable(false)
             .title_bar(false)

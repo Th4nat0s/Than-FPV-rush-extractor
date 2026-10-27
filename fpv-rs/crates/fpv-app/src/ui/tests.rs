@@ -34,7 +34,6 @@ fn app(ctx: &egui::Context) -> App {
         exit_after: None,
         screenshot_requested: false,
         splash_started: None,
-        splash_exit_started: None,
         splash_texture: ctx.load_texture(
             "test-logo",
             egui::ColorImage::filled([180, 194], Color32::BLACK),
@@ -595,4 +594,56 @@ fn pagination_stays_inside_a_narrow_view_with_many_pages() {
             "footer {label} lies outside its bottom row: {position:?}"
         );
     }
+}
+
+fn texture_rect(
+    shapes: &[egui::epaint::ClippedShape],
+    texture: egui::TextureId,
+) -> Option<egui::Rect> {
+    fn find(shape: &egui::Shape, texture: egui::TextureId) -> Option<egui::Rect> {
+        match shape {
+            egui::Shape::Rect(r)
+                if r.brush
+                    .as_ref()
+                    .is_some_and(|b| b.fill_texture_id == texture) =>
+            {
+                Some(r.rect)
+            }
+            egui::Shape::Mesh(m) if m.texture_id == texture => Some(egui::Rect::from_points(
+                &m.vertices.iter().map(|v| v.pos).collect::<Vec<_>>(),
+            )),
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| find(s, texture)),
+            _ => None,
+        }
+    }
+    shapes.iter().find_map(|s| find(&s.shape, texture))
+}
+
+#[test]
+fn splash_moves_from_the_first_frames_without_a_hold() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut widths = vec![];
+    for elapsed in [0.05, 0.3] {
+        let mut output = None;
+        for _ in 0..4 {
+            app.splash_started = Some(std::time::Instant::now() - Duration::from_secs_f32(elapsed));
+            output = Some(ctx.run(input(egui::vec2(1280.0, 900.0)), |ctx| {
+                app.splash_window(ctx)
+            }));
+        }
+        widths.push(
+            texture_rect(&output.unwrap().shapes, app.splash_texture.id())
+                .unwrap()
+                .width(),
+        );
+    }
+    assert!(
+        widths[0] < 100.0,
+        "splash should start in the distance: {widths:?}"
+    );
+    assert!(
+        widths[1] > widths[0] * 1.2,
+        "splash must move immediately: {widths:?}"
+    );
 }
