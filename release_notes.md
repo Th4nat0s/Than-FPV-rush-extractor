@@ -25,3 +25,4 @@
 - Group in-app About contributors into bulleted Coded by and Driven by sections (#24).
 - Animate the splash continuously from a distant logo to a larger approach zoom, without a stationary hold (#23).
 - Draw favourite hearts without a surrounding button box while preserving their click target (#29).
+- Toggle temporary playback mute by clicking the speaker and restore the previous audible volume; forced no-audio policies remain authoritative (#25).

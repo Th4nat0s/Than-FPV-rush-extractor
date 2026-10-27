@@ -102,6 +102,8 @@ fn player_fits_viewport_when_opened_and_when_the_display_shrinks() {
         figure: String::new(),
         label: String::new(),
         volume: 1.0,
+        remembered_volume: 1.0,
+        playback_muted: false,
         muted: false,
         fullscreen: false,
         window: Default::default(),
@@ -351,6 +353,8 @@ fn video_progress_times_are_drawn_inside_the_video_image() {
         figure: String::new(),
         label: String::new(),
         volume: 1.0,
+        remembered_volume: 1.0,
+        playback_muted: false,
         muted: false,
         fullscreen: false,
         window: Default::default(),
@@ -699,4 +703,117 @@ fn thumbnail_hearts_have_no_background_box() {
             "heart must not have a painted button box"
         );
     }
+}
+
+fn test_viewer(ctx: &egui::Context) -> Viewer {
+    Viewer {
+        flight: flight(),
+        player: Player::new(vec![], None, 0.0, ctx.clone()),
+        texture: None,
+        mark: None,
+        figure: String::new(),
+        label: String::new(),
+        volume: 0.6,
+        remembered_volume: 0.6,
+        playback_muted: false,
+        muted: false,
+        fullscreen: false,
+        window: Default::default(),
+        seek_time: None,
+    }
+}
+
+#[test]
+fn player_speaker_click_mutes_and_restores_the_audible_gain() {
+    let ctx = egui::Context::default();
+    let mut viewer = test_viewer(&ctx);
+    viewer.player.set_volume(viewer.volume);
+    let mut rect = egui::Rect::NOTHING;
+    let render = |ctx: &egui::Context, viewer: &mut Viewer, rect: &mut egui::Rect, events| {
+        let mut raw = input(egui::vec2(300.0, 150.0));
+        raw.events = events;
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                *rect = player_speaker(ui, viewer).rect;
+            });
+        });
+    };
+    for _ in 0..3 {
+        render(&ctx, &mut viewer, &mut rect, vec![]);
+    }
+    for expected in [0.0, 0.6] {
+        for pressed in [true, false] {
+            let pos = rect.center();
+            render(
+                &ctx,
+                &mut viewer,
+                &mut rect,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        assert!(
+            (viewer.player.volume() - expected).abs() < 0.001,
+            "speaker click did not update gain"
+        );
+    }
+    viewer.volume = 0.0;
+    viewer.player.set_volume(0.0);
+    for pressed in [true, false] {
+        let pos = rect.center();
+        render(
+            &ctx,
+            &mut viewer,
+            &mut rect,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+    }
+    assert!(
+        (viewer.player.volume() - 0.6).abs() < 0.001,
+        "zero-volume unmute restores the last audible level"
+    );
+    viewer.player.seek(0.0);
+    assert!(
+        (viewer.player.volume() - 0.6).abs() < 0.001,
+        "seeking preserves gain"
+    );
+    viewer.muted = true;
+    viewer.player.set_volume(0.0);
+    for pressed in [true, false] {
+        let pos = rect.center();
+        render(
+            &ctx,
+            &mut viewer,
+            &mut rect,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+    }
+    assert_eq!(
+        viewer.player.volume(),
+        0.0,
+        "speaker must not undo forced no-audio policy"
+    );
 }

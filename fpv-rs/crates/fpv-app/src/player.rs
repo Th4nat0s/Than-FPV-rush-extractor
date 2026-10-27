@@ -236,6 +236,11 @@ impl Player {
         }
     }
 
+    #[cfg(test)]
+    pub fn volume(&self) -> f32 {
+        *self.state.volume.lock().unwrap()
+    }
+
     pub fn set_volume(&self, volume: f32) {
         if let Ok(mut gain) = self.state.volume.lock() {
             *gain = volume.clamp(0.0, 1.0);

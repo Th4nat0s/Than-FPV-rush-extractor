@@ -30,6 +30,38 @@ fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
     });
 }
 
+fn player_speaker(ui: &mut egui::Ui, viewer: &mut Viewer) -> egui::Response {
+    let response = ui.add_enabled(
+        !viewer.muted,
+        egui::Button::new(" ")
+            .frame(false)
+            .min_size(egui::vec2(26.0, 26.0)),
+    );
+    if response.clicked() {
+        if viewer.volume <= 0.001 {
+            viewer.volume = viewer.remembered_volume.max(0.01);
+            viewer.playback_muted = false;
+        } else {
+            viewer.remembered_volume = viewer.volume;
+            viewer.playback_muted = !viewer.playback_muted;
+        }
+        viewer.player.set_volume(if viewer.playback_muted {
+            0.0
+        } else {
+            viewer.volume
+        });
+    }
+    let muted = viewer.muted || viewer.playback_muted || viewer.volume <= 0.001;
+    paint_metadata_icon(ui, MetadataIcon::Speaker(muted), response.rect.shrink(3.0));
+    response.on_hover_text(if viewer.muted {
+        "No sound for this recording"
+    } else if muted {
+        "Unmute"
+    } else {
+        "Mute"
+    })
+}
+
 fn paint_metadata_icon(ui: &egui::Ui, kind: MetadataIcon, area: egui::Rect) {
     let color = ui.visuals().weak_text_color();
     let stroke = egui::Stroke::new(1.2_f32, color);
@@ -1332,10 +1364,7 @@ impl App {
                         {
                             viewer.player.pause(!viewer.player.paused());
                         }
-                        metadata_icon(
-                            ui,
-                            MetadataIcon::Speaker(viewer.muted || viewer.volume <= 0.001),
-                        );
+                        player_speaker(ui, viewer);
                         if viewer.muted {
                             ui.small("No sound");
                         } else {
@@ -1348,6 +1377,10 @@ impl App {
                                 .on_hover_text("Volume")
                                 .changed()
                             {
+                                viewer.playback_muted = false;
+                                if viewer.volume > 0.001 {
+                                    viewer.remembered_volume = viewer.volume;
+                                }
                                 viewer.player.set_volume(viewer.volume);
                             }
                         }
