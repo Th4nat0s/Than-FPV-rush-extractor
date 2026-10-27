@@ -28,3 +28,4 @@
 - Toggle temporary playback mute by clicking the speaker and restore the previous audible volume; forced no-audio policies remain authoritative (#25).
 - Place the audible player volume slider vertically at the right edge of the video (#26).
 - Remove the dark controls backdrop so seek and volume controls sit directly over the video (#27).
+- Toggle playback by clicking the video or pressing Space while retaining Play/Pause, Replay and speaker buttons beneath the video (#31).

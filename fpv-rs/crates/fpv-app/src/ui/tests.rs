@@ -914,3 +914,118 @@ fn video_controls_do_not_paint_a_background_strip() {
         "controls must be transparent over the video"
     );
 }
+
+fn player_input(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+    let mut raw = input(egui::vec2(1280.0, 820.0));
+    raw.events = events;
+    ctx.run(raw, |ctx| app.player_window(ctx))
+}
+fn click_player(ctx: &egui::Context, app: &mut App, pos: egui::Pos2) {
+    for pressed in [true, false] {
+        player_input(
+            ctx,
+            app,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+    }
+}
+#[test]
+fn video_click_buttons_and_space_share_playback_state() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut viewer = test_viewer(&ctx);
+    let texture = ctx.load_texture(
+        "clickable-video",
+        egui::ColorImage::filled([640, 360], Color32::GRAY),
+        Default::default(),
+    );
+    let id = texture.id();
+    viewer.texture = Some(texture);
+    app.viewer = Some(viewer);
+    let mut output = None;
+    for _ in 0..4 {
+        output = Some(player_input(&ctx, &mut app, vec![]));
+    }
+    let image = texture_rect(&output.unwrap().shapes, id).unwrap();
+    click_player(&ctx, &mut app, image.center());
+    assert!(
+        app.viewer.as_ref().unwrap().player.paused(),
+        "video click must pause playback"
+    );
+    let output = player_input(&ctx, &mut app, vec![]);
+    let play = text_positions(&output.shapes)
+        .into_iter()
+        .find(|(s, _)| s == "Play")
+        .expect("retained Play button")
+        .1;
+    assert!(
+        play.y > image.bottom(),
+        "playback buttons belong below the video"
+    );
+    click_player(&ctx, &mut app, play + egui::vec2(6.0, 6.0));
+    assert!(
+        !app.viewer.as_ref().unwrap().player.paused(),
+        "Play button must resume once"
+    );
+    click_player(
+        &ctx,
+        &mut app,
+        egui::pos2(image.right() - 31.0, image.bottom() - 180.0),
+    );
+    assert!(
+        !app.viewer.as_ref().unwrap().player.paused(),
+        "volume clicks must not toggle video playback"
+    );
+    // Give focus back to the video before testing the global shortcut.
+    click_player(&ctx, &mut app, image.center());
+    assert!(app.viewer.as_ref().unwrap().player.paused());
+    ctx.memory_mut(|m| m.surrender_focus(m.focused().unwrap_or(egui::Id::NULL)));
+    player_input(
+        &ctx,
+        &mut app,
+        vec![egui::Event::Key {
+            key: egui::Key::Space,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        }],
+    );
+    assert!(
+        !app.viewer.as_ref().unwrap().player.paused(),
+        "Space must resume"
+    );
+    let output = player_input(&ctx, &mut app, vec![]);
+    let field = text_positions(&output.shapes)
+        .into_iter()
+        .find(|(s, _)| s == "Add a tag…")
+        .unwrap()
+        .1;
+    click_player(&ctx, &mut app, field + egui::vec2(8.0, 6.0));
+    player_input(
+        &ctx,
+        &mut app,
+        vec![
+            egui::Event::Key {
+                key: egui::Key::Space,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            },
+            egui::Event::Text(" ".into()),
+        ],
+    );
+    assert!(
+        !app.viewer.as_ref().unwrap().player.paused(),
+        "typing spaces must not pause playback"
+    );
+}

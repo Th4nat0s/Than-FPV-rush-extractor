@@ -169,7 +169,11 @@ video starts compact again. The player cannot be collapsed; its controls include
 fullscreen toggle, Escape to exit fullscreen, and an X close button. Mute videos
 also silences player audio, in which case the volume slider is replaced by a
 muted indicator.
-The progress bar, playback controls and volume are overlaid on the video. The
+The progress bar is overlaid transparently on the video, with a vertical volume
+slider at its right edge. Click the video or press Space to play/pause; the
+Play/Pause, Replay and clickable mute speaker buttons remain below the image.
+Temporary speaker mute preserves the previous audible gain and does not change
+export preferences. The
 window stays inside the visible viewport, including when the viewport shrinks.
 
 Space plays/pauses; Left/Right seek five seconds; I marks the start of a figure.

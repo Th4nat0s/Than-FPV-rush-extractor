@@ -1316,14 +1316,18 @@ impl App {
         let left_width = (available.x - side_width - 12.0).max(260.0);
 
         let show_video = |ui: &mut egui::Ui, viewer: &mut Viewer| {
-            let height = available.y.min(if viewer.fullscreen {
-                f32::INFINITY
-            } else {
-                480.0
-            });
-            let (canvas, _) = ui.allocate_exact_size(
+            let button_height =
+                ui.spacing().interact_size.y.max(26.0) + ui.spacing().item_spacing.y;
+            let height = (available.y - button_height)
+                .max(1.0)
+                .min(if viewer.fullscreen {
+                    f32::INFINITY
+                } else {
+                    480.0
+                });
+            let (canvas, video_response) = ui.allocate_exact_size(
                 egui::vec2(ui.available_width(), height),
-                egui::Sense::hover(),
+                egui::Sense::click(),
             );
             ui.painter().rect_filled(canvas, 4.0, Color32::BLACK);
             let video = if let Some(texture) = &viewer.texture {
@@ -1344,7 +1348,7 @@ impl App {
             let row_height = ui.spacing().interact_size.y.max(
                 ui.text_style_height(&egui::TextStyle::Body) + 2.0 * ui.spacing().button_padding.y,
             );
-            let rows = if video.width() < 280.0 { 3.0 } else { 2.0 };
+            let rows = 1.0;
             let controls_height =
                 (rows * row_height + (rows - 1.0) * ui.spacing().item_spacing.y + 12.0)
                     .min(video.height());
@@ -1387,31 +1391,34 @@ impl App {
                             egui::Label::new(clock(viewer.player.duration())),
                         );
                     });
-                    ui.horizontal_wrapped(|ui| {
-                        if ui
-                            .button(if viewer.player.paused() {
-                                "Play"
-                            } else {
-                                "Pause"
-                            })
-                            .clicked()
-                        {
-                            viewer.player.pause(!viewer.player.paused());
-                        }
-                        player_speaker(ui, viewer);
-                        if viewer.muted {
-                            ui.small("No sound");
-                        }
-                        if viewer.player.ended() && ui.button("Replay").clicked() {
-                            viewer.player.seek(0.0);
-                            viewer.player.pause(false);
-                        }
-                        if viewer.player.buffering() {
-                            ui.spinner();
-                            ui.label("Buffering…");
-                        }
-                    });
                 });
+            if video_response.clicked() {
+                viewer.player.pause(!viewer.player.paused());
+            }
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .button(if viewer.player.paused() {
+                        "Play"
+                    } else {
+                        "Pause"
+                    })
+                    .clicked()
+                {
+                    viewer.player.pause(!viewer.player.paused());
+                }
+                player_speaker(ui, viewer);
+                if viewer.muted {
+                    ui.small("No sound");
+                }
+                if viewer.player.ended() && ui.button("Replay").clicked() {
+                    viewer.player.seek(0.0);
+                    viewer.player.pause(false);
+                }
+                if viewer.player.buffering() {
+                    ui.spinner();
+                    ui.label("Buffering…");
+                }
+            });
         };
         let show_metadata = |this: &mut Self, ui: &mut egui::Ui, viewer: &mut Viewer| {
             ui.heading("Tags");
