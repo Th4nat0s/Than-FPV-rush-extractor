@@ -13,3 +13,4 @@
 - Add a speaker icon beside the player volume slider (#15).
 - Update the README for the current native Rust/egui workflow and controls (#9).
 - Reduce player startup/seek buffering with indexed decoding, retain sequential recovery, and enable FFmpeg's internal codec-header extraction and EV300D ADPCM decoder (#16).
+- Enlarge the splash to 2.5 times its initial size while fading out and remove its Close button (#5).

@@ -95,6 +95,24 @@ fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
     });
 }
 
+fn splash_logo(ui: &mut egui::Ui, texture: &egui::TextureHandle, progress: f32) {
+    let opacity = 1.0 - progress;
+    let logo_size = 180.0 * (1.0 + progress * 1.5);
+    ui.vertical_centered(|ui| {
+        egui::Frame::new()
+            .fill(Color32::from_white_alpha((255.0 * opacity) as u8))
+            .corner_radius(8.0)
+            .inner_margin(8.0)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::Image::new(texture)
+                        .fit_to_exact_size(logo_size * egui::vec2(1.0, 1.4))
+                        .tint(Color32::from_white_alpha((255.0 * opacity) as u8)),
+                );
+            });
+    });
+}
+
 impl App {
     pub(crate) fn about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
@@ -148,9 +166,7 @@ impl App {
             self.splash_exit_started = None;
             return;
         }
-        let mut close = false;
         let opacity = 1.0 - progress;
-        let logo_size = 180.0 * (1.0 + progress * 0.35);
         egui::Window::new("Letz Kwad")
             .id(egui::Id::new("startup-splash"))
             .collapsible(false)
@@ -158,29 +174,8 @@ impl App {
             .title_bar(false)
             .frame(egui::Frame::new().fill(Color32::from_white_alpha((32.0 * opacity) as u8)))
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    egui::Frame::new()
-                        .fill(Color32::from_white_alpha((255.0 * opacity) as u8))
-                        .corner_radius(8.0)
-                        .inner_margin(8.0)
-                        .show(ui, |ui| {
-                            ui.add(
-                                egui::Image::new(&self.splash_texture)
-                                    .max_size(logo_size * egui::vec2(1.0, 1.4))
-                                    .tint(Color32::from_white_alpha((255.0 * opacity) as u8)),
-                            );
-                        });
-                    if progress == 0.0 && ui.button("Close").clicked() {
-                        close = true;
-                    }
-                });
-            });
-        if close {
-            self.splash_exit_started = Some(std::time::Instant::now());
-        } else {
-            ctx.request_repaint_after(Duration::from_millis(16));
-        }
+            .show(ctx, |ui| splash_logo(ui, &self.splash_texture, progress));
+        ctx.request_repaint_after(Duration::from_millis(16));
     }
 
     fn open_import(&mut self, folder: Option<PathBuf>, name: String) {
@@ -1195,3 +1190,6 @@ impl App {
         });
     }
 }
+
+#[cfg(test)]
+mod tests;
