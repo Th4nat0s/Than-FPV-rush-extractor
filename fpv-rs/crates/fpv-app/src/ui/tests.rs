@@ -2,6 +2,7 @@ use super::*;
 use crate::{browse::Browse, images::Images, worker::Worker};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
+use crate::player::Player;
 
 fn app(ctx: &egui::Context) -> App {
     ctx.style_mut(|s| { s.spacing.item_spacing = egui::vec2(10.0, 8.0); s.spacing.button_padding = egui::vec2(10.0, 6.0); });
@@ -64,6 +65,26 @@ fn input(size: egui::Vec2) -> egui::RawInput {
     egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
         ..Default::default()
+    }
+}
+fn flight() -> FlightView {
+    FlightView {
+        id: "test-flight".into(),
+        order: 1,
+        title: Some("Layout test flight".into()),
+        liked: false,
+        duration: 60.0,
+        clips: vec![],
+        recordings: 1,
+        action_cam: true,
+        source: "GoPro".into(),
+        format: "1080p · H.264 · 30 fps".into(),
+        reduced: false,
+        cloud: false,
+        freeable: false,
+        cache_key: "test-flight".into(),
+        labels: vec![],
+        figures: vec![],
     }
 }
 
@@ -145,5 +166,61 @@ fn about_shows_the_requested_roles_and_letzkwad_link() {
             .any(|(s, _)| s.contains("Coded by Claude, Codex, Driven by Defane, Thanat0s"))
     );
     assert!(positions.iter().any(|(s, _)| s.contains("letzkwad.lu")));
+}
+
+#[test]
+fn video_progress_times_are_drawn_inside_the_video_image() {
+    fn image_bounds(shape: &egui::Shape, texture: egui::TextureId) -> Option<egui::Rect> {
+        match shape {
+            egui::Shape::Mesh(mesh) if mesh.texture_id == texture => Some(egui::Rect::from_points(
+                &mesh.vertices.iter().map(|v| v.pos).collect::<Vec<_>>(),
+            )),
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| image_bounds(s, texture)),
+            _ => None,
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let texture = ctx.load_texture(
+        "overlay-test-video",
+        egui::ColorImage::filled([640, 360], Color32::GRAY),
+        Default::default(),
+    );
+    let texture_id = texture.id();
+    app.viewer = Some(Viewer {
+        flight: flight(),
+        player: Player::new(vec![], None, 0.0, ctx.clone()),
+        texture: Some(texture),
+        mark: None,
+        figure: String::new(),
+        label: String::new(),
+        volume: 1.0,
+        muted: false,
+        fullscreen: false,
+        seek_time: None,
+    });
+    let mut shapes = vec![];
+    for _ in 0..4 {
+        shapes = ctx
+            .run(input(egui::vec2(1100.0, 760.0)), |ctx| {
+                app.player_window(ctx)
+            })
+            .shapes;
+    }
+    let image = shapes
+        .iter()
+        .find_map(|s| image_bounds(&s.shape, texture_id))
+        .unwrap();
+    let times: Vec<_> = text_positions(&shapes)
+        .into_iter()
+        .filter(|(text, _)| text == &clock(0.0))
+        .collect();
+    assert_eq!(times.len(), 2);
+    for (_, position) in times {
+        assert!(
+            image.contains(position),
+            "time at {position:?} lies outside the video {image:?}"
+        );
+    }
 }
 

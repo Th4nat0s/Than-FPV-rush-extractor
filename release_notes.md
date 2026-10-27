@@ -15,3 +15,4 @@
 - Reduce player startup/seek buffering with indexed decoding, retain sequential recovery, and enable FFmpeg's internal codec-header extraction and EV300D ADPCM decoder (#16).
 - Enlarge the splash to 2.5 times its initial size while fading out and remove its Close button (#5).
 - Include the LetzKwad logo, exact role credits and website in both the native macOS and in-app About views (#7).
+- Overlay seek, playback and audio controls on the video (#21).

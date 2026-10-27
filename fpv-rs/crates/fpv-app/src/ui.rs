@@ -830,7 +830,7 @@ impl App {
         }
         let mut close_requested = false;
         window.show(ctx, |ui| {
-            self.player_contents(ui, &mut viewer, &mut close_requested, ctx)
+            self.player_contents(ui, &mut viewer, &mut close_requested, ctx, (ctx.content_rect().height() - 80.0).max(1.0))
         });
         if close_requested {
             open = false;
@@ -855,8 +855,9 @@ impl App {
         viewer: &mut Viewer,
         close_requested: &mut bool,
         ctx: &egui::Context,
+        content_height: f32,
     ) {
-        ui.horizontal(|ui| {
+        let header = ui.horizontal_wrapped(|ui| {
             if ui
                 .button(if viewer.fullscreen {
                     "Exit full screen"
@@ -873,75 +874,130 @@ impl App {
             }
             ui.label(flight_name(&viewer.flight));
         });
-        ui.separator();
-        let available = ui.available_size();
+        let separator = ui.separator();
+        let available = egui::vec2(
+            ui.available_width(),
+            (content_height
+                - header.response.rect.height()
+                - separator.rect.height()
+                - 2.0 * ui.spacing().item_spacing.y)
+                .max(1.0),
+        );
         let side_width = 300.0_f32.min(available.x * 0.42);
         let left_width = (available.x - side_width - 12.0).max(260.0);
 
         let show_video = |ui: &mut egui::Ui, viewer: &mut Viewer| {
-            ui.horizontal(|ui| {
-                if ui
-                    .button(if viewer.player.paused() {
-                        "Play"
-                    } else {
-                        "Pause"
-                    })
-                    .clicked()
-                {
-                    viewer.player.pause(!viewer.player.paused());
-                }
-                ui.label(clock(viewer.player.position()));
-                let mut time = viewer.seek_time.unwrap_or_else(|| viewer.player.position());
-                let seek = ui.add(
-                    egui::Slider::new(&mut time, 0.0..=viewer.player.duration()).show_value(false),
-                );
-                if seek.dragged() {
-                    viewer.seek_time = Some(time);
-                }
-                if seek.drag_stopped() || (seek.changed() && !seek.dragged()) {
-                    viewer.player.seek(time);
-                    viewer.seek_time = None;
-                }
-                ui.label(clock(viewer.player.duration()));
-                metadata_icon(
-                    ui,
-                    MetadataIcon::Speaker(viewer.muted || viewer.volume <= 0.001),
-                );
-                if viewer.muted {
-                    ui.small("Muted by settings");
-                } else if ui
-                    .add(egui::Slider::new(&mut viewer.volume, 0.0..=1.0).text("Volume"))
-                    .changed()
-                {
-                    viewer.player.set_volume(viewer.volume);
-                }
-                if viewer.player.ended() && ui.button("Replay").clicked() {
-                    viewer.player.seek(0.0);
-                    viewer.player.pause(false);
-                }
+            let height = available.y.min(if viewer.fullscreen {
+                f32::INFINITY
+            } else {
+                480.0
             });
-            if viewer.player.buffering() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Buffering…");
+            let (canvas, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), height),
+                egui::Sense::hover(),
+            );
+            ui.painter().rect_filled(canvas, 4.0, Color32::BLACK);
+            let video = if let Some(texture) = &viewer.texture {
+                let source = texture.size_vec2();
+                let scale = (canvas.width() / source.x).min(canvas.height() / source.y);
+                let video = egui::Rect::from_center_size(canvas.center(), source * scale);
+                ui.painter().image(
+                    texture.id(),
+                    video,
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+                video
+            } else {
+                canvas
+            };
+            let row_height = ui.spacing().interact_size.y.max(
+                ui.text_style_height(&egui::TextStyle::Body) + 2.0 * ui.spacing().button_padding.y,
+            );
+            let rows = if video.width() < 280.0 { 3.0 } else { 2.0 };
+            let controls_height =
+                (rows * row_height + (rows - 1.0) * ui.spacing().item_spacing.y + 12.0)
+                    .min(video.height());
+            let controls = egui::Rect::from_min_max(
+                egui::pos2(video.left(), video.bottom() - controls_height),
+                video.max,
+            );
+            let mut overlay = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("video-overlay")
+                    .max_rect(controls),
+            );
+            overlay.set_clip_rect(ui.clip_rect().intersect(video));
+            egui::Frame::new()
+                .fill(Color32::from_black_alpha(215))
+                .inner_margin(6.0)
+                .show(&mut overlay, |ui| {
+                    ui.visuals_mut().override_text_color = Some(Color32::WHITE);
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            [45.0, 18.0],
+                            egui::Label::new(clock(viewer.player.position())),
+                        );
+                        let mut time = viewer.seek_time.unwrap_or_else(|| viewer.player.position());
+                        ui.spacing_mut().slider_width =
+                            (ui.available_width() - 45.0 - 2.0 * ui.spacing().item_spacing.x)
+                                .max(1.0);
+                        let seek = ui.add(
+                            egui::Slider::new(&mut time, 0.0..=viewer.player.duration())
+                                .show_value(false),
+                        );
+                        if seek.dragged() {
+                            viewer.seek_time = Some(time);
+                        }
+                        if seek.drag_stopped() || (seek.changed() && !seek.dragged()) {
+                            viewer.player.seek(time);
+                            viewer.seek_time = None;
+                        }
+                        ui.add_sized(
+                            [45.0, 18.0],
+                            egui::Label::new(clock(viewer.player.duration())),
+                        );
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        if ui
+                            .button(if viewer.player.paused() {
+                                "Play"
+                            } else {
+                                "Pause"
+                            })
+                            .clicked()
+                        {
+                            viewer.player.pause(!viewer.player.paused());
+                        }
+                        metadata_icon(
+                            ui,
+                            MetadataIcon::Speaker(viewer.muted || viewer.volume <= 0.001),
+                        );
+                        if viewer.muted {
+                            ui.small("No sound");
+                        } else {
+                            ui.spacing_mut().slider_width = 80.0;
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut viewer.volume, 0.0..=1.0)
+                                        .show_value(false),
+                                )
+                                .on_hover_text("Volume")
+                                .changed()
+                            {
+                                viewer.player.set_volume(viewer.volume);
+                            }
+                        }
+                        if viewer.player.ended() && ui.button("Replay").clicked() {
+                            viewer.player.seek(0.0);
+                            viewer.player.pause(false);
+                        }
+                        if viewer.player.buffering() {
+                            ui.spinner();
+                            ui.label("Buffering…");
+                        }
+                    });
                 });
-            }
-            if let Some(texture) = &viewer.texture {
-                ui.centered_and_justified(|ui| {
-                    ui.add(
-                        egui::Image::new(texture)
-                            .max_size(egui::vec2(
-                                ui.available_width(),
-                                if viewer.fullscreen {
-                                    available.y - 80.0
-                                } else {
-                                    480.0
-                                },
-                            ))
-                            .maintain_aspect_ratio(true),
-                    );
-                });
-            }
         };
         let show_metadata = |this: &mut Self, ui: &mut egui::Ui, viewer: &mut Viewer| {
             ui.heading("Tags");
@@ -985,7 +1041,7 @@ impl App {
                                 viewer.player.seek(tag.start);
                             }
                             if !tag.marker {
-                                ui.label(format!("→ {}", clock(tag.end)));
+                                ui.label(format!("– {}", clock(tag.end)));
                             }
                             if ui
                                 .small_button("×")
@@ -1039,12 +1095,13 @@ impl App {
             show_metadata(self, ui, viewer);
         } else {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 ui.allocate_ui_with_layout(
                     egui::vec2(left_width, available.y),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| show_video(ui, viewer),
                 );
-                ui.separator();
+                ui.add_space(12.0);
                 ui.allocate_ui_with_layout(
                     egui::vec2(side_width, available.y),
                     egui::Layout::top_down(egui::Align::Min),
