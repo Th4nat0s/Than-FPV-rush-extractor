@@ -817,3 +817,60 @@ fn player_speaker_click_mutes_and_restores_the_audible_gain() {
         "speaker must not undo forced no-audio policy"
     );
 }
+
+#[test]
+fn volume_is_vertical_on_the_right_and_increases_upwards() {
+    let ctx = egui::Context::default();
+    let mut viewer = test_viewer(&ctx);
+    let mut slider = egui::Rect::NOTHING;
+    let video = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(500.0, 320.0));
+    let render = |viewer: &mut Viewer, slider: &mut egui::Rect, events| {
+        let mut raw = input(egui::vec2(600.0, 400.0));
+        raw.events = events;
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                if let Some(response) = player_volume_overlay(ui, viewer, video) {
+                    *slider = response.rect;
+                }
+            });
+        });
+    };
+    for _ in 0..3 {
+        render(&mut viewer, &mut slider, vec![]);
+    }
+    assert!(
+        slider.height() > slider.width() * 3.0,
+        "volume should be vertical: {slider:?}"
+    );
+    assert!(video.contains_rect(slider) && slider.right() > video.right() - 45.0);
+    let mut gains = vec![];
+    for y in [slider.bottom() - 8.0, slider.top() + 8.0] {
+        for pressed in [true, false] {
+            let pos = egui::pos2(slider.center().x, y);
+            render(
+                &mut viewer,
+                &mut slider,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        gains.push(viewer.player.volume());
+    }
+    assert!(
+        gains[1] > gains[0] + 0.5,
+        "volume increases upwards: {gains:?}"
+    );
+    viewer.muted = true;
+    let _ = ctx.run(input(egui::vec2(600.0, 400.0)), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            assert!(player_volume_overlay(ui, &mut viewer, video).is_none())
+        });
+    });
+}

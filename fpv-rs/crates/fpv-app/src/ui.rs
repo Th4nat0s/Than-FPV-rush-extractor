@@ -62,6 +62,40 @@ fn player_speaker(ui: &mut egui::Ui, viewer: &mut Viewer) -> egui::Response {
     })
 }
 
+fn player_volume_overlay(
+    ui: &mut egui::Ui,
+    viewer: &mut Viewer,
+    video: egui::Rect,
+) -> Option<egui::Response> {
+    if viewer.muted {
+        return None;
+    }
+    let rect = egui::Rect::from_min_size(
+        video.right_bottom() - egui::vec2(40.0, 230.0_f32.min(video.height())),
+        egui::vec2(32.0, 140.0_f32.min(video.height() * 0.4)),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("video-volume")
+            .max_rect(rect),
+    );
+    child.set_clip_rect(ui.clip_rect().intersect(video));
+    child.spacing_mut().slider_width = rect.height();
+    let response = child.add(
+        egui::Slider::new(&mut viewer.volume, 0.0..=1.0)
+            .vertical()
+            .show_value(false),
+    );
+    if response.changed() {
+        viewer.playback_muted = false;
+        if viewer.volume > 0.001 {
+            viewer.remembered_volume = viewer.volume;
+        }
+        viewer.player.set_volume(viewer.volume);
+    }
+    Some(response.on_hover_text("Volume"))
+}
+
 fn paint_metadata_icon(ui: &egui::Ui, kind: MetadataIcon, area: egui::Rect) {
     let color = ui.visuals().weak_text_color();
     let stroke = egui::Stroke::new(1.2_f32, color);
@@ -1306,6 +1340,7 @@ impl App {
             } else {
                 canvas
             };
+            player_volume_overlay(ui, viewer, video);
             let row_height = ui.spacing().interact_size.y.max(
                 ui.text_style_height(&egui::TextStyle::Body) + 2.0 * ui.spacing().button_padding.y,
             );
@@ -1367,22 +1402,6 @@ impl App {
                         player_speaker(ui, viewer);
                         if viewer.muted {
                             ui.small("No sound");
-                        } else {
-                            ui.spacing_mut().slider_width = 80.0;
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut viewer.volume, 0.0..=1.0)
-                                        .show_value(false),
-                                )
-                                .on_hover_text("Volume")
-                                .changed()
-                            {
-                                viewer.playback_muted = false;
-                                if viewer.volume > 0.001 {
-                                    viewer.remembered_volume = viewer.volume;
-                                }
-                                viewer.player.set_volume(viewer.volume);
-                            }
                         }
                         if viewer.player.ended() && ui.button("Replay").clicked() {
                             viewer.player.seek(0.0);
