@@ -13,6 +13,8 @@ enum MetadataIcon {
     Dvr,
     Film,
     Speaker(bool),
+    Settings,
+    Chevron,
 }
 
 fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
@@ -23,7 +25,149 @@ fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
         MetadataIcon::Film => "Video format",
         MetadataIcon::Speaker(true) => "Muted",
         MetadataIcon::Speaker(false) => "Playback volume",
+        MetadataIcon::Settings => "Settings and About",
+        MetadataIcon::Chevron => "Import options",
     });
+}
+
+fn paint_metadata_icon(ui: &egui::Ui, kind: MetadataIcon, area: egui::Rect) {
+    let color = ui.visuals().weak_text_color();
+    let stroke = egui::Stroke::new(1.2_f32, color);
+    let body = egui::Rect::from_min_max(
+        area.min + egui::vec2(2.0, 3.0),
+        area.max - egui::vec2(2.0, 2.0),
+    );
+    let painter = ui.painter();
+    match kind {
+        MetadataIcon::Settings => {
+            let center = body.center();
+            painter.circle_stroke(center, 4.0, stroke);
+            painter.circle_stroke(center, 1.5, stroke);
+            for tooth in 0..8 {
+                let angle = tooth as f32 * std::f32::consts::TAU / 8.0;
+                let direction = egui::vec2(angle.cos(), angle.sin());
+                painter.line_segment([center + direction * 4.0, center + direction * 6.5], stroke);
+            }
+        }
+        MetadataIcon::Chevron => {
+            painter.line_segment(
+                [
+                    body.left_center() - egui::vec2(0.0, 2.0),
+                    body.center() + egui::vec2(0.0, 2.0),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    body.center() + egui::vec2(0.0, 2.0),
+                    body.right_center() - egui::vec2(0.0, 2.0),
+                ],
+                stroke,
+            );
+        }
+
+        MetadataIcon::Dvr => {
+            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
+            painter.line_segment(
+                [
+                    body.left_top() + egui::vec2(3.0, 3.0),
+                    body.right_top() - egui::vec2(3.0, -3.0),
+                ],
+                stroke,
+            );
+            painter.circle_filled(body.right_bottom() - egui::vec2(3.0, 3.0), 1.2_f32, color);
+        }
+        MetadataIcon::Film => {
+            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
+            let screen = egui::Rect::from_min_max(
+                body.min + egui::vec2(5.0, 2.0),
+                body.max - egui::vec2(5.0, 2.0),
+            );
+            painter.rect_stroke(screen, 0.5, stroke, egui::StrokeKind::Inside);
+            for y in [body.top() + 3.0, body.center().y, body.bottom() - 3.0] {
+                painter.circle_filled(egui::pos2(body.left() + 2.5, y), 0.7_f32, color);
+                painter.circle_filled(egui::pos2(body.right() - 2.5, y), 0.7_f32, color);
+            }
+        }
+        MetadataIcon::Speaker(muted) => {
+            let speaker = egui::Rect::from_min_max(
+                body.min + egui::vec2(1.0, 3.0),
+                body.min + egui::vec2(6.0, 10.0),
+            );
+            painter.rect_filled(speaker, 0.5, color);
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(body.left() + 5.0, body.top() + 2.0),
+                    egui::pos2(body.left() + 11.0, body.top()),
+                    egui::pos2(body.left() + 11.0, body.bottom()),
+                    egui::pos2(body.left() + 5.0, body.bottom() - 2.0),
+                ],
+                color,
+                egui::Stroke::NONE,
+            ));
+            if muted {
+                painter.line_segment(
+                    [body.right_top(), body.left_bottom() + egui::vec2(2.0, -1.0)],
+                    egui::Stroke::new(1.6_f32, color),
+                );
+            } else {
+                painter.line_segment(
+                    [
+                        egui::pos2(body.left() + 10.5, body.top() + 1.0),
+                        egui::pos2(body.right(), body.center().y),
+                    ],
+                    stroke,
+                );
+                painter.line_segment(
+                    [
+                        egui::pos2(body.right(), body.center().y),
+                        egui::pos2(body.left() + 10.5, body.bottom() - 1.0),
+                    ],
+                    stroke,
+                );
+            }
+        }
+    }
+}
+
+pub(crate) fn no_sound_choice(ui: &mut egui::Ui, no_sound: &mut bool) -> egui::Response {
+    ui.horizontal(|ui| {
+        let icon = ui
+            .add(
+                egui::Button::new("")
+                    .selected(*no_sound)
+                    .min_size(egui::vec2(26.0, 24.0)),
+            )
+            .on_hover_text("Toggle sound for this import");
+        if icon.clicked() {
+            *no_sound = !*no_sound;
+        }
+        paint_metadata_icon(ui, MetadataIcon::Speaker(*no_sound), icon.rect.shrink(3.0));
+        ui.checkbox(no_sound, "No Sound");
+        icon
+    })
+    .inner
+}
+
+fn thumbnail_badge(ui: &egui::Ui, image: egui::Rect, text: &str, fill: Color32, right: bool) {
+    let label = if text.chars().count() > 26 {
+        format!("{}…", text.chars().take(25).collect::<String>())
+    } else {
+        text.to_owned()
+    };
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label, egui::FontId::proportional(12.0), Color32::WHITE);
+    let size = galley.size() + egui::vec2(12.0, 4.0);
+    let x = if right {
+        image.right() - size.x - 6.0
+    } else {
+        image.left() + 6.0
+    };
+    let rect = egui::Rect::from_min_size(egui::pos2(x, image.bottom() - size.y - 6.0), size);
+    ui.painter().rect_filled(rect, 9.0, fill);
+    ui.painter()
+        .galley(rect.min + egui::vec2(6.0, 2.0), galley, Color32::WHITE);
 }
 
 fn splash_logo(ui: &mut egui::Ui, texture: &egui::TextureHandle, progress: f32) {
@@ -177,98 +321,6 @@ fn pagination_footer(
     });
 }
 
-fn paint_metadata_icon(ui: &egui::Ui, kind: MetadataIcon, area: egui::Rect) {
-    let color = ui.visuals().weak_text_color();
-    let stroke = egui::Stroke::new(1.2_f32, color);
-    let body = egui::Rect::from_min_max(
-        area.min + egui::vec2(2.0, 3.0),
-        area.max - egui::vec2(2.0, 2.0),
-    );
-    let painter = ui.painter();
-    match kind {
-        MetadataIcon::Dvr => {
-            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
-            painter.line_segment(
-                [
-                    body.left_top() + egui::vec2(3.0, 3.0),
-                    body.right_top() - egui::vec2(3.0, -3.0),
-                ],
-                stroke,
-            );
-            painter.circle_filled(body.right_bottom() - egui::vec2(3.0, 3.0), 1.2_f32, color);
-        }
-        MetadataIcon::Film => {
-            painter.rect_stroke(body, 2.0, stroke, egui::StrokeKind::Inside);
-            let screen = egui::Rect::from_min_max(
-                body.min + egui::vec2(5.0, 2.0),
-                body.max - egui::vec2(5.0, 2.0),
-            );
-            painter.rect_stroke(screen, 0.5, stroke, egui::StrokeKind::Inside);
-            for y in [body.top() + 3.0, body.center().y, body.bottom() - 3.0] {
-                painter.circle_filled(egui::pos2(body.left() + 2.5, y), 0.7_f32, color);
-                painter.circle_filled(egui::pos2(body.right() - 2.5, y), 0.7_f32, color);
-            }
-        }
-        MetadataIcon::Speaker(muted) => {
-            let speaker = egui::Rect::from_min_max(
-                body.min + egui::vec2(1.0, 3.0),
-                body.min + egui::vec2(6.0, 10.0),
-            );
-            painter.rect_filled(speaker, 0.5, color);
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    egui::pos2(body.left() + 5.0, body.top() + 2.0),
-                    egui::pos2(body.left() + 11.0, body.top()),
-                    egui::pos2(body.left() + 11.0, body.bottom()),
-                    egui::pos2(body.left() + 5.0, body.bottom() - 2.0),
-                ],
-                color,
-                egui::Stroke::NONE,
-            ));
-            if muted {
-                painter.line_segment(
-                    [body.right_top(), body.left_bottom() + egui::vec2(2.0, -1.0)],
-                    egui::Stroke::new(1.6_f32, color),
-                );
-            } else {
-                painter.line_segment(
-                    [
-                        egui::pos2(body.left() + 10.5, body.top() + 1.0),
-                        egui::pos2(body.right(), body.center().y),
-                    ],
-                    stroke,
-                );
-                painter.line_segment(
-                    [
-                        egui::pos2(body.right(), body.center().y),
-                        egui::pos2(body.left() + 10.5, body.bottom() - 1.0),
-                    ],
-                    stroke,
-                );
-            }
-        }
-    }
-}
-
-pub(crate) fn no_sound_choice(ui: &mut egui::Ui, no_sound: &mut bool) -> egui::Response {
-    ui.horizontal(|ui| {
-        let icon = ui
-            .add(
-                egui::Button::new("")
-                    .selected(*no_sound)
-                    .min_size(egui::vec2(26.0, 24.0)),
-            )
-            .on_hover_text("Toggle sound for this import");
-        if icon.clicked() {
-            *no_sound = !*no_sound;
-        }
-        paint_metadata_icon(ui, MetadataIcon::Speaker(*no_sound), icon.rect.shrink(3.0));
-        ui.checkbox(no_sound, "No Sound");
-        icon
-    })
-    .inner
-}
-
 impl App {
     pub(crate) fn about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
@@ -340,35 +392,56 @@ impl App {
 
     pub(crate) fn sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
-            .default_width(240.0)
-            .min_width(190.0)
+            .default_width(268.0)
+            .min_width(220.0)
+            .max_width(360.0)
             .show(ctx, |ui| {
-                ui.heading("FPV Rush");
-                ui.label(RichText::new("Your flight library").small().weak());
-                ui.add_space(12.0);
                 ui.add_enabled_ui(self.ready && !self.busy(), |ui| {
-                    if ui.button("Import Folder…").clicked() {
-                        self.open_import(None, String::new());
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.small_button("Load destination…").clicked() {
-                            self.dialog = Some(Dialog::load());
-                            self.dialog_request = Some(self.submit(
-                                "Read destination folders",
-                                true,
-                                |library, _| Ok(Reply::Folders(library.import_folder_contents()?)),
-                            ));
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.spacing_mut().button_padding = egui::vec2(6.0, 4.0);
+                        ui.label(RichText::new("FPV Rush").strong());
+                        if ui.button("Import Folder…").clicked() {
+                            self.open_import(None, String::new());
                         }
-                        if ui.small_button("Settings").clicked() {
-                            self.dialog = Some(Dialog::settings(&self.config));
-                            self.dialog_request =
-                                Some(self.submit("Read cache usage", true, |library, _| {
-                                    Ok(Reply::Cache(library.cache_usage()?))
-                                }));
-                        }
-                        if ui.small_button("About").clicked() {
-                            self.show_about = true;
-                        }
+                        let import_options = ui.menu_button("  ", |ui| {
+                            if ui.button("Load from destination…").clicked() {
+                                self.dialog = Some(Dialog::load());
+                                self.dialog_request = Some(self.submit(
+                                    "Read destination folders",
+                                    true,
+                                    |library, _| {
+                                        Ok(Reply::Folders(library.import_folder_contents()?))
+                                    },
+                                ));
+                                ui.close();
+                            }
+                        });
+                        paint_metadata_icon(
+                            ui,
+                            MetadataIcon::Chevron,
+                            import_options.response.rect.shrink(2.0),
+                        );
+                        let settings = ui.menu_button("  ", |ui| {
+                            if ui.button("Settings").clicked() {
+                                self.dialog = Some(Dialog::settings(&self.config));
+                                self.dialog_request =
+                                    Some(self.submit("Read cache usage", true, |library, _| {
+                                        Ok(Reply::Cache(library.cache_usage()?))
+                                    }));
+                                ui.close();
+                            }
+                            if ui.button("About FPV Rush").clicked() {
+                                self.show_about = true;
+                                ui.close();
+                            }
+                        });
+                        paint_metadata_icon(
+                            ui,
+                            MetadataIcon::Settings,
+                            settings.response.rect.shrink(2.0),
+                        );
+                        settings.response.on_hover_text("Settings and About");
                     });
                 });
                 for card in self.cards.clone() {
@@ -386,49 +459,90 @@ impl App {
                     }
                 }
                 ui.separator();
-                for (view, label) in [
-                    (View::Sessions, "Sessions"),
-                    (View::Flights, "All flights"),
-                    (View::Figures, "Figures"),
-                ] {
-                    if ui
-                        .selectable_label(self.browse.view == view, label)
-                        .clicked()
-                    {
-                        self.browse.view = view;
-                        self.browse.page = 0;
-                        self.selected.clear();
-                    }
-                }
-                ui.separator();
-                egui::ScrollArea::vertical()
-                    .id_salt("sessions")
-                    .max_height(ui.available_height() * 0.55)
-                    .show(ui, |ui| {
-                        for session in self.sessions.clone() {
-                            let response = ui.selectable_label(
-                                self.browse.session.as_ref() == Some(&session.id),
-                                format!("{}  ·  {}", session.name, session.flights.len()),
-                            );
-                            if response.clicked() {
-                                self.browse.session = Some(session.id.clone());
-                                self.browse.view = View::Sessions;
-                                self.browse.sort = Sort::Oldest;
-                                self.browse.page = 0;
-                                self.selected.clear();
-                            }
-                            response.on_hover_text(format!(
-                                "{}\n{} recording(s)\n{}",
-                                day(&session.date),
-                                session.files.len(),
-                                session.location.as_deref().unwrap_or_default()
-                            ));
+                let counts = [
+                    self.sessions.len(),
+                    self.sessions.iter().map(|s| s.flights.len()).sum(),
+                    self.sessions
+                        .iter()
+                        .flat_map(|s| &s.flights)
+                        .map(|f| f.figures.len())
+                        .sum(),
+                ];
+                ui.columns(3, |columns| {
+                    for (column, (view, label, count)) in columns.iter_mut().zip([
+                        (View::Sessions, "Sessions", counts[0]),
+                        (View::Flights, "All flights", counts[1]),
+                        (View::Figures, "Figures", counts[2]),
+                    ]) {
+                        if column
+                            .add_sized(
+                                [column.available_width(), 42.0],
+                                egui::Button::new(format!("{label}\n{count}"))
+                                    .selected(self.browse.view == view),
+                            )
+                            .clicked()
+                        {
+                            self.browse.view = view;
+                            self.browse.page = 0;
+                            self.selected.clear();
+                            self.selecting = false;
                         }
-                    });
+                    }
+                });
                 ui.separator();
-                if ui.checkbox(&mut self.browse.liked, "Liked only").changed() {
-                    self.browse.page = 0;
+                if self.browse.view == View::Sessions {
+                    ui.small(RichText::new("SESSIONS").strong().weak());
+                    egui::ScrollArea::vertical()
+                        .id_salt("sessions")
+                        .max_height((ui.available_height() - 170.0).max(100.0))
+                        .show(ui, |ui| {
+                            for session in self.sessions.clone() {
+                                let selected = self.browse.session.as_ref() == Some(&session.id);
+                                let fill = if selected {
+                                    Color32::from_rgb(68, 39, 36)
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                let row = egui::Frame::new()
+                                    .fill(fill)
+                                    .corner_radius(7.0)
+                                    .inner_margin(6.0)
+                                    .show(ui, |ui| {
+                                        ui.set_width((ui.available_width() - 12.0).max(1.0));
+                                        ui.add(egui::Label::new(&session.name).truncate());
+                                        ui.small(
+                                            RichText::new(format!(
+                                                "{} · {} files · {} flights",
+                                                day(&session.date),
+                                                session.files.len(),
+                                                session.flights.len()
+                                            ))
+                                            .weak(),
+                                        );
+                                        let mut sources = Vec::new();
+                                        for file in &session.files {
+                                            if !sources.contains(&file.source) {
+                                                sources.push(file.source.clone());
+                                            }
+                                        }
+                                        if !sources.is_empty() {
+                                            ui.horizontal_wrapped(|ui| {
+                                                metadata_icon(ui, MetadataIcon::Dvr);
+                                                ui.small(RichText::new(sources.join(" · ")).weak());
+                                            });
+                                        }
+                                    });
+                                if row.response.interact(egui::Sense::click()).clicked() {
+                                    self.browse.session = Some(session.id);
+                                    self.browse.sort = Sort::Oldest;
+                                    self.browse.page = 0;
+                                    self.selected.clear();
+                                    self.selecting = false;
+                                }
+                            }
+                        });
                 }
+                ui.separator();
                 if self.browse.view != View::Sessions {
                     let old = self.browse.filter_session.clone();
                     egui::ComboBox::from_id_salt("session-filter")
@@ -671,7 +785,9 @@ impl App {
                 if let Some(session) = &session { self.session_header(ui, session); }
                 else { ui.heading("Select a session or import recordings"); return; }
             } else { ui.heading(if self.browse.view == View::Flights { "All flights" } else { "Figures" }); }
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                if ui.selectable_label(self.browse.liked, "♡ Liked").clicked() { self.browse.liked = !self.browse.liked; self.browse.page = 0; }
+                if self.browse.view != View::Figures && ui.selectable_label(self.selecting, "Select").clicked() { self.selecting = !self.selecting; if !self.selecting { self.selected.clear(); } }
                 ui.label("Sort:"); let old = self.browse.sort;
                 egui::ComboBox::from_id_salt("sort").selected_text(format!("{:?}", self.browse.sort)).show_ui(ui, |ui| {
                     for sort in [Sort::Newest, Sort::Oldest, Sort::Longest] { ui.selectable_value(&mut self.browse.sort, sort, format!("{sort:?}")); }
@@ -709,7 +825,7 @@ impl App {
                     }
                 });
             }
-            if self.browse.view != View::Figures { ui.horizontal(|ui| {
+            if self.browse.view != View::Figures && self.selecting { ui.horizontal_wrapped(|ui| {
                 if ui.small_button("Select all filtered").clicked() { self.selected.extend(items.iter().map(|(_, f, _)| f.id.clone())); }
                 if ui.small_button("Clear selection").clicked() { self.selected.clear(); }
                 if ui.add_enabled(!self.selected.is_empty() && !self.busy() && self.ffmpeg_ok,
@@ -739,7 +855,7 @@ impl App {
         flight: &FlightView,
         figure: Option<&fpv_library::TagView>,
     ) {
-        egui::Frame::group(ui.style()).show(ui, |ui| {
+        egui::Frame::NONE.show(ui, |ui| {
             let width = ui.available_width();
             let key = format!("poster:{}", flight.cache_key);
             let mut path = self
@@ -748,7 +864,7 @@ impl App {
                 .cloned()
                 .or_else(|| flight.clips.first().and_then(|clip| clip.thumbnail.clone()));
             let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(width, width * 0.62), egui::Sense::click());
+                ui.allocate_exact_size(egui::vec2(width, width * 0.75), egui::Sense::click());
             ui.painter()
                 .rect_filled(rect, 4.0, Color32::from_rgb(22, 28, 37));
             if !flight.cloud
@@ -811,11 +927,60 @@ impl App {
                     })
                 });
             }
-            if response.clicked() {
+            let heart_rect = egui::Rect::from_min_size(
+                rect.right_top() + egui::vec2(-30.0, 4.0),
+                egui::vec2(26.0, 24.0),
+            );
+            let mut like_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt(("like", &flight.id))
+                    .max_rect(heart_rect),
+            );
+            like_ui.spacing_mut().button_padding = egui::vec2(2.0, 2.0);
+            let heart = like_ui.add_enabled(
+                !self.busy(),
+                egui::Button::new(
+                    RichText::new(if flight.liked { "♥" } else { "♡" }).color(Color32::WHITE),
+                )
+                .fill(Color32::from_black_alpha(120))
+                .min_size(heart_rect.size()),
+            );
+            if heart.clicked() && !self.busy() {
+                let id = flight.id.clone();
+                self.submit("Like flight", true, move |library, _| {
+                    library.toggle_like(&id)?;
+                    Ok(Reply::Done("Like updated".into()))
+                });
+            }
+            if let Some(figure) = figure {
+                thumbnail_badge(ui, rect, &figure.label, ACCENT, false);
+                if !figure.marker {
+                    thumbnail_badge(
+                        ui,
+                        rect,
+                        &format!("{:.1} s", figure.end - figure.start),
+                        Color32::from_black_alpha(190),
+                        true,
+                    );
+                }
+            } else if !flight.figures.is_empty() {
+                thumbnail_badge(
+                    ui,
+                    rect,
+                    &format!(
+                        "{} figure{}",
+                        flight.figures.len(),
+                        if flight.figures.len() == 1 { "" } else { "s" }
+                    ),
+                    Color32::from_black_alpha(190),
+                    false,
+                );
+            }
+            if response.clicked() && !heart.clicked() {
                 self.play(flight, figure.map(|tag| tag.start).unwrap_or_default());
             }
             ui.horizontal(|ui| {
-                if figure.is_none() {
+                if figure.is_none() && self.selecting {
                     let mut selected = self.selected.contains(&flight.id);
                     if ui.checkbox(&mut selected, "").changed() {
                         if selected {
@@ -825,106 +990,112 @@ impl App {
                         }
                     }
                 }
-                ui.label(
-                    RichText::new(
-                        figure
-                            .map(|tag| tag.label.clone())
-                            .unwrap_or_else(|| flight_name(flight)),
-                    )
-                    .strong(),
+                ui.add(
+                    egui::Label::new(RichText::new(flight_name(flight)).strong().size(16.0))
+                        .truncate(),
                 );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.flight_actions(ui, flight);
+                    if figure.is_none() {
+                        ui.small(RichText::new(clock(flight.duration)).weak());
+                    }
+                });
             });
             if self.browse.view != View::Sessions {
-                ui.small(&session.name);
+                ui.small(
+                    RichText::new(format!("{} · {}", session.name, day(&session.date))).weak(),
+                );
             }
-            ui.horizontal(|ui| {
-                metadata_icon(ui, MetadataIcon::Dvr);
-                ui.small(format!("{} · {}", clock(flight.duration), flight.source));
-            });
-            ui.horizontal(|ui| {
-                metadata_icon(ui, MetadataIcon::Film);
-                ui.small(&flight.format);
-            });
-            if flight.recordings > 1 {
-                ui.small(format!("Spans {} recordings", flight.recordings));
-            }
-            if flight.reduced {
-                ui.small("Reduced DVR footage");
-            }
-            if flight.cloud {
-                ui.small("Online Only · downloads when played");
-            }
-            ui.small(
-                flight
-                    .labels
-                    .iter()
-                    .chain(&session.labels)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" · "),
-            );
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
-                        !self.busy(),
-                        egui::Button::new(if flight.liked { "♥" } else { "♡" }),
-                    )
-                    .clicked()
-                {
-                    let id = flight.id.clone();
-                    self.submit("Like flight", true, move |library, _| {
-                        library.toggle_like(&id)?;
-                        Ok(Reply::Done("Like updated".into()))
-                    });
-                }
-                if ui
-                    .add_enabled(self.ffmpeg_ok, egui::Button::new("Play"))
-                    .clicked()
-                {
-                    self.play(flight, figure.map(|tag| tag.start).unwrap_or_default());
-                }
-                ui.add_enabled_ui(!self.busy(), |ui| {
-                    ui.menu_button("…", |ui| {
-                        if ui
-                            .add_enabled(flight.cloud, egui::Button::new("Download recordings"))
-                            .clicked()
-                        {
-                            self.download_cloud(flight.id.clone(), false);
-                            ui.close();
-                        }
-                        if ui
-                            .add_enabled(flight.freeable, egui::Button::new("Free up cloud space…"))
-                            .clicked()
-                        {
-                            self.dialog = Some(Dialog::free_flight(flight));
-                            ui.close();
-                        }
-                        if ui.button("Edit title…").clicked() {
-                            self.dialog = Some(Dialog::title(flight));
-                            ui.close();
-                        }
-                        if ui.button("Edit boundaries…").clicked() {
-                            self.dialog = Some(Dialog::editor(flight));
-                            ui.close();
-                        }
-                        if ui.button("Export…").clicked() {
-                            self.dialog = Some(Dialog::export(flight));
-                            ui.close();
-                        }
-                        if ui.button("Delete flight…").clicked() {
-                            self.dialog = Some(Dialog::delete_flight(flight));
-                            let id = flight.id.clone();
-                            self.dialog_request = Some(self.submit(
-                                "Plan flight deletion",
-                                true,
-                                move |library, _| {
-                                    Ok(Reply::Deletion(library.flight_deletion(&id)?))
-                                },
-                            ));
-                            ui.close();
-                        }
-                    });
+            if let Some(figure) = figure {
+                ui.small(
+                    RichText::new(if figure.marker {
+                        clock(figure.start)
+                    } else {
+                        format!("{} – {}", clock(figure.start), clock(figure.end))
+                    })
+                    .weak(),
+                );
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    metadata_icon(ui, MetadataIcon::Dvr);
+                    ui.small(
+                        RichText::new(format!(
+                            "{}{}",
+                            flight.source,
+                            if flight.reduced { " · reduced" } else { "" }
+                        ))
+                        .weak(),
+                    );
                 });
+                ui.horizontal_wrapped(|ui| {
+                    metadata_icon(ui, MetadataIcon::Film);
+                    ui.small(RichText::new(&flight.format).weak());
+                });
+                if flight.recordings > 1 {
+                    ui.small(RichText::new(format!("{} recordings", flight.recordings)).weak());
+                }
+                if flight.cloud {
+                    ui.small("Online Only · downloads when played");
+                }
+                ui.horizontal_wrapped(|ui| {
+                    let mut shown = Vec::<&str>::new();
+                    for label in flight.labels.iter().chain(&session.labels) {
+                        if shown.iter().any(|s| browse::same(s, label)) {
+                            continue;
+                        }
+                        shown.push(label);
+                        egui::Frame::new()
+                            .fill(Color32::from_rgb(35, 37, 43))
+                            .corner_radius(9.0)
+                            .inner_margin(egui::Margin::symmetric(6, 1))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new(label).size(11.0));
+                            });
+                    }
+                });
+            }
+        });
+    }
+
+    fn flight_actions(&mut self, ui: &mut egui::Ui, flight: &FlightView) {
+        ui.add_enabled_ui(!self.busy(), |ui| {
+            ui.menu_button("…", |ui| {
+                if ui
+                    .add_enabled(flight.cloud, egui::Button::new("Download recordings"))
+                    .clicked()
+                {
+                    self.download_cloud(flight.id.clone(), false);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(flight.freeable, egui::Button::new("Free up cloud space…"))
+                    .clicked()
+                {
+                    self.dialog = Some(Dialog::free_flight(flight));
+                    ui.close();
+                }
+                if ui.button("Edit title…").clicked() {
+                    self.dialog = Some(Dialog::title(flight));
+                    ui.close();
+                }
+                if ui.button("Edit boundaries…").clicked() {
+                    self.dialog = Some(Dialog::editor(flight));
+                    ui.close();
+                }
+                if ui.button("Export…").clicked() {
+                    self.dialog = Some(Dialog::export(flight));
+                    ui.close();
+                }
+                if ui.button("Delete flight…").clicked() {
+                    self.dialog = Some(Dialog::delete_flight(flight));
+                    let id = flight.id.clone();
+                    self.dialog_request = Some(self.submit(
+                        "Plan flight deletion",
+                        true,
+                        move |library, _| Ok(Reply::Deletion(library.flight_deletion(&id)?)),
+                    ));
+                    ui.close();
+                }
             });
         });
     }

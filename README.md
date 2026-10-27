@@ -5,6 +5,20 @@ flights and tagged figures. Imports Fat Shark analog DVR and action-camera
 takes, detects usable analog video between snow and menus, and exports lossless,
 frame-exact cuts. The interface uses eframe/egui on macOS, Linux and Windows.
 
+## Interface layout references
+
+The native interface follows the layout of these earlier application captures:
+compact navigation tabs and session summaries, thumbnail badges, tag pills and
+pagination below the grid. The native player adds controls over the video and
+adapts its size to the visible display.
+
+| Sessions | Figures |
+| --- | --- |
+| ![Session layout](docs/screenshots/session.png) | ![Figure layout](docs/screenshots/figures.png) |
+
+[Flight grid reference](docs/screenshots/flights.png) ·
+[Player reference](docs/screenshots/player.png)
+
 ## Install
 
 Distribution packages include FFmpeg and ffprobe. No Node.js, browser engine,
@@ -109,6 +123,11 @@ Session/flight menus offer Download and, on supported macOS cloud drives,
 Free Up Space. Settings exposes separate preview/picture budgets and cache
 cleanup by category. The import and session-edit dialogs use a calendar date
 picker; the flying date remains optional for action-camera imports.
+New import dialogs select today's local date. **No Sound** and its clickable
+speaker icon apply to newly imported recordings only: their source bytes remain
+intact, while playback and exports honor the persisted mute choice. Already known
+recordings skipped during import keep their previous choice. Settings' global
+**Mute videos** preference can also silence all playback and exports.
 
 Long-running work appears in a collapsible Tasks panel along the bottom of the
 main window, where progress, notifications, and task logs stay available
@@ -116,6 +135,10 @@ without floating notification windows. Settings includes Mute videos, which
 silences player playback and exported video, and the splash-screen preference.
 The About window displays the Letz Kwad logo, project link, and developer
 credits.
+It includes **Coded by Claude, Codex, Driven by Defane, Thanat0s** and a link to
+[LetzKwad](https://letzkwad.lu/). On macOS the system About panel includes the same
+branding and links through bundled rich-text credits. The splash dismisses
+automatically with a 2.5× zoom and fade; it has no Close button.
 
 Segment analyzes DVR recordings only. Picture statistics determine boundaries,
 independently of OSD or armed state. It joins flights continuing into the next
@@ -144,6 +167,8 @@ are on the right. The player cannot be collapsed; its controls include a
 fullscreen toggle, Escape to exit fullscreen, and an X close button. Mute videos
 also silences player audio, in which case the volume slider is replaced by a
 muted indicator.
+The progress bar, playback controls and volume are overlaid on the video. The
+window stays inside the visible viewport, including when the viewport shrinks.
 
 Space plays/pauses; Left/Right seek five seconds; I marks the start of a figure.
 Enter in the figure-name field records a point or completes the marked range.

@@ -5,6 +5,7 @@
 - Seek through long-GOP footage by decoding from the input start, and keep the seek slider interactive (#3).
 - Add a persisted, opt-in Mute videos setting for player playback and exports (#4, #14).
 - Show a dismissible Letz Kwad splash screen with a persisted opt-out and animated zoom/fade exit (#5).
+- Enlarge the splash to 2.5 times its initial size while fading out and remove its Close button (#5).
 - Add an About window with the Letz Kwad logo, project URL, and developer credits (#7).
 - Use calendar date pickers for recording imports and session edits (#6).
 - Keep the Letz Kwad logo and credits visible in About and remove duplicate splash title text (#7).
@@ -13,10 +14,10 @@
 - Add a speaker icon beside the player volume slider (#15).
 - Update the README for the current native Rust/egui workflow and controls (#9).
 - Reduce player startup/seek buffering with indexed decoding, retain sequential recovery, and enable FFmpeg's internal codec-header extraction and EV300D ADPCM decoder (#16).
-- Enlarge the splash to 2.5 times its initial size while fading out and remove its Close button (#5).
 - Include the LetzKwad logo, exact role credits and website in both the native macOS and in-app About views (#7).
-- Overlay seek, playback and audio controls on the video (#21).
+- Restore reference navigation tabs/counts, session summaries, clean cards, figure badges and tag pills (#8).
 - Keep the player inside the visible viewport, including after shrinking the app window (#17).
 - Move pagination and its Showing counter below the thumbnail grid (#18).
 - Select today's local date by default in new import dialogs (#19).
 - Add import's No Sound checkbox and speaker toggle, persisting playback/export muting per recording without altering source files (#20).
+- Overlay seek, playback and audio controls on the video (#21).

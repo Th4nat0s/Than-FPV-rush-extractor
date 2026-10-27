@@ -61,6 +61,7 @@ pub(crate) struct App {
     thumbnails: HashMap<String, String>,
     requested: HashSet<String>,
     selected: HashSet<String>,
+    selecting: bool,
     search: String,
     notices: Vec<String>,
     show_tasks: bool,
@@ -83,23 +84,41 @@ fn splash_image() -> image::RgbaImage {
     .to_rgba8()
 }
 
+fn configure_style(ctx: &egui::Context) {
+    ctx.set_visuals(egui::Visuals::dark());
+    let mut style = (*ctx.style()).clone();
+    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
+    style.spacing.button_padding = egui::vec2(10.0, 6.0);
+    style.visuals.panel_fill = egui::Color32::from_rgb(24, 26, 32);
+    style.visuals.window_fill = egui::Color32::from_rgb(27, 29, 35);
+    style.visuals.extreme_bg_color = egui::Color32::from_rgb(14, 16, 20);
+    style.visuals.faint_bg_color = egui::Color32::from_rgb(34, 36, 43);
+    style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(24, 26, 32);
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(39, 41, 48);
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(190, 67, 38);
+    style.visuals.widgets.active.bg_fill = ACCENT;
+    style.visuals.selection.bg_fill = ACCENT;
+    style.visuals.hyperlink_color = ACCENT;
+    style.visuals.override_text_color = Some(egui::Color32::from_rgb(220, 223, 230));
+    style.visuals.weak_text_alpha = 0.65;
+    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(34, 36, 43);
+    style.visuals.widgets.inactive.bg_stroke =
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(48, 52, 62));
+    style.visuals.widgets.noninteractive.bg_stroke = style.visuals.widgets.inactive.bg_stroke;
+    style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(55, 58, 68);
+    style.visuals.widgets.active.weak_bg_fill = ACCENT;
+    style
+        .text_styles
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Heading, egui::FontId::proportional(22.0));
+    ctx.set_style(style);
+}
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        let mut style = (*cc.egui_ctx.style()).clone();
-        style.spacing.item_spacing = egui::vec2(10.0, 8.0);
-        style.spacing.button_padding = egui::vec2(10.0, 6.0);
-        style.visuals.panel_fill = egui::Color32::from_rgb(24, 26, 32);
-        style.visuals.window_fill = egui::Color32::from_rgb(27, 29, 35);
-        style.visuals.extreme_bg_color = egui::Color32::from_rgb(14, 16, 20);
-        style.visuals.faint_bg_color = egui::Color32::from_rgb(34, 36, 43);
-        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(24, 26, 32);
-        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(39, 41, 48);
-        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(190, 67, 38);
-        style.visuals.widgets.active.bg_fill = ACCENT;
-        style.visuals.selection.bg_fill = ACCENT;
-        style.visuals.hyperlink_color = ACCENT;
-        cc.egui_ctx.set_style(style);
+        configure_style(&cc.egui_ctx);
         let mut browse: Browse = cc
             .storage
             .and_then(|storage| eframe::get_value(storage, "browse"))
@@ -140,6 +159,7 @@ impl App {
             thumbnails: HashMap::new(),
             requested: HashSet::new(),
             selected: HashSet::new(),
+            selecting: false,
             search: String::new(),
             notices: vec![],
             show_tasks: false,
@@ -268,7 +288,8 @@ impl App {
                                 .flat_map(|s| &s.flights)
                                 .find(|f| f.id == flight)
                             {
-                                let muted = self.config.mute_videos || parts.iter().all(|part| !part.has_audio);
+                                let muted = self.config.mute_videos
+                                    || parts.iter().all(|part| !part.has_audio);
                                 let player = player::Player::new_with_volume(
                                     parts,
                                     self.tools.clone(),
@@ -383,7 +404,10 @@ impl eframe::App for App {
         self.splash_window(ctx);
         self.about_window(ctx);
         if let Some(path) = std::env::var_os("FPV_SMOKE_SCREENSHOT") {
-            if self.ready && !self.screenshot_requested {
+            let capture_due = self.exit_after.is_none_or(|end| {
+                end.saturating_duration_since(std::time::Instant::now()) <= Duration::from_secs(1)
+            });
+            if self.ready && !self.screenshot_requested && capture_due {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
                 self.screenshot_requested = true;
             }
