@@ -1196,9 +1196,19 @@ impl App {
             .vscroll(true)
             .resizable(!expanded);
         if fullscreen {
+            // Paint on the player's own layer even during egui's invisible
+            // sizing pass, so no frame exposes the library around its contents.
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Middle,
+                egui::Id::new("player"),
+            ))
+            .rect_filled(ctx.content_rect(), 0.0, Color32::BLACK);
             window = window
                 .title_bar(false)
-                .frame(egui::Frame::NONE)
+                .fade_in(false)
+                .fade_out(false)
+                .constrain_to(ctx.content_rect())
+                .frame(egui::Frame::NONE.fill(Color32::BLACK))
                 .fixed_rect(ctx.content_rect());
         } else if viewer.window.maximized {
             window = window

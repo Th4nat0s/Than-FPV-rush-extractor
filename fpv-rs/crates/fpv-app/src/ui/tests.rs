@@ -1120,3 +1120,44 @@ fn splash_has_no_white_card_or_border() {
         "transparent splash must not paint a white card or border"
     );
 }
+
+#[test]
+fn fullscreen_player_covers_the_entire_library_with_an_opaque_surface() {
+    fn covers(shape: &egui::Shape, viewport: egui::Rect) -> bool {
+        match shape {
+            egui::Shape::Rect(r) => r.fill == Color32::BLACK && r.rect.contains_rect(viewport),
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| covers(s, viewport)),
+            _ => false,
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut viewer = test_viewer(&ctx);
+    viewer.fullscreen = true;
+    app.viewer = Some(viewer);
+    for size in [
+        egui::vec2(1280.0, 820.0),
+        egui::vec2(900.0, 600.0),
+        egui::vec2(1600.0, 1000.0),
+    ] {
+        let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for _ in 0..4 {
+            let output = ctx.run(input(size), |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE.fill(Color32::RED))
+                    .show(ctx, |ui| {
+                        ui.label("Library beneath the player");
+                    });
+                app.player_window(ctx);
+            });
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|s| s.clip_rect.contains_rect(viewport.shrink(0.1))
+                        && covers(&s.shape, viewport.shrink(0.1))),
+                "fullscreen must cover every gap immediately at {size:?}"
+            );
+        }
+    }
+}
