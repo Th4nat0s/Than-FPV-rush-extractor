@@ -23,6 +23,8 @@ fn app(ctx: &egui::Context) -> App {
         dialog: None,
         dialog_request: None,
         viewer: None,
+        cloud_wait: None,
+        detached: HashSet::new(),
         images: Images::new(ctx.clone()),
         thumbnails: HashMap::new(),
         requested: HashSet::new(),
@@ -1340,4 +1342,183 @@ fn fullscreen_labels_remain_readable_with_a_light_system_theme() {
         !ctx.style().visuals.dark_mode,
         "fullscreen must not change the rest of the application's theme"
     );
+}
+
+fn session_of(flights: Vec<FlightView>) -> SessionView {
+    SessionView {
+        id: "session".into(),
+        name: "Test session".into(),
+        date: None,
+        files: vec![],
+        flights,
+        segmentable: false,
+        reducible: false,
+        detection_profile: "standard".into(),
+        location: None,
+        notes: None,
+        labels: vec![],
+    }
+}
+
+/// The app with a worker the test plays: jobs it was handed, events it sends.
+fn app_with_worker(
+    ctx: &egui::Context,
+) -> (
+    App,
+    mpsc::Receiver<crate::worker::Job>,
+    mpsc::Sender<crate::worker::Event>,
+) {
+    let mut app = app(ctx);
+    let (sender, jobs) = mpsc::channel();
+    let (events, receiver) = mpsc::channel();
+    app.worker = Worker {
+        sender,
+        events: receiver,
+    };
+    (app, jobs, events)
+}
+
+/// Clicks the text `label` drawn by `draw`.
+fn click_text(ctx: &egui::Context, app: &mut App, label: &str, draw: fn(&mut App, &egui::Context)) {
+    let size = egui::vec2(1280.0, 820.0);
+    let mut output = ctx.run(input(size), |ctx| draw(app, ctx));
+    for _ in 0..2 {
+        output = ctx.run(input(size), |ctx| draw(app, ctx));
+    }
+    let position = text_positions(&output.shapes)
+        .into_iter()
+        .find(|(text, _)| text == label)
+        .unwrap_or_else(|| panic!("{label} is not on screen"))
+        .1
+        + egui::vec2(5.0, 5.0);
+    for pressed in [true, false] {
+        let mut raw = input(size);
+        raw.events = vec![
+            egui::Event::PointerMoved(position),
+            egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            },
+        ];
+        let _ = ctx.run(raw, |ctx| draw(app, ctx));
+    }
+}
+
+fn shown_texts(
+    ctx: &egui::Context,
+    app: &mut App,
+    draw: fn(&mut App, &egui::Context),
+) -> Vec<String> {
+    // A new window is laid out over a few frames before it is drawn.
+    let mut texts = vec![];
+    for _ in 0..3 {
+        let output = ctx.run(input(egui::vec2(1280.0, 820.0)), |ctx| draw(app, ctx));
+        texts = text_positions(&output.shapes)
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect();
+    }
+    texts
+}
+
+#[test]
+fn a_flight_in_the_cloud_waits_for_its_videos_then_plays() {
+    let ctx = egui::Context::default();
+    let (mut app, jobs, events) = app_with_worker(&ctx);
+    let in_cloud = FlightView {
+        cloud: true,
+        ..flight()
+    };
+    app.sessions = vec![session_of(vec![in_cloud.clone()])];
+    app.play(&in_cloud, 0.0);
+    let job = jobs.try_recv().expect("the download is queued");
+    let draw: fn(&mut App, &egui::Context) = |app, ctx| {
+        app.receive(ctx);
+        app.cloud_wait_window(ctx)
+    };
+    events
+        .send(crate::worker::Event::Progress {
+            id: job.id,
+            step: fpv_library::Step {
+                line: "Downloading GH010042.MP4 (1/2)…".into(),
+                done: 0,
+                total: 2,
+            },
+        })
+        .unwrap();
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        texts.iter().any(|t| t == "Downloading from the cloud"),
+        "{texts:?}"
+    );
+    assert!(texts.iter().any(|t| t == "Video 1 of 2"), "{texts:?}");
+    assert!(
+        texts.iter().any(|t| t.contains("each one arrives whole")),
+        "{texts:?}"
+    );
+
+    events
+        .send(crate::worker::Event::Finished {
+            id: job.id,
+            result: Ok(crate::worker::Reply::Playback {
+                flight: in_cloud.id.clone(),
+                at: 0.0,
+                parts: vec![],
+            }),
+        })
+        .unwrap();
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        !texts.iter().any(|t| t == "Downloading from the cloud"),
+        "the wait is over: {texts:?}"
+    );
+    assert!(
+        app.viewer.is_some(),
+        "the player opens once the videos are here"
+    );
+}
+
+#[test]
+fn continuing_in_the_background_leaves_the_flight_unplayed() {
+    let ctx = egui::Context::default();
+    let (mut app, jobs, events) = app_with_worker(&ctx);
+    let in_cloud = FlightView {
+        cloud: true,
+        ..flight()
+    };
+    app.sessions = vec![session_of(vec![in_cloud.clone()])];
+    app.play(&in_cloud, 0.0);
+    let job = jobs.try_recv().unwrap();
+    let draw: fn(&mut App, &egui::Context) = |app, ctx| {
+        app.receive(ctx);
+        app.cloud_wait_window(ctx)
+    };
+    click_text(&ctx, &mut app, "Continue in Background", draw);
+    assert!(app.cloud_wait.is_none());
+    assert!(
+        app.tasks.iter().any(|t| t.id == job.id && t.running),
+        "the download goes on"
+    );
+    events
+        .send(crate::worker::Event::Finished {
+            id: job.id,
+            result: Ok(crate::worker::Reply::Playback {
+                flight: in_cloud.id.clone(),
+                at: 0.0,
+                parts: vec![],
+            }),
+        })
+        .unwrap();
+    let _ = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        app.viewer.is_none(),
+        "nothing opens behind the viewer's back"
+    );
+
+    // A flight already here opens without a wait.
+    let here = flight();
+    app.play(&here, 0.0);
+    assert!(app.cloud_wait.is_none());
 }

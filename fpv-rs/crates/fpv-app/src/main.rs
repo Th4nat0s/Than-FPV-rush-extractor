@@ -4,6 +4,7 @@
 mod about_menu;
 mod boundary;
 mod browse;
+mod cloudwait;
 mod dialogs;
 mod images;
 mod player;
@@ -29,6 +30,7 @@ struct Task {
     failed: bool,
     quiet: bool,
     log: Vec<String>,
+    started: std::time::Instant,
 }
 
 #[derive(Default)]
@@ -70,6 +72,10 @@ pub(crate) struct App {
     dialog: Option<Dialog>,
     dialog_request: Option<u64>,
     viewer: Option<Viewer>,
+    /// A flight waiting for its recordings to come down before it plays.
+    cloud_wait: Option<cloudwait::CloudWait>,
+    /// Downloads left to finish in the background: their flight does not open.
+    detached: HashSet<u64>,
     images: images::Images,
     thumbnails: HashMap<String, String>,
     requested: HashSet<String>,
@@ -169,6 +175,8 @@ impl App {
             dialog: None,
             dialog_request: None,
             viewer: None,
+            cloud_wait: None,
+            detached: HashSet::new(),
             images: images::Images::new(cc.egui_ctx.clone()),
             thumbnails: HashMap::new(),
             requested: HashSet::new(),
@@ -205,6 +213,7 @@ impl App {
             total: 0,
             running: true,
             failed: false,
+            started: std::time::Instant::now(),
         });
         if self
             .worker
@@ -270,6 +279,10 @@ impl App {
                     }
                 }
                 Event::Finished { id, result } => {
+                    if self.cloud_wait.as_ref().is_some_and(|wait| wait.task == id) {
+                        self.cloud_wait = None;
+                    }
+                    let detached = self.detached.remove(&id);
                     if self
                         .dialog
                         .as_mut()
@@ -296,6 +309,8 @@ impl App {
                             self.config.mute_videos = mute_videos;
                             self.config.do_not_show_splash = do_not_show_splash;
                         }
+                        // Downloaded in the background, as asked: nothing opens.
+                        Ok(Reply::Playback { .. }) if detached => {}
                         Ok(Reply::Playback { flight, at, parts }) => {
                             if let Some(flight) = self
                                 .sessions
@@ -380,7 +395,7 @@ impl App {
     fn play(&mut self, flight: &FlightView, at: f64) {
         self.viewer = None;
         let id = flight.id.clone();
-        self.submit(
+        let task = self.submit(
             format!("Open {}", flight_name(flight)),
             false,
             move |library, progress| {
@@ -408,6 +423,12 @@ impl App {
                 })
             },
         );
+        if flight.cloud {
+            self.cloud_wait = Some(cloudwait::CloudWait {
+                task,
+                flight: flight_name(flight),
+            });
+        }
     }
 }
 
@@ -434,6 +455,7 @@ impl eframe::App for App {
         self.browser(ctx);
         self.player_window(ctx);
         self.dialog_window(ctx);
+        self.cloud_wait_window(ctx);
         self.splash_window(ctx);
         self.about_window(ctx);
         if let Some(path) = std::env::var_os("FPV_SMOKE_SCREENSHOT") {
