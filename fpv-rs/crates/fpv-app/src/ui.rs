@@ -1,7 +1,7 @@
 use crate::{
     ACCENT, App, Dialog, Reply, Viewer,
     browse::{self, Sort, View, clock, flight_name, page_range},
-    day, open_folder,
+    day, reveal,
 };
 use eframe::egui::{self, Color32, RichText};
 use fpv_library::{FlightView, SessionView};
@@ -757,7 +757,7 @@ impl App {
                         let id = file.id.clone();
                         self.submit("Open recording folder", true, move |library, _| {
                             let path = library.recording_path(&id)?;
-                            open_folder(path.parent().unwrap_or(&path))?;
+                            reveal(&path)?;
                             Ok(Reply::Done("Folder opened".into()))
                         });
                     }
@@ -798,8 +798,9 @@ impl App {
         if ui.button("Open folders").clicked() {
             let id = session.id.clone();
             self.submit("Open session folders", true, move |library, _| {
-                for folder in library.session_folders(&id)? {
-                    open_folder(&folder)?;
+                // One recording per folder, shown selected in it.
+                for recording in library.session_folders(&id)? {
+                    reveal(&recording)?;
                 }
                 Ok(Reply::Done("Folders opened".into()))
             });

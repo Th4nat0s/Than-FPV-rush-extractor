@@ -575,6 +575,68 @@ fn day(date: &Option<String>) -> String {
         .unwrap_or_default()
 }
 
+/// Shows a recording selected in the system's file manager — never opens it,
+/// which would play it — else opens the folder it is in.
+fn reveal(path: &std::path::Path) -> Result<(), LibraryError> {
+    if cfg!(target_os = "windows") {
+        // Explorer exits 1 even when it selected the file: its status says nothing.
+        std::process::Command::new("explorer.exe")
+            .arg("/select,")
+            .arg(path)
+            .spawn()?;
+        return Ok(());
+    }
+    let (program, arguments) = reveal_command(path);
+    match std::process::Command::new(&program)
+        .args(&arguments)
+        .status()
+    {
+        Ok(status) if status.success() => Ok(()),
+        outcome => {
+            log::debug!("{program} {arguments:?}: {outcome:?}; opening the folder instead");
+            open_folder(path.parent().unwrap_or(path))
+        }
+    }
+}
+
+/// macOS selects with `open -R`; Linux asks the file manager over D-Bus, the
+/// interface every desktop's file manager answers (Files, Dolphin, Thunar…).
+fn reveal_command(path: &std::path::Path) -> (String, Vec<String>) {
+    if cfg!(target_os = "macos") {
+        return (
+            "open".into(),
+            vec!["-R".into(), path.to_string_lossy().into_owned()],
+        );
+    }
+    (
+        "dbus-send".into(),
+        vec![
+            "--session".into(),
+            "--dest=org.freedesktop.FileManager1".into(),
+            "--type=method_call".into(),
+            "--print-reply".into(),
+            "/org/freedesktop/FileManager1".into(),
+            "org.freedesktop.FileManager1.ShowItems".into(),
+            format!("array:string:{}", file_uri(path)),
+            "string:".into(),
+        ],
+    )
+}
+
+/// `file://` and the path, every byte but unreserved ones and `/` escaped —
+/// commas too, since dbus-send splits an array on them.
+fn file_uri(path: &std::path::Path) -> String {
+    let mut uri = String::from("file://");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
+}
+
 fn open_folder(path: &std::path::Path) -> Result<(), LibraryError> {
     let mut command = if cfg!(target_os = "macos") {
         std::process::Command::new("open")
@@ -618,6 +680,37 @@ fn main() -> eframe::Result {
         },
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+
+    #[test]
+    fn writes_a_file_uri_dbus_can_carry() {
+        assert_eq!(
+            file_uri(std::path::Path::new(
+                "/home/pilot/Videos/FPV Rush/L'été, 1/GH010042.MP4"
+            )),
+            "file:///home/pilot/Videos/FPV%20Rush/L%27%C3%A9t%C3%A9%2C%201/GH010042.MP4"
+        );
+    }
+
+    #[test]
+    fn selects_the_recording_instead_of_opening_it() {
+        let path = std::path::Path::new("/media/FPV Rush/PICT0032.AVI");
+        let (program, arguments) = reveal_command(path);
+        if cfg!(target_os = "macos") {
+            assert_eq!((program.as_str(), arguments[0].as_str()), ("open", "-R"));
+        } else {
+            assert_eq!(program, "dbus-send");
+            assert!(arguments.contains(&"org.freedesktop.FileManager1.ShowItems".to_string()));
+            assert!(
+                arguments
+                    .contains(&"array:string:file:///media/FPV%20Rush/PICT0032.AVI".to_string())
+            );
+        }
+    }
 }
 
 #[cfg(test)]

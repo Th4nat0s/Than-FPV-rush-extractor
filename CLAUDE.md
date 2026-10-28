@@ -1266,7 +1266,11 @@ frame-exact boundary editor. Layout:
   web-side permission. On Linux that is D-Bus only (`org.freedesktop.FileManager1.ShowItems`,
   then the OpenURI portal): verified against a stand-in service on a private session bus,
   which received the clicked row's `file://` URI. A desktop with neither shows the error in
-  the session's status line.
+  the session's status line. **In the native app** (2026-10-28) `reveal` in `main.rs` does the same
+  without the plugin: `open -R` on macOS, `explorer /select,` on Windows, `dbus-send …
+  ShowItems` on Linux (URI escaped, commas too: dbus-send splits arrays on them), else the
+  folder opens. The port first passed each recording to `open`/`xdg-open`, which *plays* it.
+  The dbus-send call was checked against a stand-in service on a private bus.
 - **Task bar** (2026-10-20): a strip along the bottom of the window counts the running jobs —
   import, segmentation, export (single and batch), preview transcode — shows their mean
   progress, and lists them (running, then the last 20 finished, ✓/✕ with their result) on a
