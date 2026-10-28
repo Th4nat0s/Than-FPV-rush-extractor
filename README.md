@@ -66,7 +66,7 @@ For a native package:
 
     make macos           # on macOS; universal DMG by default
     make linux           # on Linux; deb + tar.gz + AppImage
-    make macos-remote    # dispatch native.yml on GitHub from any host
+    make macos-remote    # dispatch packaging.yml on GitHub from any host
 
 Linux AppImage packaging downloads pinned, checksum-verified appimagetool/runtime
 assets. APPIMAGETOOL can override the tool; FPV_SKIP_APPIMAGE=1 makes deb/tar only.

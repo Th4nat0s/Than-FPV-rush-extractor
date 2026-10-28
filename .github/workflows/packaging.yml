@@ -1,4 +1,7 @@
-name: Native desktop
+# Media tools and installers: long (FFmpeg is built from source on every OS),
+# so not on every pull request — ci.yml checks those. Runs on main, on release
+# tags, on demand, and on a pull request that changes the packaging itself.
+name: Packaging
 
 on:
   workflow_dispatch:
@@ -9,8 +12,11 @@ on:
         default: all
         options: [all, linux, macos, windows]
   pull_request:
+    paths:
+      - "packaging/**"
+      - ".github/workflows/packaging.yml"
   push:
-    branches: [main, migration/native-egui]
+    branches: [main]
     tags: ["v*"]
 
 permissions:

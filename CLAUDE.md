@@ -9,8 +9,12 @@ parts retain their individual clocks. The native player reads recordings directl
 and does not need a proxy. Historical Tauri/Svelte/WebKit measurements below remain
 as history, not implementation instructions. No JavaScript frontend is shipped.
 `packaging/` builds native macOS/Linux/Windows installers with separately compiled
-LGPL-only FFmpeg/ffprobe, their exact sources and build recipe. `native.yml`
-builds on each native OS. Runtime ffmpeg binaries are not linked into Rust.
+LGPL-only FFmpeg/ffprobe, their exact sources and build recipe. GitHub Actions
+(2026-10-28): `ci.yml` checks every pull request and every push to `main` — fmt,
+clippy and the tests on Linux, macOS and Windows, against the system's FFmpeg — and
+`packaging.yml` builds the bundled FFmpeg and the installers on each native OS, on
+`main`, `v*` tags, on demand (`make macos-remote`) and on a pull request that touches
+`packaging/`. Runtime ffmpeg binaries are not linked into Rust.
 
 ---
 

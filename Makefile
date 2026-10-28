@@ -66,7 +66,7 @@ windows: ## Windows installer and portable ZIP (run on Windows with NSIS/MSYS2)
 	powershell -ExecutionPolicy Bypass -File packaging/windows/package.ps1
 
 macos-remote: ## dispatch the native macOS build on GitHub Actions
-	gh workflow run native.yml --ref "$(GIT_REF)" -f platform=macos
+	gh workflow run packaging.yml --ref "$(GIT_REF)" -f platform=macos
 	@echo "Follow with: gh run watch"
 
 dist-clean: ## remove generated installers
