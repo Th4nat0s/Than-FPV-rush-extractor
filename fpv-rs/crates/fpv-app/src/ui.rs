@@ -30,6 +30,20 @@ fn metadata_icon(ui: &mut egui::Ui, kind: MetadataIcon) {
     });
 }
 
+/// Names in use matching what is typed: a click puts one in the field.
+fn suggestions(ui: &mut egui::Ui, field: &mut String, names: Vec<String>) {
+    if names.is_empty() {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        for name in names {
+            if ui.small_button(&name).clicked() {
+                *field = name;
+            }
+        }
+    });
+}
+
 fn player_speaker(ui: &mut egui::Ui, viewer: &mut Viewer) -> egui::Response {
     let response = ui.add_enabled(
         !viewer.muted,
@@ -1453,12 +1467,14 @@ impl App {
                 }
             });
             ui.horizontal(|ui| {
-                ui.add(
+                let response = ui.add(
                     egui::TextEdit::singleline(&mut viewer.label)
                         .hint_text("Add a tag…")
                         .desired_width((ui.available_width() - 80.0).max(20.0)),
                 );
-                if ui.button("Add").clicked() && !viewer.label.trim().is_empty() {
+                let enter =
+                    response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                if (ui.button("Add").clicked() || enter) && !viewer.label.trim().is_empty() {
                     let id = viewer.flight.id.clone();
                     let label = std::mem::take(&mut viewer.label);
                     this.submit("Add flight tag", true, move |library, _| {
@@ -1467,6 +1483,15 @@ impl App {
                     });
                 }
             });
+            let names = this.sessions.iter().flat_map(|session| {
+                session
+                    .labels
+                    .iter()
+                    .chain(session.flights.iter().flat_map(|flight| &flight.labels))
+                    .map(String::as_str)
+            });
+            let found = browse::suggest(names, &viewer.label, &viewer.flight.labels);
+            suggestions(ui, &mut viewer.label, found);
             ui.separator();
             ui.heading("Figures");
             egui::ScrollArea::vertical()
@@ -1527,6 +1552,14 @@ impl App {
                     });
                 }
             });
+            let names = this
+                .sessions
+                .iter()
+                .flat_map(|session| &session.flights)
+                .flat_map(|flight| &flight.figures)
+                .map(|figure| figure.label.as_str());
+            let found = browse::suggest(names, &viewer.figure, &[]);
+            suggestions(ui, &mut viewer.figure, found);
         };
 
         if available.x < 720.0 {

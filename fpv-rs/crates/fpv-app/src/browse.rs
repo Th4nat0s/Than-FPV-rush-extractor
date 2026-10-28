@@ -162,6 +162,39 @@ pub fn labels(text: &str) -> Vec<String> {
     result
 }
 
+/// Names the library already uses that match what is being typed, each once
+/// in the spelling first met — the tags across flights and sessions, or the
+/// figures — those starting with it first, never one already `taken`.
+pub fn suggest<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+    typed: &str,
+    taken: &[String],
+) -> Vec<String> {
+    let typed = typed.trim().to_lowercase();
+    if typed.is_empty() {
+        return vec![];
+    }
+    let mut found: Vec<String> = vec![];
+    for name in names {
+        let lower = name.to_lowercase();
+        if lower.contains(&typed)
+            && lower != typed
+            && !taken.iter().any(|t| same(t, name))
+            && !found.iter().any(|f| same(f, name))
+        {
+            found.push(name.to_owned());
+        }
+    }
+    found.sort_by_key(|name| {
+        (
+            !name.to_lowercase().starts_with(&typed),
+            name.to_lowercase(),
+        )
+    });
+    found.truncate(5);
+    found
+}
+
 /// What a re-segment remakes, and so loses: the session's DVR flights with
 /// their titles, likes and tags. Action-cam takes are not touched.
 pub fn resegment_losses(session: &SessionView) -> Vec<String> {
@@ -194,6 +227,34 @@ pub fn resegment_losses(session: &SessionView) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn suggests_the_names_in_use_starting_with_what_is_typed_first() {
+        let names = [
+            "Freestyle",
+            "gates",
+            "Bando",
+            "freestyle",
+            "Power gates",
+            "Gates",
+            "Air gates",
+        ];
+        assert_eq!(
+            suggest(names, "ga", &[]),
+            ["gates", "Air gates", "Power gates"]
+        );
+        assert_eq!(suggest(names, "  FREE", &[]), ["Freestyle"]);
+        // Already on the flight, or exactly what is typed: nothing to add.
+        assert!(suggest(names, "ga", &["Gates".into()]).contains(&"Power gates".to_string()));
+        assert!(!suggest(names, "ga", &["Gates".into()]).contains(&"gates".to_string()));
+        assert!(suggest(names, "bando", &[]).is_empty());
+        assert!(suggest(names, " ", &[]).is_empty());
+        let many: Vec<String> = (0..9).map(|n| format!("split {n}")).collect();
+        assert_eq!(
+            suggest(many.iter().map(String::as_str), "split", &[]).len(),
+            5
+        );
+    }
 
     #[test]
     fn counts_what_a_re_segment_loses_and_asks_nothing_the_first_time() {

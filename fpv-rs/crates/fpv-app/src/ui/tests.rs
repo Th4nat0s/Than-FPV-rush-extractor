@@ -1657,3 +1657,65 @@ fn a_re_segment_names_what_it_loses_and_waits_for_consent_but_a_first_one_does_n
     click_text(&ctx, &mut app, "Save and segment", draw);
     assert!(jobs.try_recv().is_ok());
 }
+
+fn viewer_of(ctx: &egui::Context, flight: FlightView) -> Viewer {
+    Viewer {
+        flight,
+        player: Player::new(vec![], None, 0.0, ctx.clone()),
+        texture: None,
+        mark: None,
+        figure: String::new(),
+        label: String::new(),
+        volume: 1.0,
+        remembered_volume: 1.0,
+        playback_muted: false,
+        muted: false,
+        fullscreen: false,
+        window: Default::default(),
+        seek_time: None,
+    }
+}
+
+#[test]
+fn the_player_suggests_tags_and_figures_the_library_already_uses() {
+    let ctx = egui::Context::default();
+    let (mut app, _jobs, _events) = app_with_worker(&ctx);
+    let tagged = FlightView {
+        id: "other".into(),
+        labels: vec!["Power gates".into(), "freestyle".into()],
+        ..flight()
+    };
+    let mut session = session_of(vec![tagged, flight()]);
+    session.labels = vec!["Gates".into()];
+    app.sessions = vec![session];
+    app.viewer = Some(viewer_of(&ctx, flight()));
+    app.viewer.as_mut().unwrap().label = "ga".into();
+    let draw: fn(&mut App, &egui::Context) = |app, ctx| app.player_window(ctx);
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        texts.iter().any(|t| t == "Gates"),
+        "a session's tag: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t == "Power gates"),
+        "a flight's tag: {texts:?}"
+    );
+    assert!(!texts.iter().any(|t| t == "freestyle"), "{texts:?}");
+    click_text(&ctx, &mut app, "Power gates", draw);
+    assert_eq!(app.viewer.as_ref().unwrap().label, "Power gates");
+
+    // Figures: the names marked on any flight.
+    app.sessions[0].flights[0]
+        .figures
+        .push(fpv_library::TagView {
+            id: "tag".into(),
+            label: "Power loop".into(),
+            note: None,
+            start: 1.0,
+            end: 2.0,
+            marker: false,
+        });
+    app.viewer.as_mut().unwrap().figure = "pow".into();
+    click_text(&ctx, &mut app, "Power loop", draw);
+    assert_eq!(app.viewer.as_ref().unwrap().figure, "Power loop");
+}

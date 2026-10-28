@@ -1191,7 +1191,10 @@ frame-exact boundary editor. Layout:
   typed or the player at a stray click. **Flight tags**
   ("freestyle", "gates") are free labels on a whole flight, beside the figure tags that mark a
   moment: table `flightLabel` (schema `v5`), one label per flight whatever its case, the
-  spelling first used naming it in suggestions; edited in the player. In the code they are
+  spelling first used naming it in suggestions; edited in the player. In the native player
+  (2026-10-28) the tag and figure fields suggest the names in use as one types —
+  `browse::suggest`: flights' and sessions' tags, or figures, each once, those starting
+  with the text first — and Enter adds a tag as it adds a figure. In the code they are
   *labels* (`FlightView.labels`, `add_flight_label`), because *tags* already means figures
   there. Like a flight's title and like, they are lost when a re-segment remakes the flight.
   **A re-segment asks first** (2026-10-23, the pilot's request): it remakes every DVR flight
