@@ -236,3 +236,8 @@ range. Closing without saving discards the draft and never changes source files.
 On macOS, the application-menu About command opens the same branded window as
 Settings About, including the grouped contributor credits and LetzKwad link.
 The startup splash uses the transparent logo directly, without a white frame.
+
+The fullscreen player covers the library completely. Play/Pause is hidden only
+in fullscreen: click the video or press Space instead; windowed playback buttons
+remain available. Resizing and Maximize grow the video to the remaining content
+area while preserving aspect ratio, so only aspect-ratio letterboxing remains.

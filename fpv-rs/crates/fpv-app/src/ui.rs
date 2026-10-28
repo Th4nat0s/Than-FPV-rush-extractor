@@ -1320,15 +1320,19 @@ impl App {
         let left_width = (available.x - side_width - 12.0).max(260.0);
 
         let show_video = |ui: &mut egui::Ui, viewer: &mut Viewer| {
-            let button_height =
-                ui.spacing().interact_size.y.max(26.0) + ui.spacing().item_spacing.y;
-            let height = (available.y - button_height)
-                .max(1.0)
-                .min(if viewer.fullscreen {
-                    f32::INFINITY
-                } else {
-                    480.0
-                });
+            let button_height = ui
+                .spacing()
+                .interact_size
+                .y
+                .max(
+                    ui.text_style_height(&egui::TextStyle::Button)
+                        + 2.0 * ui.spacing().button_padding.y,
+                )
+                .max(26.0)
+                + ui.spacing().item_spacing.y;
+            // Use the actual remaining column height. In scrolling layouts it
+            // can be unbounded, so retain the finite player-content budget.
+            let height = (ui.available_height().min(available.y) - button_height).max(1.0);
             let (canvas, video_response) = ui.allocate_exact_size(
                 egui::vec2(ui.available_width(), height),
                 egui::Sense::click(),

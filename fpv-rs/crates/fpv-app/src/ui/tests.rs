@@ -1232,3 +1232,67 @@ fn play_pause_buttons_are_hidden_only_in_fullscreen() {
         }
     }
 }
+
+#[test]
+fn resized_player_uses_the_largest_aspect_preserving_video_rectangle() {
+    for source in [[1600, 900], [400, 300], [450, 800]] {
+        let ctx = egui::Context::default();
+        let mut app = app(&ctx);
+        let mut viewer = test_viewer(&ctx);
+        let texture = ctx.load_texture(
+            "resizable-source",
+            egui::ColorImage::filled(source, Color32::GRAY),
+            Default::default(),
+        );
+        let id = texture.id();
+        viewer.texture = Some(texture);
+        viewer.window.maximized = true;
+        app.viewer = Some(viewer);
+        for fullscreen in [false, true] {
+            app.viewer.as_mut().unwrap().fullscreen = fullscreen;
+            let mut previous = 0.0;
+            for size in [
+                egui::vec2(1280.0, 1000.0),
+                egui::vec2(1920.0, 1200.0),
+                egui::vec2(900.0, 600.0),
+            ] {
+                let mut output = None;
+                for _ in 0..4 {
+                    output = Some(ctx.run(input(size), |ctx| app.player_window(ctx)));
+                }
+                let shapes = output.unwrap().shapes;
+                let image = texture_rect(&shapes, id).unwrap();
+                let start = text_positions(&shapes)
+                    .into_iter()
+                    .find(|(s, _)| s == "Tags")
+                    .unwrap()
+                    .1;
+                let window = ctx
+                    .memory(|m| m.area_rect(egui::Id::new("player")))
+                    .unwrap();
+                // The actual video area ends before metadata; controls and window
+                // decorations consume less than this tolerance, with no fixed cap.
+                let width = start.x - window.left() - 20.0;
+                let height = window.height() - 145.0;
+                let scale = (width / source[0] as f32).min(height / source[1] as f32);
+                assert!(
+                    image.width() >= source[0] as f32 * scale - 2.0
+                        && image.height() >= source[1] as f32 * scale - 2.0,
+                    "video underuses available player area: source {source:?}, image {image:?}, window {window:?}, expected scale {scale}"
+                );
+                assert!(
+                    (image.width() / image.height() - source[0] as f32 / source[1] as f32).abs()
+                        < 0.002
+                );
+                if size.x == 1920.0 {
+                    assert!(
+                        image.height() > previous + 30.0,
+                        "enlarging must grow video"
+                    );
+                }
+                previous = image.height();
+                assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size).contains_rect(image));
+            }
+        }
+    }
+}
