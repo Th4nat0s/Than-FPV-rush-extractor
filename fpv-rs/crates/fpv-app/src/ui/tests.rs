@@ -1719,3 +1719,75 @@ fn the_player_suggests_tags_and_figures_the_library_already_uses() {
     click_text(&ctx, &mut app, "Power loop", draw);
     assert_eq!(app.viewer.as_ref().unwrap().figure, "Power loop");
 }
+
+#[test]
+fn a_recording_deleted_with_its_flight_loads_only_when_restore_is_ticked() {
+    let ctx = egui::Context::default();
+    let (mut app, jobs, _events) = app_with_worker(&ctx);
+    let mut dialog = crate::dialogs::Dialog::load();
+    dialog.reply(crate::worker::Reply::Folders(vec![
+        fpv_library::FolderView {
+            name: "2026-10-23 Bench DJI".into(),
+            session: "Bench".into(),
+            date: Some("2026-10-23".into()),
+            recordings: 2,
+            new: 0,
+            deleted: vec!["DJI_0100.MP4".into()],
+        },
+    ]));
+    app.dialog = Some(dialog);
+    let draw: fn(&mut App, &egui::Context) = |app, ctx| app.dialog_window(ctx);
+    click_text(
+        &ctx,
+        &mut app,
+        "2026-10-23 Bench DJI · 0 new / 2 recordings",
+        draw,
+    );
+    click_text(&ctx, &mut app, "Load selected folders", draw);
+    assert!(
+        jobs.try_recv().is_err(),
+        "nothing new: the folder cannot be picked"
+    );
+
+    let restore = "Restore 1 recording(s) previously deleted with their flight";
+    click_text(&ctx, &mut app, restore, draw);
+    // Ticking it picks the folder: Load now runs.
+    click_text(&ctx, &mut app, "Load selected folders", draw);
+    assert!(jobs.try_recv().is_ok());
+}
+
+#[test]
+fn progress_reaches_only_its_own_task_and_a_failure_is_notified() {
+    let ctx = egui::Context::default();
+    let (mut app, _jobs, events) = app_with_worker(&ctx);
+    let segment = app.submit("Segment “Alpes”", false, |_, _| unreachable!());
+    let export = app.submit("Export Flight 1", false, |_, _| unreachable!());
+    events
+        .send(crate::worker::Event::Progress {
+            id: segment,
+            step: fpv_library::Step {
+                line: "Detecting PICT0003.AVI (1/2)…".into(),
+                done: 1,
+                total: 2,
+            },
+        })
+        .unwrap();
+    events
+        .send(crate::worker::Event::Finished {
+            id: export,
+            result: Err("disk full".into()),
+        })
+        .unwrap();
+    app.receive(&ctx);
+    let task = |id| app.tasks.iter().find(|t| t.id == id).unwrap();
+    assert_eq!((task(segment).done, task(segment).total), (1, 2));
+    assert!(task(segment).running && !task(segment).failed);
+    assert_eq!(
+        (task(export).done, task(export).total),
+        (0, 0),
+        "not the other job's progress"
+    );
+    assert!(!task(export).running && task(export).failed);
+    assert_eq!(task(export).line, "disk full");
+    assert_eq!(app.notices.items()[0].text, "disk full");
+}
