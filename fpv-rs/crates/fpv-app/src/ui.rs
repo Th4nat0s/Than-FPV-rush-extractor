@@ -1400,13 +1400,14 @@ impl App {
                 viewer.player.pause(!viewer.player.paused());
             }
             ui.horizontal_wrapped(|ui| {
-                if ui
-                    .button(if viewer.player.paused() {
-                        "Play"
-                    } else {
-                        "Pause"
-                    })
-                    .clicked()
+                if !viewer.fullscreen
+                    && ui
+                        .button(if viewer.player.paused() {
+                            "Play"
+                        } else {
+                            "Pause"
+                        })
+                        .clicked()
                 {
                     viewer.player.pause(!viewer.player.paused());
                 }

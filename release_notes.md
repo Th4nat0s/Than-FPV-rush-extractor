@@ -33,3 +33,4 @@
 - Remove the white card and outer backdrop from the startup splash, preserving the transparent logo and continuous zoom/fade.
 - Route the macOS About menu to the same Rust About window as Settings, keeping logo, grouped credits and links identical (#30).
 - Give the fullscreen player an opaque viewport-sized backing, including gaps around controls, without adding a slider backdrop (#32).
+- Hide Play/Pause only in fullscreen; retain windowed playback buttons, video-click/Space controls, audio and Replay (#33).

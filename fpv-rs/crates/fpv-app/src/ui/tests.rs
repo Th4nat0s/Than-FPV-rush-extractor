@@ -1161,3 +1161,74 @@ fn fullscreen_player_covers_the_entire_library_with_an_opaque_surface() {
         }
     }
 }
+
+#[test]
+fn play_pause_buttons_are_hidden_only_in_fullscreen() {
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    let mut viewer = test_viewer(&ctx);
+    let texture = ctx.load_texture(
+        "fullscreen-playback",
+        egui::ColorImage::filled([640, 360], Color32::GRAY),
+        Default::default(),
+    );
+    let id = texture.id();
+    viewer.texture = Some(texture);
+    app.viewer = Some(viewer);
+    for fullscreen in [false, true, false] {
+        app.viewer.as_mut().unwrap().fullscreen = fullscreen;
+        for paused in [false, true] {
+            app.viewer.as_ref().unwrap().player.pause(paused);
+            let mut output = None;
+            for _ in 0..4 {
+                output = Some(player_input(&ctx, &mut app, vec![]));
+            }
+            let output = output.unwrap();
+            let texts = text_positions(&output.shapes);
+            assert_eq!(
+                texts
+                    .iter()
+                    .any(|(text, _)| text == "Play" || text == "Pause"),
+                !fullscreen,
+                "Play/Pause visibility must follow fullscreen state"
+            );
+            assert!(texts.iter().any(|(text, _)| text
+                == if fullscreen {
+                    "Exit full screen"
+                } else {
+                    "Full screen"
+                }));
+            assert!(
+                texts.iter().any(|(text, _)| text == "Replay"),
+                "independent Replay control must remain"
+            );
+            if fullscreen {
+                let image = texture_rect(&output.shapes, id).unwrap();
+                click_player(&ctx, &mut app, image.center());
+                assert_eq!(
+                    app.viewer.as_ref().unwrap().player.paused(),
+                    !paused,
+                    "video click works without Play/Pause"
+                );
+                for pressed in [true, false] {
+                    player_input(
+                        &ctx,
+                        &mut app,
+                        vec![egui::Event::Key {
+                            key: egui::Key::Space,
+                            physical_key: None,
+                            pressed,
+                            repeat: false,
+                            modifiers: Default::default(),
+                        }],
+                    );
+                }
+                assert_eq!(
+                    app.viewer.as_ref().unwrap().player.paused(),
+                    paused,
+                    "Space toggles playback exactly once"
+                );
+            }
+        }
+    }
+}
