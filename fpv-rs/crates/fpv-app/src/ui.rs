@@ -1238,6 +1238,16 @@ impl App {
         }
         let mut close_requested = false;
         let shown = window.show(ctx, |ui| {
+            if fullscreen && !ui.visuals().dark_mode {
+                // The fullscreen backing is black even when the OS follows a
+                // light theme. Scope contrasting controls to this player only.
+                let mut visuals = egui::Visuals::dark();
+                visuals.override_text_color = Some(Color32::from_rgb(220, 223, 230));
+                visuals.selection.bg_fill = ACCENT;
+                visuals.widgets.active.bg_fill = ACCENT;
+                visuals.hyperlink_color = ACCENT;
+                *ui.visuals_mut() = visuals;
+            }
             self.player_contents(
                 ui,
                 &mut viewer,

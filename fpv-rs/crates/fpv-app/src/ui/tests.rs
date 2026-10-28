@@ -1296,3 +1296,48 @@ fn resized_player_uses_the_largest_aspect_preserving_video_rectangle() {
         }
     }
 }
+
+#[test]
+fn fullscreen_labels_remain_readable_with_a_light_system_theme() {
+    fn label_is_readable(shape: &egui::Shape) -> Option<bool> {
+        match shape {
+            egui::Shape::Text(t) if t.galley.job.text == "Layout test flight" => {
+                Some(t.galley.job.sections.iter().all(|section| {
+                    let c = t.override_text_color.unwrap_or_else(|| {
+                        if section.format.color == Color32::PLACEHOLDER {
+                            t.fallback_color
+                        } else {
+                            section.format.color
+                        }
+                    });
+                    c.r() > 150 && c.g() > 150 && c.b() > 150
+                }))
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(label_is_readable),
+            _ => None,
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut app = app(&ctx);
+    ctx.set_visuals(egui::Visuals::light());
+    let mut viewer = test_viewer(&ctx);
+    viewer.fullscreen = true;
+    app.viewer = Some(viewer);
+    let mut output = None;
+    for _ in 0..4 {
+        output = Some(player_input(&ctx, &mut app, vec![]));
+    }
+    assert_eq!(
+        output
+            .unwrap()
+            .shapes
+            .iter()
+            .find_map(|s| label_is_readable(&s.shape)),
+        Some(true),
+        "fullscreen's opaque black backing needs readable foreground text in light OS theme"
+    );
+    assert!(
+        !ctx.style().visuals.dark_mode,
+        "fullscreen must not change the rest of the application's theme"
+    );
+}
