@@ -469,14 +469,27 @@ impl App {
                     ui.radio_value(&mut dialog.profile, "standard".into(), "Standard");
                     ui.radio_value(&mut dialog.profile, "textured".into(), "Textured terrain");
                 }
-                ui.label("Segmentation remakes DVR flights and their manual boundaries, titles, likes and flight tags. Figure tags and action-cam takes are preserved.");
-                ui.checkbox(
-                    &mut dialog.acknowledged,
-                    "I accept replacing the existing DVR segmentation",
-                );
+                let losses = self
+                    .sessions
+                    .iter()
+                    .find(|session| session.id == dialog.id)
+                    .map(crate::browse::resegment_losses)
+                    .unwrap_or_default();
+                // A first segmentation loses nothing and asks nothing.
+                if let Some((warning, lost)) = losses.split_first() {
+                    ui.colored_label(egui::Color32::from_rgb(230, 160, 60), warning);
+                    for line in lost {
+                        ui.label(format!("• {line}"));
+                    }
+                    ui.weak("Figures stay: they belong to the recordings. Action-cam takes are not touched.");
+                    ui.checkbox(
+                        &mut dialog.acknowledged,
+                        "I accept replacing the existing DVR segmentation",
+                    );
+                }
                 if ui
                     .add_enabled(
-                        dialog.acknowledged && self.ffmpeg_ok,
+                        (losses.is_empty() || dialog.acknowledged) && self.ffmpeg_ok,
                         egui::Button::new("Save and segment"),
                     )
                     .clicked()

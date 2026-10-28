@@ -1199,7 +1199,8 @@ frame-exact boundary editor. Layout:
   (`resegmentLosses`), hand-corrected boundaries — and what stays (figures, action-cam takes).
   Asked in `segment()` (`lib/sessions.ts`, through `confirm.svelte.ts`), the one path the
   header, the session menu and the detection profile all take; a first segmentation asks
-  nothing.
+  nothing. In the native app (2026-10-28) the Segment and Detection profile dialogs list the
+  same losses (`browse::resegment_losses`, tested) and only then ask for the acknowledgement.
 - **Edit Session…** (2026-10-24, the pilot's request), in a session's menu: name, flying day,
   place, notes (the v1 columns, never shown until now) and **session tags**, saved together by
   `Library::update_session`. The name no longer edits in place on a click: only after

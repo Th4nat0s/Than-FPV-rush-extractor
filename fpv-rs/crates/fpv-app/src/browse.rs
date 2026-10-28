@@ -162,8 +162,78 @@ pub fn labels(text: &str) -> Vec<String> {
     result
 }
 
+/// What a re-segment remakes, and so loses: the session's DVR flights with
+/// their titles, likes and tags. Action-cam takes are not touched.
+pub fn resegment_losses(session: &SessionView) -> Vec<String> {
+    let flights: Vec<&FlightView> = session.flights.iter().filter(|f| !f.action_cam).collect();
+    if flights.is_empty() {
+        // A first segmentation: there is nothing to lose.
+        return vec![];
+    }
+    let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+    let count = |keep: fn(&FlightView) -> bool| flights.iter().filter(|f| keep(f)).count();
+    let mut lost = vec![format!(
+        "The {} of this session will be found again from scratch and replaced. Lost with them:",
+        plural(flights.len(), "DVR flight")
+    )];
+    let titled = count(|f| f.title.is_some());
+    if titled > 0 {
+        lost.push(plural(titled, "title"));
+    }
+    let liked = count(|f| f.liked);
+    if liked > 0 {
+        lost.push(plural(liked, "like"));
+    }
+    let tagged = count(|f| !f.labels.is_empty());
+    if tagged > 0 {
+        lost.push(format!("the tags of {}", plural(tagged, "flight")));
+    }
+    lost.push("every boundary corrected by hand".into());
+    lost
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn counts_what_a_re_segment_loses_and_asks_nothing_the_first_time() {
+        let dvr = |title: Option<&str>, liked, labels: &[&str]| FlightView {
+            title: title.map(Into::into),
+            ..flight("dvr", 1, liked, labels, 60.0)
+        };
+        let mut session = session(
+            "letz",
+            None,
+            vec![
+                dvr(Some("Bando"), true, &["gates"]),
+                dvr(None, true, &[]),
+                dvr(None, false, &[]),
+                // A take is not remade: its title is safe.
+                FlightView {
+                    title: Some("Osmo".into()),
+                    action_cam: true,
+                    ..flight("osmo", 4, false, &[], 60.0)
+                },
+            ],
+            &[],
+        );
+        assert_eq!(
+            resegment_losses(&session),
+            [
+                "The 3 DVR flights of this session will be found again from scratch and replaced. Lost with them:",
+                "1 title",
+                "2 likes",
+                "the tags of 1 flight",
+                "every boundary corrected by hand",
+            ]
+        );
+        session.flights.retain(|f| f.action_cam);
+        assert!(
+            resegment_losses(&session).is_empty(),
+            "nothing segmented yet"
+        );
+    }
+
     use super::*;
     #[test]
     fn empty_and_deleted_pages_clamp_without_overflow() {

@@ -1614,3 +1614,46 @@ fn errors_show_as_unread_notifications_and_opening_the_list_reads_them() {
     click_text(&ctx, &mut app, "Dismiss", draw);
     assert!(app.notices.items().is_empty());
 }
+
+#[test]
+fn a_re_segment_names_what_it_loses_and_waits_for_consent_but_a_first_one_does_not() {
+    let ctx = egui::Context::default();
+    let draw: fn(&mut App, &egui::Context) = |app, ctx| app.dialog_window(ctx);
+
+    let (mut app, jobs, _events) = app_with_worker(&ctx);
+    let segmented = session_of(vec![FlightView {
+        action_cam: false,
+        title: Some("Bando".into()),
+        ..flight()
+    }]);
+    app.dialog = Some(crate::dialogs::Dialog::segment(&segmented));
+    app.sessions = vec![segmented];
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(texts.iter().any(|t| t == "• 1 title"), "{texts:?}");
+    click_text(&ctx, &mut app, "Save and segment", draw);
+    assert!(
+        jobs.try_recv().is_err(),
+        "nothing runs before the pilot agrees"
+    );
+    click_text(
+        &ctx,
+        &mut app,
+        "I accept replacing the existing DVR segmentation",
+        draw,
+    );
+    click_text(&ctx, &mut app, "Save and segment", draw);
+    assert!(jobs.try_recv().is_ok(), "agreed: it runs");
+
+    // Only takes so far: a first segmentation loses nothing.
+    let (mut app, jobs, _events) = app_with_worker(&ctx);
+    let fresh = session_of(vec![flight()]);
+    app.dialog = Some(crate::dialogs::Dialog::segment(&fresh));
+    app.sessions = vec![fresh];
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        !texts.iter().any(|t| t.starts_with("I accept")),
+        "{texts:?}"
+    );
+    click_text(&ctx, &mut app, "Save and segment", draw);
+    assert!(jobs.try_recv().is_ok());
+}
