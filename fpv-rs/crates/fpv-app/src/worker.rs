@@ -103,15 +103,14 @@ impl Worker {
             let result = (|| {
                 let resources = resource_directory();
                 let tools = tool_directory(resources.as_deref());
-                let config_directory = std::env::var_os("FPV_CONFIG_DIR")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(Config::default_directory);
-                let cache_directory = std::env::var_os("FPV_CACHE_DIR")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(Config::default_cache_directory);
+                let env = |name: &str| std::env::var_os(name);
+                let config_directory =
+                    first_set(CONFIG_VARIABLES, env).unwrap_or_else(Config::default_directory);
+                let cache_directory =
+                    first_set(CACHE_VARIABLES, env).unwrap_or_else(Config::default_cache_directory);
                 let mut config = Config::load_or_create(&config_directory)?;
-                if let Some(root) = std::env::var_os("FPV_MEDIA_ROOT") {
-                    config.media_root = root.into();
+                if let Some(root) = first_set(MEDIA_VARIABLES, env) {
+                    config.media_root = root;
                 }
                 let library =
                     Library::open_with(&config_directory, &cache_directory, config, tools.clone())?;
@@ -188,4 +187,58 @@ pub fn resource_directory() -> Option<PathBuf> {
     candidates
         .into_iter()
         .find(|path| path.join("bin").is_dir())
+}
+
+/// One run's folders, overridden by these variables: the native app's names
+/// first, then the Tauri app's, which scripts and notes still use.
+const CONFIG_VARIABLES: &[&str] = &["FPV_CONFIG_DIR", "FPV_RUSH_CONFIG"];
+const CACHE_VARIABLES: &[&str] = &["FPV_CACHE_DIR", "FPV_RUSH_CACHE"];
+const MEDIA_VARIABLES: &[&str] = &["FPV_MEDIA_ROOT", "FPV_RUSH_LIBRARY"];
+
+/// The first of `names` set to something, as a path.
+fn first_set(
+    names: &[&str],
+    lookup: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    names
+        .iter()
+        .find_map(|name| lookup(name).filter(|value| !value.is_empty()))
+        .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tauri_apps_variables_still_point_a_run_at_its_folders() {
+        let set = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| value.into())
+            }
+        };
+        assert_eq!(
+            first_set(CONFIG_VARIABLES, set(&[("FPV_RUSH_CONFIG", "/tmp/old")])),
+            Some(PathBuf::from("/tmp/old"))
+        );
+        assert_eq!(
+            first_set(
+                CACHE_VARIABLES,
+                set(&[
+                    ("FPV_RUSH_CACHE", "/tmp/old"),
+                    ("FPV_CACHE_DIR", "/tmp/new")
+                ])
+            ),
+            Some(PathBuf::from("/tmp/new")),
+            "the native name wins"
+        );
+        assert_eq!(
+            first_set(MEDIA_VARIABLES, set(&[("FPV_MEDIA_ROOT", "")])),
+            None,
+            "an empty variable is no override"
+        );
+    }
 }

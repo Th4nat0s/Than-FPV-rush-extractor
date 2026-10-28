@@ -979,7 +979,8 @@ frame-exact boundary editor. Layout:
   A missing `config.json` is written with the defaults; a broken one is refused, not
   overwritten. A `library.sqlite` found in the media folder (where the Swift app and the first
   Rust builds kept it) is moved into the config folder on open — its paths are absolute.
-  `FPV_RUSH_CONFIG` / `FPV_RUSH_LIBRARY` override both folders for one run. The `fpvlib` CLI
+  `FPV_RUSH_CONFIG` / `FPV_RUSH_LIBRARY` override both folders for one run (the native app
+  reads `FPV_CONFIG_DIR` / `FPV_CACHE_DIR` / `FPV_MEDIA_ROOT` first, then these, 2026-10-28). The `fpvlib` CLI
   still takes an explicit `<library>` folder holding `library.sqlite`.
 - **The import folder is chosen in the app** (2026-10-18): Settings (gear in the sidebar), or
   *Change…* under "Copy to" in the import dialog — one setting, `mediaRoot`, saved to
