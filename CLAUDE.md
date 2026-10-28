@@ -1118,6 +1118,13 @@ frame-exact boundary editor. Layout:
   cache — after an import or a segmentation ends, and when the boundary editor closes. A
   cheap `missing_strips` count (a file check per frame) comes first, so nothing shows when
   nothing is missing; one job runs at a time, and requests during it buy exactly one more pass.
+  **In the native app** (2026-10-28) the library has one worker running its jobs in turn, so
+  the strips go in batches of `BATCH` (24) frames (`Library::prepare_strips_up_to`, `more`
+  when frames are left) and whatever was asked meanwhile runs between two (`strips.rs`). A
+  batch is a *quiet* task — a running task otherwise marks the app busy and greys out its
+  forms — and the bar says "Hover strips · N made". It starts at launch and after any task
+  of the pilot's ends; a batch that makes nothing ends the pass, so an unreadable recording
+  never loops, and each failing flight is notified once.
   A flight that vanishes mid-run is passed over, an unreadable recording reported once.
   `STRIP` (24) lives in `strips.ts` for the cards and the job alike: frames are cached by index.
   **On long-GOP takes a strip frame is the nearest keyframe** (`ThumbnailGenerator::generate_near`,

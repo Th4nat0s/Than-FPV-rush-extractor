@@ -154,6 +154,8 @@ pub struct StripsPrepared {
     pub failed: Vec<(String, String)>,
     /// It stopped at the pictures' budget with strips still missing.
     pub at_budget: bool,
+    /// Frames were left for a next batch (`prepare_strips_up_to`).
+    pub more: bool,
 }
 
 /// One kind of what the cache folder holds, each in its own folder.
@@ -1397,9 +1399,18 @@ impl Library {
     /// meanwhile (re-segmented, deleted) is passed over; one whose recording
     /// cannot be read is reported once and its other frames skipped.
     pub fn prepare_strips(&self, count: usize, first: Option<&str>,
-                          mut progress: impl FnMut(usize, usize, &str)) -> Result<StripsPrepared> {
-        let missing = self.missing_strip_frames(count, first)?;
-        let mut prepared = StripsPrepared::default();
+                          progress: impl FnMut(usize, usize, &str)) -> Result<StripsPrepared> {
+        self.prepare_strips_up_to(count, first, usize::MAX, progress)
+    }
+
+    /// `prepare_strips`, at most `limit` frames of it: the native app runs one
+    /// library job at a time, so the strips go in batches the other jobs can
+    /// pass between. `more` says frames were left over.
+    pub fn prepare_strips_up_to(&self, count: usize, first: Option<&str>, limit: usize,
+                                mut progress: impl FnMut(usize, usize, &str)) -> Result<StripsPrepared> {
+        let mut missing = self.missing_strip_frames(count, first)?;
+        let mut prepared = StripsPrepared { more: missing.len() > limit, ..Default::default() };
+        missing.truncate(limit);
         let mut broken: HashSet<String> = HashSet::new();
         let budget = self.config.picture_budget_bytes();
         let mut used = self.picture_bytes();

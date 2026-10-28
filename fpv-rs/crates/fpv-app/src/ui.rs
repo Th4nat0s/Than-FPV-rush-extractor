@@ -933,8 +933,8 @@ impl App {
                 && self.tasks.iter().filter(|t| t.running).count() < 12
                 && let Some(pointer) = response.hover_pos()
             {
-                let index =
-                    (((pointer.x - rect.min.x) / rect.width()).clamp(0.0, 0.999) * 24.0) as usize;
+                let index = (((pointer.x - rect.min.x) / rect.width()).clamp(0.0, 0.999)
+                    * crate::strips::STRIP as f32) as usize;
                 let hover = format!("strip:{}:{index}", flight.cache_key);
                 if let Some(known) = self.thumbnails.get(&hover) {
                     path = Some(known.clone());
@@ -942,7 +942,7 @@ impl App {
                     let id = flight.id.clone();
                     self.submit("Hover frame", true, move |library, _| {
                         Ok(Reply::Image {
-                            thumbnail: library.filmstrip_frame(&id, index, 24)?,
+                            thumbnail: library.filmstrip_frame(&id, index, crate::strips::STRIP)?,
                             key: hover,
                         })
                     });
@@ -1587,6 +1587,11 @@ impl App {
                     ui.spinner();
                     ui.label(&task.label);
                     ui.label(&task.line);
+                }
+                if self.strips.running() {
+                    ui.label(
+                        RichText::new(format!("Hover strips · {} made", self.strips.made)).weak(),
+                    );
                 }
                 ui.label(format!("{} notification(s)", self.notices.len()));
             });

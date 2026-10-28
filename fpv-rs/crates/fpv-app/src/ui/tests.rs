@@ -25,6 +25,8 @@ fn app(ctx: &egui::Context) -> App {
         viewer: None,
         cloud_wait: None,
         detached: HashSet::new(),
+        strips: crate::strips::Strips::default(),
+        strip_batch: None,
         images: Images::new(ctx.clone()),
         thumbnails: HashMap::new(),
         requested: HashSet::new(),
@@ -1521,4 +1523,56 @@ fn continuing_in_the_background_leaves_the_flight_unplayed() {
     let here = flight();
     app.play(&here, 0.0);
     assert!(app.cloud_wait.is_none());
+}
+
+#[test]
+fn hover_strips_are_made_in_quiet_batches_after_a_task_changes_the_library() {
+    let ctx = egui::Context::default();
+    let (mut app, jobs, events) = app_with_worker(&ctx);
+    let finish = |app: &mut App, id: u64, reply: crate::worker::Reply| {
+        events
+            .send(crate::worker::Event::Finished {
+                id,
+                result: Ok(reply),
+            })
+            .unwrap();
+        app.receive(&ctx);
+    };
+    let strips_queued = |app: &App, jobs: &mpsc::Receiver<crate::worker::Job>| {
+        jobs.try_iter()
+            .filter(|job| {
+                app.tasks
+                    .iter()
+                    .any(|t| t.id == job.id && t.label == "Hover strips")
+            })
+            .map(|job| job.id)
+            .collect::<Vec<_>>()
+    };
+    let import = app.submit("Import “Alpes”", false, |_, _| unreachable!());
+    let _ = jobs.try_recv();
+    finish(
+        &mut app,
+        import,
+        crate::worker::Reply::Done("3 imported".into()),
+    );
+    let batch = strips_queued(&app, &jobs);
+    assert_eq!(batch.len(), 1, "an import that ended asks for its strips");
+    assert!(!app.busy(), "a strips batch never disables the forms");
+
+    let prepared = |made, more| {
+        crate::worker::Reply::Strips(fpv_library::StripsPrepared {
+            made,
+            more,
+            ..Default::default()
+        })
+    };
+    finish(&mut app, batch[0], prepared(24, true));
+    let next = strips_queued(&app, &jobs);
+    assert_eq!(next.len(), 1, "frames left over: the next batch");
+    finish(&mut app, next[0], prepared(3, false));
+    assert!(
+        strips_queued(&app, &jobs).is_empty(),
+        "all made: the job ends"
+    );
+    assert_eq!(app.strips.made, 27);
 }

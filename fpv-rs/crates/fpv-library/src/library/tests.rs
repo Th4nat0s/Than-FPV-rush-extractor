@@ -750,6 +750,18 @@ fn finds_where_a_recording_was_copied_to() {
 }
 
 #[test]
+fn makes_hover_strips_in_batches_other_jobs_can_pass_between() {
+    let (fixture, _) = imported();
+    let batch = fixture.library.prepare_strips_up_to(8, None, 10, |_, _, _| {}).unwrap();
+    assert_eq!((batch.made, batch.more), (10, true));
+    assert_eq!(fixture.library.missing_strip_frames(8, None).unwrap().len(), 6);
+    let batch = fixture.library.prepare_strips_up_to(8, None, 10, |_, _, _| {}).unwrap();
+    assert_eq!((batch.made, batch.more), (6, false));
+    let batch = fixture.library.prepare_strips_up_to(8, None, 10, |_, _, _| {}).unwrap();
+    assert_eq!((batch.made, batch.more), (0, false));
+}
+
+#[test]
 fn makes_every_hover_strip_ahead_of_the_pointer_once() {
     let (fixture, session) = imported();
     // Two takes, nothing made yet.

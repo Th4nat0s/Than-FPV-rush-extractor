@@ -8,6 +8,7 @@ mod cloudwait;
 mod dialogs;
 mod images;
 mod player;
+mod strips;
 mod ui;
 mod worker;
 
@@ -76,6 +77,9 @@ pub(crate) struct App {
     cloud_wait: Option<cloudwait::CloudWait>,
     /// Downloads left to finish in the background: their flight does not open.
     detached: HashSet<u64>,
+    /// Hover strips made ahead of the pointer, and the batch running now.
+    strips: strips::Strips,
+    strip_batch: Option<u64>,
     images: images::Images,
     thumbnails: HashMap<String, String>,
     requested: HashSet<String>,
@@ -177,6 +181,8 @@ impl App {
             viewer: None,
             cloud_wait: None,
             detached: HashSet::new(),
+            strips: strips::Strips::default(),
+            strip_batch: None,
             images: images::Images::new(cc.egui_ctx.clone()),
             thumbnails: HashMap::new(),
             requested: HashSet::new(),
@@ -264,6 +270,8 @@ impl App {
                             library.identify_cameras()?
                         )))
                     });
+                    // Also covers a cache emptied since the last run.
+                    self.request_strips();
                 }
                 Event::Progress { id, step } => {
                     if let Some(task) = self.tasks.iter_mut().find(|task| task.id == id) {
@@ -283,6 +291,15 @@ impl App {
                         self.cloud_wait = None;
                     }
                     let detached = self.detached.remove(&id);
+                    let strip_batch = self.strip_batch == Some(id);
+                    if strip_batch {
+                        self.strip_batch = None;
+                    }
+                    // Whatever the pilot ran may have made or re-keyed flights:
+                    // their strips are made before the pointer asks.
+                    let changed = !strip_batch
+                        && result.is_ok()
+                        && self.tasks.iter().any(|task| task.id == id && !task.quiet);
                     if self
                         .dialog
                         .as_mut()
@@ -300,7 +317,23 @@ impl App {
                         };
                     }
                     match result {
+                        Err(error) if strip_batch => {
+                            self.strips.failed();
+                            self.notices.push(format!("Hover strips: {error}"));
+                        }
                         Err(error) => self.notices.push(error),
+                        Ok(Reply::Strips(prepared)) => {
+                            let (next, failed) =
+                                self.strips
+                                    .finished(prepared.made, prepared.more, prepared.failed);
+                            for (flight, reason) in failed {
+                                self.notices
+                                    .push(format!("Hover strip of {flight}: {reason}"));
+                            }
+                            if let Some(first) = next {
+                                self.strip_batch_start(first);
+                            }
+                        }
                         Ok(Reply::Done(_)) => {}
                         Ok(Reply::VideoPreferences {
                             mute_videos,
@@ -356,6 +389,9 @@ impl App {
                             }
                         }
                     }
+                    if changed {
+                        self.request_strips();
+                    }
                 }
                 Event::Snapshot(sessions, config) => {
                     self.sessions = sessions;
@@ -392,6 +428,29 @@ impl App {
             });
         }
     }
+    /// Asks for the strips the library lacks, the session on screen first.
+    fn request_strips(&mut self) {
+        if !self.ffmpeg_ok {
+            return;
+        }
+        if let Some(first) = self.strips.request(self.browse.session.clone()) {
+            self.strip_batch_start(first);
+        }
+    }
+
+    fn strip_batch_start(&mut self, first: Option<String>) {
+        // Quiet: a batch must not mark the app busy, which disables forms.
+        let id = self.submit("Hover strips", true, move |library, progress| {
+            Ok(Reply::Strips(library.prepare_strips_up_to(
+                strips::STRIP,
+                first.as_deref(),
+                strips::BATCH,
+                |done, total, label| progress.count(done, total, label),
+            )?))
+        });
+        self.strip_batch = Some(id);
+    }
+
     fn play(&mut self, flight: &FlightView, at: f64) {
         self.viewer = None;
         let id = flight.id.clone();

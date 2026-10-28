@@ -38,6 +38,7 @@ pub enum Reply {
         do_not_show_splash: bool,
     },
     Picked(Option<PathBuf>),
+    Strips(fpv_library::StripsPrepared),
 }
 
 pub struct Job {
