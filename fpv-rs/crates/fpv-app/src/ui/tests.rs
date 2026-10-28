@@ -33,7 +33,8 @@ fn app(ctx: &egui::Context) -> App {
         selected: HashSet::new(),
         selecting: false,
         search: String::new(),
-        notices: vec![],
+        notices: Default::default(),
+        show_notices: false,
         show_tasks: false,
         exit_after: None,
         screenshot_requested: false,
@@ -1575,4 +1576,41 @@ fn hover_strips_are_made_in_quiet_batches_after_a_task_changes_the_library() {
         "all made: the job ends"
     );
     assert_eq!(app.strips.made, 27);
+}
+
+#[test]
+fn errors_show_as_unread_notifications_and_opening_the_list_reads_them() {
+    let ctx = egui::Context::default();
+    let (mut app, _jobs, events) = app_with_worker(&ctx);
+    let draw: fn(&mut App, &egui::Context) = |app, ctx| {
+        app.receive(ctx);
+        app.task_bar(ctx)
+    };
+    for _ in 0..2 {
+        events
+            .send(crate::worker::Event::Fatal(
+                "Cannot read PICT0032.AVI".into(),
+            ))
+            .unwrap();
+    }
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        texts.iter().any(|t| t == "Notifications (1 new)"),
+        "{texts:?}"
+    );
+
+    click_text(&ctx, &mut app, "Notifications (1 new)", draw);
+    let texts = shown_texts(&ctx, &mut app, draw);
+    assert!(
+        texts.iter().any(|t| t == "Cannot read PICT0032.AVI"),
+        "{texts:?}"
+    );
+    assert!(texts.iter().any(|t| t == "2 times"), "{texts:?}");
+    assert!(
+        !texts.iter().any(|t| t.ends_with("new)")),
+        "read once seen: {texts:?}"
+    );
+
+    click_text(&ctx, &mut app, "Dismiss", draw);
+    assert!(app.notices.items().is_empty());
 }

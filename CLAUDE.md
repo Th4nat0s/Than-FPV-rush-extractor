@@ -1276,7 +1276,9 @@ frame-exact boundary editor. Layout:
   dismiss, *Clear all*) and marks them read. `lib/notices.svelte.ts` (`notify`) replaced the
   red banner in the sidebar, which showed one error at a time and stayed until the next, and
   the `alert()`s of the flight cards. The same error again while unread counts up ("2 times")
-  instead of listing twice; 50 kept.
+  instead of listing twice; 50 kept. **In the native app** (2026-10-28) the same, from `notices.rs` (tested): a
+  *Notifications* button at the bar's right end, red with "(N new)", opening the list (time,
+  "N times", *Dismiss*, *Clear all*) and marking it read; through the window in `ui/tests.rs`.
   **Thumbnails are tasks too, batched** (2026-10-20): posters, hover strips and editor
   previews are many short calls, so `batch(key, …)` counts the calls sharing a key as one task
   ("Posters 7 made", "Hover strip of Flight 1 24 made"). `poster`, `filmstrip_frame` and

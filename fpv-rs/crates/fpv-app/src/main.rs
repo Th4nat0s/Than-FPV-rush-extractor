@@ -7,6 +7,7 @@ mod browse;
 mod cloudwait;
 mod dialogs;
 mod images;
+mod notices;
 mod player;
 mod strips;
 mod ui;
@@ -86,7 +87,8 @@ pub(crate) struct App {
     selected: HashSet<String>,
     selecting: bool,
     search: String,
-    notices: Vec<String>,
+    notices: notices::Notices,
+    show_notices: bool,
     show_tasks: bool,
     exit_after: Option<std::time::Instant>,
     screenshot_requested: bool,
@@ -189,7 +191,8 @@ impl App {
             selected: HashSet::new(),
             selecting: false,
             search: String::new(),
-            notices: vec![],
+            notices: notices::Notices::default(),
+            show_notices: false,
             show_tasks: false,
             exit_after,
             screenshot_requested: false,
@@ -231,7 +234,7 @@ impl App {
             .is_err()
         {
             self.notices
-                .push("The library worker is unavailable. Restart the application.".into());
+                .push("The library worker is unavailable. Restart the application.");
             if let Some(task) = self.tasks.last_mut() {
                 task.running = false;
                 task.failed = true;

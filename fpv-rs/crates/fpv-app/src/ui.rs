@@ -1593,8 +1593,53 @@ impl App {
                         RichText::new(format!("Hover strips · {} made", self.strips.made)).weak(),
                     );
                 }
-                ui.label(format!("{} notification(s)", self.notices.len()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let unread = self.notices.unread();
+                    let text = if unread > 0 {
+                        RichText::new(format!("Notifications ({unread} new)"))
+                            .color(Color32::LIGHT_RED)
+                    } else {
+                        RichText::new("Notifications")
+                    };
+                    if ui.button(text).clicked() {
+                        self.show_notices = !self.show_notices;
+                        self.notices.mark_read();
+                    }
+                });
             });
+            if self.show_notices {
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.heading("Notifications");
+                    if !self.notices.items().is_empty() && ui.small_button("Clear all").clicked() {
+                        self.notices.clear();
+                    }
+                });
+                if self.notices.items().is_empty() {
+                    ui.weak("Nothing went wrong.");
+                }
+                let mut dismissed = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("notices")
+                    .max_height(160.0)
+                    .show(ui, |ui| {
+                        for (index, notice) in self.notices.items().iter().enumerate() {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.weak(&notice.at);
+                                ui.colored_label(Color32::LIGHT_RED, &notice.text);
+                                if notice.times > 1 {
+                                    ui.weak(format!("{} times", notice.times));
+                                }
+                                if ui.small_button("Dismiss").clicked() {
+                                    dismissed = Some(index);
+                                }
+                            });
+                        }
+                    });
+                if let Some(index) = dismissed {
+                    self.notices.dismiss(index);
+                }
+            }
             if self.show_tasks {
                 egui::ScrollArea::vertical()
                     .max_height(160.0)
@@ -1631,18 +1676,6 @@ impl App {
                                         }
                                     },
                                 );
-                            }
-                        }
-                        if !self.notices.is_empty() {
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.heading("Notifications");
-                                if ui.small_button("Dismiss all").clicked() {
-                                    self.notices.clear();
-                                }
-                            });
-                            for notice in &self.notices {
-                                ui.colored_label(Color32::LIGHT_RED, notice);
                             }
                         }
                     });
