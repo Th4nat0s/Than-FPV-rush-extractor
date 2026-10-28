@@ -15,6 +15,15 @@ use fpv_library::NativeSegment;
 use fpv_media::{FfmpegTool, seconds_argument};
 
 const DISPLAY_RATE: f64 = 30.0;
+/// The hardware decoder asked for long-GOP footage. On the pilot's Mac, 30 s of
+/// 4K 10-bit HEVC decoded in 78 s in software and 10 s with VideoToolbox
+/// (CLAUDE.md, "Proxy"), so software alone cannot play it in real time.
+/// Elsewhere the bundled FFmpeg has no hardware decoder to ask for.
+const HWACCEL: Option<&str> = if cfg!(target_os = "macos") {
+    Some("videotoolbox")
+} else {
+    None
+};
 const MAX_WIDTH: usize = 1280;
 const MAX_HEIGHT: usize = 720;
 
@@ -49,6 +58,7 @@ struct State {
     video_done: AtomicBool,
     context: eframe::egui::Context,
     source_fps: Option<f64>,
+    hwaccel: Option<&'static str>,
 }
 
 impl State {
@@ -106,6 +116,7 @@ pub struct Player {
     parts: Vec<NativeSegment>,
     context: eframe::egui::Context,
     source_fps: Option<f64>,
+    hwaccel: Option<&'static str>,
 }
 
 impl Player {
@@ -119,6 +130,22 @@ impl Player {
         Self::new_with_volume(parts, tools, at, context, 1.0)
     }
 
+    /// A player asking for `hwaccel` instead of the platform's own.
+    #[cfg(test)]
+    fn with_hwaccel(
+        parts: Vec<NativeSegment>,
+        tools: Option<PathBuf>,
+        at: f64,
+        context: eframe::egui::Context,
+        hwaccel: Option<&'static str>,
+    ) -> Self {
+        let decoding = Decoding {
+            source_fps: None,
+            hwaccel,
+        };
+        Self::start(parts, tools, at, context, 1.0, false, decoding)
+    }
+
     pub fn new_with_volume(
         parts: Vec<NativeSegment>,
         tools: Option<PathBuf>,
@@ -126,7 +153,18 @@ impl Player {
         context: eframe::egui::Context,
         volume: f32,
     ) -> Self {
-        Self::start(parts, tools, at, context, volume, volume > 0.0, None)
+        Self::start(
+            parts,
+            tools,
+            at,
+            context,
+            volume,
+            volume > 0.0,
+            Decoding {
+                source_fps: None,
+                hwaccel: HWACCEL,
+            },
+        )
     }
 
     /// Boundary previews decode every original source frame, without the normal
@@ -139,7 +177,18 @@ impl Player {
         volume: f32,
         fps: f64,
     ) -> Self {
-        Self::start(parts, tools, at, context, volume, volume > 0.0, Some(fps))
+        Self::start(
+            parts,
+            tools,
+            at,
+            context,
+            volume,
+            volume > 0.0,
+            Decoding {
+                source_fps: Some(fps),
+                hwaccel: HWACCEL,
+            },
+        )
     }
 
     fn start(
@@ -149,7 +198,10 @@ impl Player {
         context: eframe::egui::Context,
         volume: f32,
         audio_enabled: bool,
-        source_fps: Option<f64>,
+        Decoding {
+            source_fps,
+            hwaccel,
+        }: Decoding,
     ) -> Self {
         let duration = parts
             .last()
@@ -179,6 +231,7 @@ impl Player {
             video_done: AtomicBool::new(false),
             context: context.clone(),
             source_fps,
+            hwaccel,
         });
         let s = state.clone();
         let t = tools.clone();
@@ -218,6 +271,7 @@ impl Player {
         Self {
             state,
             source_fps,
+            hwaccel,
             audio_enabled,
             tools,
             parts,
@@ -276,7 +330,10 @@ impl Player {
             self.context.clone(),
             volume,
             self.audio_enabled,
-            self.source_fps,
+            Decoding {
+                source_fps: self.source_fps,
+                hwaccel: self.hwaccel,
+            },
         );
         self.pause(paused);
     }
@@ -427,8 +484,68 @@ impl Drop for Process {
     }
 }
 
+/// How the player decodes: at the source's own rate (the boundary editor)
+/// or the display's, and through which hardware decoder, if any.
+#[derive(Debug, Clone, Copy)]
+struct Decoding {
+    source_fps: Option<f64>,
+    hwaccel: Option<&'static str>,
+}
+
+/// One way of decoding a part: through a hardware decoder or not, seeking on
+/// the index or from the stream's start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Attempt {
+    hwaccel: Option<&'static str>,
+    output_seek: bool,
+}
+
+/// The ways to try, in order, until one yields a frame. Long-GOP footage asks
+/// the hardware first and falls back to software, which a recording the
+/// hardware refuses (or a machine without it) still plays; MJPEG is cheap to
+/// decode and no hardware decoder takes it. A seek into long-GOP footage keeps
+/// its last resort, decoding from the start.
+fn attempts(part: &NativeSegment, input_time: f64, hwaccel: Option<&'static str>) -> Vec<Attempt> {
+    let mut plan = vec![];
+    if !part.all_intra
+        && let Some(hwaccel) = hwaccel
+    {
+        plan.push(Attempt {
+            hwaccel: Some(hwaccel),
+            output_seek: false,
+        });
+    }
+    plan.push(Attempt {
+        hwaccel: None,
+        output_seek: false,
+    });
+    if !part.all_intra && input_time > 0.0 {
+        plan.push(Attempt {
+            hwaccel: None,
+            output_seek: true,
+        });
+    }
+    plan
+}
+
 fn input(part: &NativeSegment, skip: f64, duration: f64, output_seek: bool) -> Vec<String> {
+    input_through(
+        part,
+        skip,
+        duration,
+        Attempt {
+            hwaccel: None,
+            output_seek,
+        },
+    )
+}
+
+fn input_through(part: &NativeSegment, skip: f64, duration: f64, attempt: Attempt) -> Vec<String> {
+    let output_seek = attempt.output_seek;
     let mut arguments = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
+    if let Some(hwaccel) = attempt.hwaccel {
+        arguments.extend(["-hwaccel".into(), hwaccel.into()]);
+    }
     if !output_seek {
         arguments.extend(["-ss".into(), seconds_argument(part.segment.start + skip)]);
     }
@@ -455,12 +572,10 @@ fn decode_video(
         }
         let (width, height) = dimensions(part.width, part.height);
         let input_time = part.segment.start + skip;
-        let retry_from_start = !part.all_intra && input_time > 0.0;
-        let attempts = if retry_from_start { 2 } else { 1 };
+        let plan = attempts(part, input_time, state.hwaccel);
         let mut decoded = false;
-        for attempt in 0..attempts {
-            let output_seek = attempt > 0;
-            let mut args = input(part, skip, length, output_seek);
+        for (n, &attempt) in plan.iter().enumerate() {
+            let mut args = input_through(part, skip, length, attempt);
             args.extend([
                 "-an".into(),
                 "-vf".into(),
@@ -513,7 +628,7 @@ fn decode_video(
                 {
                     let now = Instant::now();
                     log::debug!(
-                        "First video frame at {:.3}s after {:?} (fallback: {output_seek})",
+                        "First video frame at {:.3}s after {:?} (attempt: {attempt:?})",
                         state.base,
                         state.requested_at.elapsed()
                     );
@@ -528,11 +643,15 @@ fn decode_video(
                 result?;
                 break;
             }
-            if attempt + 1 == attempts {
+            if n + 1 == plan.len() {
                 result?;
                 return Err("ffmpeg produced no video frames".into());
             }
-            log::debug!("Indexed seek produced no frame; retrying from the stream start");
+            log::debug!(
+                "{attempt:?} produced no frame ({}); trying {:?}",
+                result.err().unwrap_or_default(),
+                plan[n + 1]
+            );
         }
     }
     Ok(())
@@ -754,6 +873,99 @@ mod tests {
             "long-GOP footage must seek after its input"
         );
     }
+    #[test]
+    fn long_gop_footage_asks_the_hardware_first_then_software() {
+        let take = |all_intra| NativeSegment {
+            segment: Segment {
+                path: "take.mp4".into(),
+                start: 0.0,
+                end: 60.0,
+                offset: 0.0,
+            },
+            width: 3840,
+            height: 2160,
+            has_audio: true,
+            all_intra,
+        };
+        let hardware = Attempt {
+            hwaccel: Some("videotoolbox"),
+            output_seek: false,
+        };
+        let software = Attempt {
+            hwaccel: None,
+            output_seek: false,
+        };
+        let from_start = Attempt {
+            hwaccel: None,
+            output_seek: true,
+        };
+        assert_eq!(
+            attempts(&take(false), 12.0, Some("videotoolbox")),
+            [hardware, software, from_start]
+        );
+        assert_eq!(
+            attempts(&take(false), 0.0, Some("videotoolbox")),
+            [hardware, software]
+        );
+        assert_eq!(attempts(&take(false), 12.0, None), [software, from_start]);
+        // MJPEG: no hardware decoder takes it, and every frame is a keyframe.
+        assert_eq!(
+            attempts(&take(true), 12.0, Some("videotoolbox")),
+            [software]
+        );
+
+        let args = input_through(&take(false), 12.0, 1.0, hardware);
+        let accel = args.iter().position(|arg| arg == "-hwaccel").unwrap();
+        let input_index = args.iter().position(|arg| arg == "-i").unwrap();
+        assert!(accel < input_index && args[accel + 1] == "videotoolbox");
+        assert!(
+            !input_through(&take(false), 12.0, 1.0, software).contains(&"-hwaccel".to_string())
+        );
+    }
+
+    #[test]
+    fn plays_in_software_when_the_hardware_decoder_is_refused() {
+        // Linux's FFmpeg has no VideoToolbox: the first attempt fails outright,
+        // as it would on a Mac whose decoder refuses a recording.
+        let part = NativeSegment {
+            segment: Segment {
+                path: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/h264-initial-headers.avi"),
+                start: 0.0,
+                end: 3.0,
+                offset: 0.0,
+            },
+            width: 64,
+            height: 48,
+            has_audio: false,
+            all_intra: false,
+        };
+        let refused = if cfg!(target_os = "macos") {
+            "vaapi"
+        } else {
+            "videotoolbox"
+        };
+        // From the start: no "decode from the start" attempt hides a missing fallback.
+        let player = Player::with_hwaccel(
+            vec![part],
+            test_tools(),
+            0.0,
+            eframe::egui::Context::default(),
+            Some(refused),
+        );
+        player.pause(true);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while player.frame().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "no frame: {:?}",
+                player.warnings()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(player.warnings().is_empty(), "{:?}", player.warnings());
+    }
+
     #[test]
     fn corrupt_seek_input_cannot_panic_the_clock() {
         assert_eq!(bounded_time(f64::NAN, 10.0), 0.0);

@@ -90,6 +90,14 @@ Non-goals (explicitly out of scope for v1): video editing, colour grading, stabi
   stream probing needs it to retain H.264/HEVC headers before indexed seeks.
   The player tries input-side seeking, with a sequential fallback if no video
   frame is emitted. See `docs/player-buffering.md` and the generated AVI fixture.
+- **Long-GOP footage is decoded by the hardware first** (2026-10-28): on the Mac the
+  player asks for VideoToolbox (`HWACCEL`, `attempts` in `player.rs`) — the pilot's
+  4K 10-bit HEVC Osmo takes decode at 30 s in 78 s in software, 10 s through it —
+  then software, then the sequential fallback, each tried only when the one before
+  yields no frame. MJPEG never asks. The Mac's bundled FFmpeg is built with
+  `--enable-videotoolbox` (a system framework, LGPL-compatible) and the build
+  refuses itself without it. Tested on Linux, whose FFmpeg refuses VideoToolbox:
+  the player falls back and plays.
 - **Import audio policy:** schema `v8` adds `sourceFile.muted`, default false for
   existing recordings. Import's No Sound option marks only new recordings;
   playback emits silence for their parts and exports honor that choice. Mixed

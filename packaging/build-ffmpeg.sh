@@ -35,7 +35,10 @@ build() {
             platform=(--target-os=darwin --arch="$cpu" --cc=clang --enable-cross-compile
                 --sysroot="$(xcrun --sdk macosx --show-sdk-path)"
                 --extra-cflags="-arch $cpu -mmacosx-version-min=11.0"
-                --extra-ldflags="-arch $cpu -mmacosx-version-min=11.0") ;;
+                --extra-ldflags="-arch $cpu -mmacosx-version-min=11.0"
+                # Apple's own decoder, a system framework: the player needs it
+                # for 4K HEVC (78 s for 30 s in software on the pilot's Mac).
+                --enable-videotoolbox --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox) ;;
         MINGW*|MSYS*) platform=(--target-os=mingw32 --arch=x86_64 --cc=gcc --extra-ldflags=-static) ;;
         Linux) ;;
         *) echo "Unsupported build host: $(uname -s)" >&2; exit 1 ;;
@@ -92,6 +95,9 @@ for binary in "$DEST/bin/ffmpeg"*; do
     "$binary" -L | tee "$DEST/licenses/ffmpeg/LICENSE-BUILD.txt"
     if "$binary" -buildconf 2>&1 | grep -Eq -- '--enable-(gpl|nonfree|libx264|libx265)'; then
         echo "Refusing a GPL/nonfree FFmpeg build" >&2; exit 1
+    fi
+    if [ "$(uname -s)" = Darwin ] && ! "$binary" -hide_banner -hwaccels | grep -qx videotoolbox; then
+        echo "Refusing a Mac FFmpeg build without VideoToolbox" >&2; exit 1
     fi
 done
 echo "FFmpeg tools and corresponding sources prepared in $DEST"
